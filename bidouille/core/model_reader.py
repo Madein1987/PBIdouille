@@ -1,0 +1,144 @@
+# -*- coding: utf-8 -*-
+"""Lecture du modèle et du config pour peupler l'UI. Délègue aux scripts
+racine (propagate_cf, color_matrix_by_kpi) — une seule implémentation, la même
+qu'en CLI — et à measures_config.json."""
+
+from __future__ import annotations
+
+import json
+import sys
+from pathlib import Path
+
+# Rend les scripts racine (Fitbit\*.py) importables quel que soit le lanceur
+# (core\ est 3 niveaux sous le dossier Fitbit\).
+_FITBIT_DIR = Path(__file__).resolve().parent.parent.parent
+if str(_FITBIT_DIR) not in sys.path:
+    sys.path.insert(0, str(_FITBIT_DIR))
+
+import propagate_cf as _pcf              # noqa: E402
+import color_matrix_by_kpi as _cmx       # noqa: E402
+
+DEFAULT_FIELD_PARAMETER = "P_Indicateurs_parCalcul"
+DEFAULT_ENTITY = "_mesures"
+
+
+def read_config(project) -> dict:
+    """measures_config.json du dossier projet, ou {} s'il manque/est illisible."""
+    p = project.config_json
+    if p.exists():
+        try:
+            return json.loads(p.read_text(encoding="utf-8"))
+        except (ValueError, OSError):
+            return {}
+    return {}
+
+
+def candidate_parameters(project) -> list:
+    """Noms de tables paramètre où chercher la liste des KPI, dans l'ordre :
+    toutes celles du config (tableNames, puis baseKPI, puis byKpi), sinon le
+    nom par défaut."""
+    fp = read_config(project).get("fieldParameter") or {}
+    names: list = []
+    for key in ("tableNames", "tableNamesKpiBase", "tableNamesByKpi"):
+        v = fp.get(key)
+        if isinstance(v, list):
+            names.extend(x for x in v if isinstance(x, str) and x and x not in names)
+    return names or [DEFAULT_FIELD_PARAMETER]
+
+
+def _scan_field_parameter(project):
+    """Dernier recours : première table du modèle qui RESSEMBLE à un paramètre
+    de champ (NAMEOF + parameterMetadata) et dont on peut extraire des KPI.
+    Utile quand le config ne correspond pas au rapport ouvert."""
+    tables_dir = Path(project.model_dir) / "definition" / "tables"
+    if not tables_dir.exists():
+        return None
+    for tmdl in sorted(tables_dir.glob("*.tmdl")):
+        try:
+            low = tmdl.read_text(encoding="utf-8").lower()
+        except OSError:
+            continue
+        if "nameof(" in low and "parametermetadata" in low:
+            try:
+                if _pcf.kpis_from_parameter(project.model_dir, tmdl.stem):
+                    return tmdl.stem
+            except SystemExit:
+                continue
+    return None
+
+
+def field_parameter(project) -> str:
+    """Nom de la table paramètre à utiliser : la première CONFIGURÉE qui
+    existe dans le modèle, sinon un scan du modèle, sinon la première
+    configurée (l'outil appelé donnera alors l'erreur détaillée)."""
+    tables_dir = Path(project.model_dir) / "definition" / "tables"
+    cands = candidate_parameters(project)
+    for name in cands:
+        if (tables_dir / (name + ".tmdl")).exists():
+            return name
+    return _scan_field_parameter(project) or cands[0]
+
+
+def entity(project) -> str:
+    """Table qui héberge les mesures (settings.sourceTable, sinon défaut)."""
+    return (read_config(project).get("settings") or {}).get("sourceTable") or DEFAULT_ENTITY
+
+
+def branches(project) -> list:
+    """Branches définies dans le config (clés de `branches`), ex. ['YTD']."""
+    br = read_config(project).get("branches")
+    return list(br.keys()) if isinstance(br, dict) else []
+
+
+def kpis(project) -> list:
+    """KPI distincts via la table paramètre résolue (réutilise propagate_cf).
+    RuntimeError actionnable si rien ne se résout (config d'un autre rapport,
+    ou pas de config choisi — bouton « Config… »)."""
+    name = field_parameter(project)
+    tmdl = Path(project.model_dir) / "definition" / "tables" / (name + ".tmdl")
+    if not tmdl.exists():
+        cands = candidate_parameters(project)
+        cfg = project.config_json
+        raise RuntimeError(
+            "table paramètre introuvable dans ce modèle — essayé : "
+            + ", ".join(cands)
+            + (f" (config : {cfg})" if cfg.exists()
+               else f" (AUCUN config chargé — attendu : {cfg})")
+            + ". Clique « Config… » pour choisir le measures_config.json de CE rapport, "
+              "ou vérifie fieldParameter.tableNames dedans."
+        )
+    try:
+        return _pcf.kpis_from_parameter(project.model_dir, name)
+    except SystemExit as e:
+        raise RuntimeError(str(e))
+
+
+def measures(project) -> list:
+    """Toutes les mesures du modèle (réutilise color_matrix_by_kpi)."""
+    return _cmx.all_measures(project.model_dir)
+
+
+def excel_headers(xlsx_path) -> list:
+    """En-têtes (1re ligne, 1re feuille) d'un .xlsx — pour peupler les menus de
+    colonnes sans ouvrir le fichier. [] si absent / illisible / openpyxl manquant
+    (les combos restent éditables : on peut taper un nom à la main)."""
+    try:
+        import openpyxl
+    except ImportError:
+        return []
+    p = Path(str(xlsx_path))
+    if not p.exists():
+        return []
+    try:
+        wb = openpyxl.load_workbook(p, read_only=True, data_only=True)
+        ws = wb.worksheets[0]
+        headers = []
+        for row in ws.iter_rows(min_row=1, max_row=1, values_only=True):
+            for h in row:
+                if h is not None and str(h).strip():
+                    headers.append(str(h).strip())
+            break
+        wb.close()
+        return headers
+    except Exception:
+        return []

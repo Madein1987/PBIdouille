@@ -1,0 +1,1598 @@
+# -*- coding: utf-8 -*-
+"""Générateur NATIF des variations de mesures — remplace create_measure_variations.csx
+(Tabular Editor) en écrivant directement les fichiers TMDL du projet PBIP.
+
+Port 1:1 de la logique du csx : découverte des mesures de base, variations,
+branches (variations de variations), mesure Switch (+ format dynamique
+optionnel), tables paramètre de champ (parCalcul/parCalcul_2, parKPI, baseKPI),
+rang unique KPI-puis-calcul, orphelines. Même config : measures_config.json.
+
+⚠ Power BI Desktop doit être FERMÉ (il ne relit les fichiers qu'à l'ouverture
+et un enregistrement écraserait nos modifications). Backup automatique sous
+_tmdl_backups\\<horodatage>\\ avant chaque écriture. Rouvrir le .pbip ensuite.
+
+En ligne de commande :  py generate_measures.py   (config à côté du script)
+En module (BIdouille)  : generate(model_dir, config, dry_run=..., log=...)
+
+Sérialisation TMDL (calquée sur la sortie réelle de Desktop/TE) :
+  - description en lignes « /// » AVANT la mesure ;
+  - DAX mono-ligne : « measure 'X' = <dax> » ; multi-ligne : « = » puis lignes
+    à 3 tabs ; propriétés à 2 tabs (formatString brut NON quoté, displayFolder,
+    lineageTag) ; « annotation MeasureVariation = <base>|<variation> » ;
+  - lineageTags PRÉSERVÉS pour les mesures/tables existantes (uuid4 sinon) ;
+  - table paramètre existante : seule l'expression `source =` est réécrite ;
+    nouvelle table : fichier complet + « ref table » ajouté dans model.tmdl.
+"""
+
+from __future__ import annotations
+
+import json
+import re
+import sys
+import unicodedata
+import uuid
+from datetime import datetime
+from pathlib import Path
+
+# réutilise le découpage TMDL éprouvé de unused_measures (mêmes fichiers cibles)
+from unused_measures import MEMBER_RE, MEASURE_NAME_RE, _first_group
+
+# ---------------------------------------------------------------------------
+PBIP_DIR    = Path(r"C:\OneDrive - PJ\Data Cooler\_Power BI\Fitbit")
+PROJECT     = "Fitbit for random devs"
+CONFIG_PATH = PBIP_DIR / "measures_config.json"
+# ---------------------------------------------------------------------------
+
+ANNOTATION = "MeasureVariation"   # marque les mesures générées : "base|variation"
+
+ANNOT_RE   = re.compile(r"^\t\tannotation " + ANNOTATION + r" = (.+)$", re.M)
+FORMAT_RE  = re.compile(r"^\t\tformatString: (.*)$", re.M)
+FOLDER_RE  = re.compile(r"^\t\tdisplayFolder: (.*)$", re.M)
+LINEAGE_RE = re.compile(r"^\t\tlineageTag: (.*)$", re.M)
+TABLE_LINEAGE_RE = re.compile(r"^\tlineageTag: (.*)$", re.M)
+SOURCE_BLOCK_RE  = re.compile(r"(^\t\tsource =\n)((?:\t{3,}[^\n]*\n|\n(?=\t{3}))+)", re.M)
+
+
+# Caractères que le tri culturel .NET (donc Power BI) IGNORE au premier niveau :
+# « Nombre d'unités » se range entre « Nombre de jours » et « Nombre dz », comme
+# si l'apostrophe n'existait pas. Un tri ordinal, lui, la traite comme un
+# caractère de faible valeur et propulse le nom EN TÊTE de liste. Ensemble
+# vérifié un par un contre [StringComparer]::CurrentCulture (l'apostrophe
+# TYPOGRAPHIQUE U+2019, elle, est significative — ne pas l'ajouter ici).
+_LIAISON = (
+    "'"  # apostrophe droite
+    "ʼ"  # apostrophe modificative
+    "-"  # trait d'union
+    "­"  # trait d'union conditionnel
+    "–"  # tiret demi-cadratin
+    "—"  # tiret cadratin
+)
+_IGNORABLES = str.maketrans("", "", _LIAISON)
+# … et pour départager, elles pèsent PLUS que n'importe quelle lettre : à
+# radical égal, « Nombre d'unites » se range APRÈS « Nombre dunites ».
+_APRES_TOUT = {ord(c): "￿" for c in _LIAISON}
+
+
+def sort_key_pbi(name):
+    """Clé de tri alphabétique « à la Power BI ».
+
+    Power BI trie ses colonnes texte avec le collation du modèle. Un tri
+    ordinal Python en diverge de trois façons : il place toutes les majuscules
+    avant les minuscules ('Weight' avant 'avg'), rejette les accentués après le
+    Z ('Écart' après 'Zone'), et remonte les apostrophes en tête de liste
+    ('Nombre d''unités' avant 'Nombre de jours'). L'ordre écrit dans la colonne
+    Ordre du paramètre de champ ne correspondait alors plus à l'ordre affiché
+    par le rapport.
+
+    Reproduit donc les QUATRE niveaux du comparateur culturel .NET — celui
+    qu'utilise `.OrderBy(m => m.Name)` dans create_measure_variations.csx —,
+    dans cet ordre de priorité (vérifié un à un contre StringComparer) :
+    lettres nues, puis accents, puis casse (minuscule d'abord), puis
+    ponctuation de liaison (qui pèse plus que toute lettre : à radical égal,
+    « Nombre d'unites » se range APRÈS « Nombre dunites »).
+    """
+    decomp = unicodedata.normalize("NFKD", name)
+    plat = "".join(c for c in decomp if not unicodedata.combining(c))
+    return (
+        plat.translate(_IGNORABLES).casefold(),     # 1. lettres nues
+        decomp.translate(_IGNORABLES).casefold(),   # 2. accents
+        tuple(c.isupper() for c in plat.translate(_IGNORABLES)),   # 3. casse
+        plat.translate(_APRES_TOUT).casefold(),     # 4. ponctuation
+    )
+
+
+# ======================= helpers format (ports exacts du csx) ================
+
+def positive_section(f):
+    """Première section (valeurs positives) d'un format, sans signe initial.
+    Gère les ';' échappés ou entre guillemets."""
+    if not f:
+        return f
+    in_quote = False
+    cut = len(f)
+    i = 0
+    while i < len(f):
+        ch = f[i]
+        if ch == '"':
+            in_quote = not in_quote
+        elif ch == "\\":
+            i += 1
+        elif ch == ";" and not in_quote:
+            cut = i
+            break
+        i += 1
+    s = f[:cut].strip()
+    while s and s[0] in "+-":
+        s = s[1:]
+    return s
+
+
+def has_scaling_percent(f) -> bool:
+    """Le format contient-il un % actif (non échappé, hors guillemets) ?"""
+    if not f:
+        return False
+    in_quote = False
+    i = 0
+    while i < len(f):
+        ch = f[i]
+        if ch == '"':
+            in_quote = not in_quote
+        elif ch == "\\":
+            i += 1
+        elif ch == "%" and not in_quote:
+            return True
+        i += 1
+    return False
+
+
+# Types de mesure reconnus d'après le formatString de la BASE. Sert à limiter
+# une variation aux bases qui ont du sens : un « % du total » sur une base déjà
+# en pourcentage donne un pourcentage de pourcentage — la mesure ne doit alors
+# même pas être créée.
+# Types d'une mesure, DÉDUITS de son formatString.
+FORMAT_KINDS = ("nombre", "pourcentage", "devise")
+
+_CURRENCY = "$\u20ac\u00a3\u00a5\u20a3\u20a4\u20bd\u20b9"
+
+
+def format_kind(fmt) -> str:
+    """Type d'une mesure d'après son formatString :
+
+        « 0.0 % »        -> pourcentage
+        « #,0.00 $ »     -> devise
+        « #,0 », vide    -> nombre
+
+    Une base sans formatString compte comme un nombre : c'est le cas le plus
+    courant et le plus sûr (on n'exclut pas une mesure faute d'information)."""
+    if has_scaling_percent(fmt):
+        return "pourcentage"
+    if any(c in (fmt or "") for c in _CURRENCY):
+        return "devise"
+    return "nombre"
+
+
+def kind_allowed(tpl, base_fmt) -> bool:
+    """La variation `tpl` accepte-t-elle une base de ce format ? Sans
+    `appliesToFormats` (ou liste vide), tous les types passent — le filtre est
+    donc facultatif et rétrocompatible."""
+    kinds = tpl.get("appliesToFormats") if isinstance(tpl, dict) else None
+    if not kinds:
+        return True
+    return format_kind(base_fmt) in kinds
+
+
+def name_included(tpl, *noms) -> bool:
+    """Rattrapage EXPLICITE : un nom contenant l'un de ces fragments est gardé
+    quoi qu'il arrive — malgré l'exclusion par nom ET malgré le filtre de type.
+
+    Sert au cas « j'exclus large, sauf celui-là » : écarter tout ce qui
+    contient « average », mais garder « Average Steps » parce que la mesure est
+    en réalité une somme malgré son nom."""
+    motifs = tpl.get("includeNameContains") if isinstance(tpl, dict) else None
+    if not motifs:
+        return False
+    return _name_matches(motifs, noms)
+
+
+def base_retenue(tpl, base_fmt, *noms) -> bool:
+    """La base passe-t-elle les filtres de la variation ? Ordre de priorité :
+
+        1. inclusion explicite (includeNameContains)  -> gardée
+        2. exclusion par nom   (excludeNameContains)  -> écartée
+        3. filtre de type      (appliesToFormats)     -> selon le format
+
+    L'inclusion est le dernier mot : c'est une décision nommée, prise KPI par
+    KPI, alors que les deux autres filtres sont des règles larges."""
+    if name_included(tpl, *noms):
+        return True
+    if name_excluded(tpl, *noms):
+        return False
+    return kind_allowed(tpl, base_fmt)
+
+
+def name_excluded(tpl, *noms) -> bool:
+    """L'un des `noms` contient-il un fragment de `excludeNameContains` ?
+
+    Le formatString ne dit pas tout : un ratio en décimal (0,85) s'écrit comme
+    un nombre. Plutôt qu'un attribut de plus à tenir à jour ailleurs, on
+    s'appuie sur ce que le nom dit déjà — « Ratio ... », « ... / ... »,
+    « Taux ... » — ou sur le nom complet d'un KPI à écarter.
+
+    Comparaison insensible à la casse ET aux accents (« Durée » attrape
+    « duree »). On teste le nom de la BASE et celui du KPI : exclure « Weight »
+    écarte donc aussi « Weight cible »."""
+    motifs = tpl.get("excludeNameContains") if isinstance(tpl, dict) else None
+    if not motifs:
+        return False
+    return _name_matches(motifs, noms)
+
+
+def _plat(s) -> str:
+    """Minuscules sans accents, pour comparer « Durée » et « duree »."""
+    d = unicodedata.normalize("NFKD", str(s or ""))
+    return "".join(c for c in d if not unicodedata.combining(c)).casefold()
+
+
+def _name_matches(motifs, noms) -> bool:
+    """L'un des `noms` contient-il l'un des `motifs` ? Insensible à la casse et
+    aux accents ; les motifs vides sont ignorés."""
+    cibles = [_plat(n) for n in noms if n]
+    return any(_plat(m) in c
+               for m in motifs if str(m).strip()
+               for c in cibles)
+
+
+def to_pts_format(core: str) -> str:
+    """Format % -> format « points » : retire le % actif (et l'espace qui le
+    précède, échappé ou non) et ajoute « pts » ÉCHAPPÉ (\\ \\p\\t\\s, forme
+    Power BI — pas de guillemets). Le ×100 vient de {deltaScale}."""
+    out: list = []
+    in_quote = False
+    i = 0
+    while i < len(core):
+        ch = core[i]
+        if ch == '"':
+            in_quote = not in_quote
+            out.append(ch)
+        elif ch == "\\":
+            if i + 1 < len(core):
+                out.append(ch)
+                out.append(core[i + 1])
+                i += 1
+        elif ch == "%" and not in_quote:
+            if len(out) >= 2 and out[-2] == "\\" and out[-1] == " ":
+                del out[-2:]
+            elif out and out[-1] == " ":
+                del out[-1]
+            # le % lui-même disparaît
+        else:
+            out.append(ch)
+        i += 1
+    # « pts » échappé (\ \p\t\s) et non entre guillemets : même forme que ce
+    # que Power BI écrit lui-même — c'est le format des deltas de pourcentage,
+    # et c'était le seul de tout le modèle à porter des guillemets
+    return "".join(out) + escape_literal(" pts")
+
+
+# Symboles d'un format « delta », par section (positif ; négatif ; zéro).
+# Modifiables dans Réglages globaux (settings.deltaSymbols) : « + / − », des
+# flèches « ▲ / ▼ », ou rien du tout.
+DELTA_SYMBOLS = {"positive": "+", "negative": "-", "zero": ""}
+
+# Format utilisé pour un delta dont la mesure de base n'a AUCUN formatString.
+# Sans lui, le delta n'avait pas de format du tout — donc pas de signe, quels
+# que soient les symboles choisis. "" = revenir à l'ancien « aucun format ».
+DELTA_FALLBACK = "#,##0.##"
+
+
+# Caractères qui s'affichent D'EUX-MÊMES dans un format Power BI/VBA : ni
+# backslash, ni guillemets. « #,0.00 $ » s'écrit donc tel quel, avec une vraie
+# espace. Tout le reste (lettres, flèches…) doit être échappé, sinon le moteur
+# peut le lire comme un code de format.
+SELF_DISPLAY = set(" +-$()")
+
+
+def escape_literal(text) -> str:
+    """Texte littéral dans un formatString, sous sa forme la plus SIMPLE :
+    rien devant les caractères qui s'affichent d'eux-mêmes (cf. SELF_DISPLAY),
+    un backslash devant les autres. « " " » -> « " " » (une espace nue),
+    « pts » -> « \\p\\t\\s ». Jamais de guillemets."""
+    return "".join(c if c in SELF_DISPLAY else "\\" + c for c in str(text))
+
+
+def normalize_literals(fmt):
+    """Ramène les littéraux d'un format à cette forme canonique : espace nue,
+    pas de guillemets, backslash seulement là où il est nécessaire.
+
+        0.0\\ %      -> 0.0 %        (l'espace n'a pas besoin d'échappement)
+        #,0.00\\ $   -> #,0.00 $
+        0.0" pts"   -> 0.0 \\p\\t\\s
+
+    Un formatString hérité ou saisi à la main peut contenir l'une ou l'autre
+    écriture ; tout ce qui est GÉNÉRÉ passe ici."""
+    if not fmt or ('"' not in fmt and "\\" not in fmt):
+        return fmt
+    out: list = []
+    i = 0
+    in_quote = False
+    while i < len(fmt):
+        ch = fmt[i]
+        if ch == '"':
+            in_quote = not in_quote
+            i += 1
+            continue
+        if in_quote:
+            out.append(escape_literal(ch))
+            i += 1
+            continue
+        if ch == "\\" and i + 1 < len(fmt):
+            out.append(escape_literal(fmt[i + 1]))   # réduit \X à X si possible
+            i += 2
+            continue
+        out.append(ch)
+        i += 1
+    return "".join(out)
+
+
+def format_symbol(sym) -> str:
+    """Symbole littéral en tête d'une section. « + » et « - » passent tels
+    quels ; tout le reste est ÉCHAPPÉ caractère par caractère pour ne pas être
+    lu comme un code de format (# 0 . , % E…). Une flèche donne « \\▲#,##0 » —
+    des backslashes, jamais de guillemets (cf. escape_literal)."""
+    if not sym:
+        return ""
+    if sym in ("+", "-"):
+        return sym
+    return escape_literal(sym)
+
+
+# « <<each ALLSELECTED({table})>> » : le fragment est répété une fois par table
+# de la portée du KPI, séparé par des virgules. C'est LE jeton générique — la
+# fonction DAX est écrite par toi, pas imposée par l'outil, donc ALL,
+# ALLSELECTED, REMOVEFILTERS, ALLEXCEPT, CROSSFILTER… tout passe.
+EACH_RE = re.compile(r"<<each\s+(.+?)>>", re.S)
+
+# tables citées par un DAX : 'weight obs'[weight] ou Table[col] — jamais une
+# simple référence de mesure [Weight] (rien devant le crochet).
+TABLE_IN_DAX_RE = re.compile(
+    r"'((?:[^']|'')+)'\s*\[|(?<![A-Za-z0-9_'\]])([A-Za-z_][A-Za-z0-9_]*)\s*\[")
+
+
+def tables_from_dax(dax) -> list:
+    """Tables citées par une expression DAX, dans l'ordre d'apparition et sans
+    doublon : « CALCULATE(SUM('weight obs'[weight]), 'dim_Date'[x]=1) » donne
+    ['weight obs', 'dim_Date']. Sert de portée par DÉFAUT quand rien n'est
+    déclaré pour ce KPI."""
+    if not dax:
+        return []
+    trouve = []
+    for m in TABLE_IN_DAX_RE.finditer(dax):
+        nom = (m.group(1) or m.group(2) or "").replace("''", "'")
+        if nom and nom not in trouve:
+            trouve.append(nom)
+    return trouve
+
+
+def expand_each(text, tables, sep=", "):
+    """Développe les « <<each …>> » de `text` : le fragment est répété pour
+    chaque table, avec {table} = la référence DAX ('steps') et {tableName} =
+    le nom nu (steps). Sans table, le jeton est LAISSÉ en place — process()
+    saute alors la mesure au lieu d'en écrire une bancale."""
+    if not text or "<<each" not in text:
+        return text
+    if not tables:
+        return text
+    refs = [dax_table_ref(x) for x in tables]
+
+    def repl(m):
+        frag = m.group(1).strip()
+        return sep.join(frag.replace("{table}", r)
+                            .replace("{tableName}", str(n))
+                        for r, n in zip(refs, tables))
+
+    return EACH_RE.sub(repl, text)
+
+
+def read_kpi_tables(spec, model_dir, default_xlsx, default_key, log=print) -> dict:
+    """{KPI: [tables]} — la portée de chaque KPI, lue dans UNE COLONNE de
+    l'Excel des indicateurs (TD_Indicateurs) :
+
+        "kpiTables": { "column": "tables" }
+
+    L'attribut vit ainsi avec LE RAPPORT. Le measures_config.json, lui, voyage
+    d'un rapport à l'autre : y écrire des noms de KPI le rendrait faux dès sa
+    réutilisation ailleurs — c'est pourquoi il ne retient que le nom de la
+    colonne, et rien de spécifique au rapport.
+
+    Une cellule liste les tables séparées par des virgules (ou des
+    points-virgules) : « steps, dim_Date ». Cellule vide = ce KPI n'a pas de
+    portée, donc pas la variation."""
+    if not isinstance(spec, dict):
+        return {}
+    col = spec.get("column")
+    if not col:
+        return {}
+    xlsx = Path(spec.get("xlsx") or default_xlsx)
+    if not xlsx.is_absolute():
+        xlsx = Path(model_dir).parent / xlsx
+    try:
+        brut = read_attribute_map(xlsx, spec.get("keyColumn") or default_key, col)
+    except SystemExit as e:
+        log(f"⚠ portée par KPI : {e} — colonne « {col} » ignorée.")
+        return {}
+    out = {}
+    for kpi, val in brut.items():
+        tables = [x.strip() for x in re.split(r"[;,]", str(val)) if x.strip()]
+        if tables:
+            out[kpi] = tables
+    return out
+
+
+def complete_kpi_tables(portees, existing, bases, actif, log=print) -> dict:
+    """Complète les portées manquantes en LISANT le DAX de la mesure de base :
+    « SUM('weight obs'[weight]) » donne la portée ['weight obs'].
+
+    Ne touche jamais à ce que la colonne de TD_Indicateurs a déclaré — celle-ci
+    reste la référence, la déduction ne sert qu'aux KPI qu'elle ne couvre pas.
+    Ce que la déduction trouve est écrit au journal : elle voit TOUTES les
+    tables citées, y compris une table de dates utilisée dans un filtre, ce qui
+    n'est pas toujours la portée voulue."""
+    if not actif:
+        return portees
+    out = dict(portees)
+    deduits = []
+    for b in bases:
+        if b in out:
+            continue
+        tables = tables_from_dax((existing.get(b) or {}).get("dax"))
+        if tables:
+            out[b] = tables
+            deduits.append(f"{b} -> {', '.join(tables)}")
+    if deduits:
+        log("Portée déduite du DAX (vérifie-la) : " + " · ".join(deduits))
+    return out
+
+
+def dax_table_ref(name) -> str:
+    """Référence DAX d'une table : toujours entre apostrophes — valide même
+    pour un nom simple, et indispensable dès qu'il contient une espace."""
+    return "'" + str(name).strip().replace("'", "''") + "'"
+
+
+def kpi_table_tokens(tables) -> dict:
+    """Jetons « portée » dérivés de la liste de tables d'UN KPI.
+
+    Résout le cas « parfois une table, parfois plusieurs » : ALL() ne prend
+    qu'une table à la fois, donc N tables donnent N filtres SÉPARÉS — la seule
+    forme correcte dans un CALCULATE. Le DAX de la variation s'écrit une fois,
+    pour 1 comme pour N tables :
+
+        CALCULATE({baseRef}, <<allTables>>)
+          1 table  -> CALCULATE([Weight], ALL('weight obs'))
+          2 tables -> CALCULATE([Steps], ALL('steps'), ALL('dim_Date'))
+
+    Liste vide -> aucun jeton : le <<...>> reste, et process() saute la mesure
+    en le disant (un KPI sans portée déclarée n'a pas cette variation)."""
+    refs = [dax_table_ref(x) for x in (tables or []) if str(x).strip()]
+    if not refs:
+        return {}
+    return {
+        "tables": ", ".join(refs),
+        "allTables": ", ".join("ALL(" + r + ")" for r in refs),
+        "removeFilters": ", ".join("REMOVEFILTERS(" + r + ")" for r in refs),
+    }
+
+
+def resolve_format(fmt, base_fmt, symbols=None, fallback=DELTA_FALLBACK):
+    """Applique inherit / delta / text / {baseFormat} / littéral.
+
+    « delta » construit un format à trois sections (positif;négatif;zéro) pour
+    que le signe soit TOUJOURS visible : Power BI n'ajoute pas de « + » tout
+    seul, et dans la section négative il n'ajoute même pas le « - » — chaque
+    signe doit être écrit dans le format. Un format de base en % devient des
+    « pts » (l'écart de deux pourcentages se lit en points)."""
+    if not fmt or fmt == "inherit":
+        return base_fmt
+    if fmt == "text":
+        return None            # mesure TEXTE : aucun format
+    if fmt == "delta":
+        sym = dict(DELTA_SYMBOLS)
+        sym.update({k: v for k, v in (symbols or {}).items() if v is not None})
+        core = positive_section(base_fmt)
+        if not core:
+            # base sans format : sans repli, le delta n'aurait aucun format et
+            # donc aucun signe — c'est le cas qui « perdait » le + / −
+            core = fallback or ""
+            if not core:
+                return None
+        elif has_scaling_percent(core):
+            core = to_pts_format(core)
+        # littéraux sous leur forme la plus simple : espace nue, pas de
+        # guillemets, backslash seulement si nécessaire (cf. normalize_literals)
+        core = normalize_literals(core)
+        return (format_symbol(sym["positive"]) + core + ";"
+                + format_symbol(sym["negative"]) + core + ";"
+                + format_symbol(sym["zero"]) + core)
+    if "{baseFormat}" in fmt:
+        return None if not base_fmt else fmt.replace("{baseFormat}", positive_section(base_fmt))
+    return fmt
+
+
+def dax_str(s) -> str:
+    """Échappe une chaîne pour un littéral DAX entre guillemets."""
+    return "" if s is None else str(s).replace('"', '""')
+
+
+def bracket(name: str) -> str:
+    """Référence DAX [Nom] (']' s'échappe en ']]')."""
+    return "[" + name.replace("]", "]]") + "]"
+
+
+def quote_tmdl(name: str) -> str:
+    """Nom TMDL : quoté (apostrophes doublées) sauf identifiant simple."""
+    if re.match(r"^[A-Za-z0-9_]+$", name):
+        return name
+    return "'" + name.replace("'", "''") + "'"
+
+
+def token_to_text(t):
+    """dax/description du config : chaîne OU tableau de lignes -> chaîne."""
+    if t is None:
+        return None
+    if isinstance(t, list):
+        return "\n".join(str(x) for x in t)
+    return str(t)
+
+
+# ======================= parse de _mesures.tmdl ==============================
+
+def split_members(text: str) -> list:
+    """Découpe un .tmdl en [préambule + membres], en rattachant les lignes
+    « /// description » de fin de chunk au membre SUIVANT (TMDL les place
+    au-dessus de la déclaration qu'elles documentent)."""
+    members = list(MEMBER_RE.finditer(text))
+    if not members:
+        return [[None, text]]
+    chunks = [[None, text[: members[0].start()]]]
+    for i, m in enumerate(members):
+        end = members[i + 1].start() if i + 1 < len(members) else len(text)
+        chunks.append([m.group(1), text[m.start():end]])
+
+    for i in range(len(chunks) - 1):
+        lines = chunks[i][1].split("\n")
+        k = len(lines)
+        while k > 0 and lines[k - 1].strip() == "":
+            k -= 1
+        d = k
+        while d > 0 and lines[d - 1].startswith("\t///"):
+            d -= 1
+        if d < k:  # des /// juste avant la fin -> au chunk suivant
+            moved = lines[d:k]
+            chunks[i][1] = "\n".join(lines[:d] + lines[k:])
+            chunks[i + 1][1] = "\n".join(moved) + "\n" + chunks[i + 1][1]
+    return chunks
+
+
+def measure_info(chunk_text: str) -> dict:
+    """Extrait nom/annotation/format/dossier/lineage d'un chunk de mesure."""
+    m_line = re.search(r"^\tmeasure .*$", chunk_text, re.M)
+    name = _first_group(MEASURE_NAME_RE.match(m_line.group(0))) if m_line else None
+    a = ANNOT_RE.search(chunk_text)
+    f = FORMAT_RE.search(chunk_text)
+    d = FOLDER_RE.search(chunk_text)
+    lt = LINEAGE_RE.search(chunk_text)
+    # expression : ce qui suit « = » sur la ligne, plus les lignes indentées
+    # qui suivent jusqu'à la 1re propriété (formatString, annotation…). Sert à
+    # DÉDUIRE les tables d'un KPI quand aucune portée n'est déclarée.
+    dax = None
+    if m_line and "=" in m_line.group(0):
+        morceaux = [m_line.group(0).split("=", 1)[1].strip()]
+        for ln in chunk_text[m_line.end():].splitlines():
+            if re.match(r"^\t\t[A-Za-z/]", ln):      # propriété ou annotation
+                break
+            if ln.strip():
+                morceaux.append(ln.strip())
+        dax = " ".join(x for x in morceaux if x) or None
+    return {
+        "name": name,
+        "annotation": a.group(1).strip() if a else None,
+        "format": f.group(1) if f else None,
+        "folder": d.group(1) if d else None,
+        "lineage": lt.group(1).strip() if lt else None,
+        "dax": dax,
+    }
+
+
+# ======================= sérialisation TMDL ==================================
+
+def measure_block(name, dax, fmt, folder, desc, tag, data_cat, lineage) -> str:
+    """Bloc TMDL d'une mesure générée — même forme que la sortie Desktop/TE."""
+    out: list = []
+    if desc:
+        for dl in str(desc).split("\n"):
+            out.append("\t/// " + dl)
+    qname = "'" + name.replace("'", "''") + "'"
+    dax_lines = (dax or "").split("\n")
+    if len(dax_lines) == 1:
+        out.append("\tmeasure " + qname + " = " + dax_lines[0])
+    else:
+        out.append("\tmeasure " + qname + " =")
+        for l in dax_lines:
+            out.append("\t\t\t" + l)
+    if fmt:
+        out.append("\t\tformatString: " + fmt)
+    if folder:
+        out.append("\t\tdisplayFolder: " + folder)
+    out.append("\t\tlineageTag: " + lineage)
+    if data_cat:
+        out.append("\t\tdataCategory: " + data_cat)
+    out.append("")
+    out.append("\t\tannotation " + ANNOTATION + " = " + tag)
+    return "\n".join(out) + "\n"
+
+
+def dyn_format_lines(expr: str) -> list:
+    """Propriété formatStringDefinition (switch dynamique) — dormant tant que
+    dynamicFormat=false dans le config ; à valider au premier usage."""
+    out = ["\t\tformatStringDefinition ="]
+    for l in expr.split("\n"):
+        out.append("\t\t\t" + l)
+    return out
+
+
+def param_table_file(table, expr, kpi_col, calc_col, branch_col, lineages) -> str:
+    """Fichier .tmdl complet d'une NOUVELLE table paramètre de champ (même
+    structure que celles générées par Desktop/TE). `lineages` : dict nom ->
+    lineageTag à préserver (vide pour une création)."""
+    def tag(key):
+        return lineages.get(key) or str(uuid.uuid4())
+
+    disp, fields, ordre = table, table + " Fields", table + " Ordre"
+    ind = "\t\t\t\t"
+    body = "\n".join(ind + l for l in expr.split("\n"))
+    return (
+        "table " + quote_tmdl(table) + "\n"
+        + "\tlineageTag: " + tag("__table__") + "\n\n"
+        + "\tcolumn " + quote_tmdl(disp) + "\n"
+        + "\t\tdataType: string\n"
+        + "\t\tlineageTag: " + tag(disp) + "\n"
+        + "\t\tsummarizeBy: none\n"
+        + "\t\tsourceColumn: [Value1]\n"
+        + "\t\tsortByColumn: " + quote_tmdl(ordre) + "\n\n"
+        + "\t\trelatedColumnDetails\n"
+        + "\t\t\tgroupByColumn: " + quote_tmdl(fields) + "\n\n"
+        + "\tcolumn " + quote_tmdl(fields) + "\n"
+        + "\t\tdataType: string\n"
+        + "\t\tisHidden\n"
+        + "\t\tlineageTag: " + tag(fields) + "\n"
+        + "\t\tsummarizeBy: none\n"
+        + "\t\tsourceColumn: [Value2]\n\n"
+        + "\t\textendedProperty ParameterMetadata =\n"
+        + "\t\t\t\t{\n"
+        + '\t\t\t\t  "version": 3,\n'
+        + '\t\t\t\t  "kind": 2\n'
+        + "\t\t\t\t}\n\n"
+        + "\tcolumn " + quote_tmdl(ordre) + "\n"
+        + "\t\tdataType: string\n"
+        + "\t\tisHidden\n"
+        + "\t\tlineageTag: " + tag(ordre) + "\n"
+        + "\t\tsummarizeBy: none\n"
+        + "\t\tsourceColumn: [Value3]\n\n"
+        + "\tcolumn " + quote_tmdl(kpi_col) + "\n"
+        + "\t\tdataType: string\n"
+        + "\t\tlineageTag: " + tag(kpi_col) + "\n"
+        + "\t\tsummarizeBy: none\n"
+        + "\t\tsourceColumn: [Value4]\n\n"
+        + "\tcolumn " + quote_tmdl(calc_col) + "\n"
+        + "\t\tdataType: string\n"
+        + "\t\tlineageTag: " + tag(calc_col) + "\n"
+        + "\t\tsummarizeBy: none\n"
+        + "\t\tsourceColumn: [Value5]\n\n"
+        + "\tcolumn " + quote_tmdl(branch_col) + "\n"
+        + "\t\tdataType: string\n"
+        + "\t\tlineageTag: " + tag(branch_col) + "\n"
+        + "\t\tsummarizeBy: none\n"
+        + "\t\tsourceColumn: [Value6]\n\n"
+        + "\tpartition " + quote_tmdl(table) + " = calculated\n"
+        + "\t\tmode: import\n"
+        + "\t\tsource =\n"
+        + body + "\n\n"
+    )
+
+
+# ======================= le générateur =======================================
+
+def _fmt_attr(v) -> str:
+    """Valeur de cellule Excel -> texte pour l'injecter BRUT dans le DAX
+    (entier/float entier sans décimale ; booléen -> TRUE/FALSE)."""
+    if isinstance(v, bool):
+        return "TRUE" if v else "FALSE"
+    if isinstance(v, int):
+        return str(v)
+    if isinstance(v, float):
+        return str(int(v)) if v.is_integer() else repr(v)
+    return str(v)
+
+
+# Bloc UNIQUE décrivant l'Excel des indicateurs (TD_Indicateurs). Il était
+# défini à deux endroits — ici pour les jetons <<…>>, et dans l'onglet Rapport
+# pour les couleurs de matrice — avec des valeurs qui pouvaient diverger. Une
+# seule source désormais : ce bloc du measures_config.json.
+INDICATEURS_DEFAUT = {
+    "path": "TD_Indicateurs.xlsx",
+    "keyColumn": "mesure",
+    "fillColumn": "couleur_fill",
+    "textColumn": "couleur_text",
+}
+
+
+# Sélection des variations PROPRE AU RAPPORT. Le measures_config.json est un
+# CATALOGUE : il voyage d'un rapport à l'autre et les porte toutes. Mais tous
+# les rapports ne veulent pas les mêmes — d'où ce petit fichier, posé à côté du
+# .pbip, qui ne contient que la liste de celles qu'on garde ici.
+SELECTION_FILE = "pbidouille_variations.json"
+
+_MANQUANT = object()   # distingue « clé absente » de « None = toutes »
+
+
+def read_selection(project_dir) -> list | None:
+    """Ids des variations actives dans CE rapport, ou None si le rapport n'a
+    pas fait de choix (= toutes, comportement d'avant)."""
+    if not project_dir:
+        return None
+    f = Path(project_dir) / SELECTION_FILE
+    if not f.exists():
+        return None
+    try:
+        data = json.loads(f.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    actives = data.get("actives") if isinstance(data, dict) else data
+    return [str(x) for x in actives] if isinstance(actives, list) else None
+
+
+def write_selection(project_dir, actives, catalogue=None) -> Path | None:
+    """Écrit la sélection du rapport. `actives` à None — ou couvrant tout le
+    catalogue — retire le fichier : « aucun choix » reste l'état par défaut,
+    et on ne laisse pas traîner un fichier qui ne dit rien."""
+    f = Path(project_dir) / SELECTION_FILE
+    tout = catalogue is not None and set(actives or []) >= set(catalogue)
+    if actives is None or tout:
+        if f.exists():
+            f.unlink()
+        return None
+    f.write_text(json.dumps({"actives": list(actives)}, indent=2,
+                            ensure_ascii=False) + "\n", encoding="utf-8")
+    return f
+
+
+def apply_selection(variations, branches, actives, log=print) -> tuple:
+    """Restreint le catalogue aux variations actives. Retourne
+    (variations, branches) filtrés.
+
+    Une BRANCHE désactivée disparaît aussi de `branches` — sinon la 2e passe
+    irait chercher une variation qui n'existe plus. Une branche encore active
+    dont une variation restreinte a été désactivée voit simplement sa liste
+    rétrécir."""
+    if actives is None:
+        return variations, branches
+    garde = [v for v in actives if v in variations]
+    inconnues = [v for v in actives if v not in variations]
+    if inconnues:
+        log("⚠ sélection : " + ", ".join(sorted(inconnues))
+            + " — absente(s) du catalogue, ignorée(s).")
+    variations = {k: v for k, v in variations.items() if k in garde}
+    retirees = [b for b in branches if b not in variations]
+    if retirees:
+        log("Branches désactivées avec leur variation : " + ", ".join(retirees))
+    branches = {k: v for k, v in branches.items() if k in variations}
+    for bid, bdef in branches.items():
+        if isinstance(bdef, dict) and isinstance(bdef.get("variations"), list):
+            bdef = dict(bdef)
+            bdef["variations"] = [x for x in bdef["variations"] if x in variations]
+            branches[bid] = bdef
+    return variations, branches
+
+
+def indicateurs_xlsx(config, project_dir=None) -> dict:
+    """Définition résolue de l'Excel des indicateurs :
+    {path (absolu si project_dir donné), keyColumn, fillColumn, textColumn}.
+
+    `hardcodedAttributes.xlsx` / `.keyColumn` et `kpiTables.xlsx` / `.keyColumn`
+    restent acceptés comme SURCHARGES locales (configs existants), mais le
+    défaut vient d'ici."""
+    spec = dict(INDICATEURS_DEFAUT)
+    bloc = (config or {}).get("indicateursXlsx")
+    if isinstance(bloc, dict):
+        for k, v in bloc.items():
+            if v:
+                spec[k] = v
+    # compat : un ancien config ne porte l'Excel que sous hardcodedAttributes
+    hc = (config or {}).get("hardcodedAttributes") or {}
+    if not (isinstance(bloc, dict) and bloc.get("path")) and hc.get("xlsx"):
+        spec["path"] = hc["xlsx"]
+    if not (isinstance(bloc, dict) and bloc.get("keyColumn")) and hc.get("keyColumn"):
+        spec["keyColumn"] = hc["keyColumn"]
+    if project_dir:
+        p = Path(spec["path"])
+        if not p.is_absolute():
+            p = Path(project_dir) / p
+        spec["path"] = str(p)
+    return spec
+
+
+def read_attribute_map(xlsx, key_col, attr_col) -> dict:
+    """{ valeur_clé : valeur_attribut_formatée } depuis la 1re feuille de l'Excel
+    (openpyxl puis pandas) — pour figer un attribut du KPI dans le DAX."""
+    xlsx = Path(xlsx)
+    if not xlsx.exists():
+        raise SystemExit(f"Excel des attributs introuvable : {xlsx}")
+    kl, al = key_col.lower(), attr_col.lower()
+    out = {}
+    try:
+        import openpyxl
+        wb = openpyxl.load_workbook(xlsx, read_only=True, data_only=True)
+        rows = list(wb.worksheets[0].iter_rows(values_only=True))
+        wb.close()
+        if not rows:
+            return out
+        header = [str(h).strip().lower() if h is not None else "" for h in rows[0]]
+        if kl not in header or al not in header:
+            raise SystemExit(f"Colonne '{key_col}' ou '{attr_col}' absente de {xlsx.name} "
+                             f"(colonnes : {rows[0]}).")
+        ki, ai = header.index(kl), header.index(al)
+        for r in rows[1:]:
+            if ki < len(r) and r[ki] is not None and str(r[ki]).strip() \
+                    and ai < len(r) and r[ai] is not None:
+                out[str(r[ki]).strip()] = _fmt_attr(r[ai])
+        return out
+    except ImportError:
+        pass
+    import pandas as pd
+    df = pd.read_excel(xlsx)
+    df.columns = [str(c).strip().lower() for c in df.columns]
+    if kl not in df.columns or al not in df.columns:
+        raise SystemExit(f"Colonne '{key_col}' ou '{attr_col}' absente : {list(df.columns)}")
+    for _, r in df.iterrows():
+        if pd.notna(r[kl]) and str(r[kl]).strip() and pd.notna(r[al]):
+            out[str(r[kl]).strip()] = _fmt_attr(r[al])
+    return out
+
+
+def match_kpi(name: str, bases_by_len) -> str | None:
+    """Le KPI dont `name` est une déclinaison, par PLUS LONG préfixe d'abord
+    (« Weight cible » -> « Weight »). None si aucun ne correspond.
+    `bases_by_len` = les mesures de base triées par longueur décroissante."""
+    for b in bases_by_len:
+        if name == b or name.startswith(b + " "):
+            return b
+    return None
+
+
+def folder_matches(mfolder, cfolder) -> bool:
+    """Le displayFolder `mfolder` correspond-il au dossier de cibles `cfolder` ?
+    Match si chemin complet identique OU si le dossier FEUILLE est le même — un
+    dossier imbriqué (« _indicateurs\\_cibles ») matche donc la config
+    « _cibles », sans avoir à écrire le chemin complet."""
+    mf = (mfolder or "").strip().lower()
+    cf = (cfolder or "").strip().lower()
+    if not mf or not cf:
+        return False
+    return mf == cf or re.split(r"[\\/]", mf)[-1] == cf
+
+
+def read_measures(model_dir, config) -> tuple:
+    """(mesures, bases) d'après le TMDL : `mesures` = nom -> info (dossier,
+    format, annotation…), `bases` = les mesures de BASE (non générées, dans
+    sourceFolder) triées comme Power BI. Lecture seule."""
+    settings = config.get("settings") or {}
+    source_table = settings.get("sourceTable") or "_mesures"
+    target_table = settings.get("targetTable") or source_table
+    source_folder = settings.get("sourceFolder")
+    src = Path(model_dir) / "definition" / "tables" / (target_table + ".tmdl")
+    if not src.exists():
+        return {}, []
+    existing = {}
+    for kind, ctext in split_members(src.read_text(encoding="utf-8")):
+        if kind == "measure":
+            info = measure_info(ctext)
+            if info["name"]:
+                existing[info["name"]] = info
+    bases = sorted(
+        (n for n, e in existing.items()
+         if not e["annotation"]
+         and (source_folder is None
+              or (e["folder"] or "").lower() == source_folder.lower())),
+        key=sort_key_pbi,
+    )
+    return existing, bases
+
+
+def scan_cibles(model_dir, config) -> list:
+    """[(cible racine, KPI)] telles que la GÉNÉRATION les verra : même règle de
+    dossier, même correspondance « plus long préfixe KPI », mêmes exclusions
+    (on ignore ce qui ressemble déjà à une variation/branche).
+
+    Existe pour que l'aperçu de l'UI montre les VRAIES bases d'une variation
+    « aux cibles » au lieu de la liste des KPI — et pour qu'il n'y ait qu'UNE
+    définition de « qu'est-ce qu'une cible », partagée avec le générateur."""
+    existing, bases = read_measures(model_dir, config)
+    if not bases:
+        return []
+    bases_by_len = sorted(bases, key=len, reverse=True)
+    source_folder = ((config.get("settings") or {}).get("sourceFolder") or "")
+    suffixes = list(config.get("variations") or {}) + list(config.get("branches") or {})
+    # (scan_cibles lit le catalogue COMPLET : une variation désactivée reste un
+    # suffixe à ne pas confondre avec une cible racine)
+    out = []
+    for spec in (config.get("kpiMeasureFolders") or []):
+        if not isinstance(spec, dict):
+            continue
+        cfolder = (spec.get("folder") or "").strip()
+        if not cfolder or (source_folder and cfolder.lower() == source_folder.lower()):
+            continue
+        for cname in sorted((n for n, e in existing.items()
+                             if not e["annotation"]
+                             and folder_matches(e["folder"], cfolder)),
+                            key=sort_key_pbi):
+            if any(cname.endswith(" " + s) for s in suffixes):
+                continue          # déjà une variation : le générateur la crée
+            kpi = match_kpi(cname, bases_by_len)
+            if kpi:
+                out.append((cname, kpi))
+    return out
+
+
+def generate(model_dir, config, *, dry_run=None, remove_orphans=None, log=print) -> dict:
+    """Génère mesures + tables paramètre + switch dans les TMDL de `model_dir`
+    d'après `config` (dict du measures_config.json). Retourne les stats.
+    dry_run / remove_orphans None = valeurs du config (settings)."""
+    model_dir = Path(model_dir)
+    tables_dir = model_dir / "definition" / "tables"
+    if not tables_dir.exists():
+        raise SystemExit(f"Modèle introuvable : {tables_dir}")
+
+    # ---- settings (mêmes défauts que le csx) --------------------------------
+    settings = config.get("settings") or {}
+    source_table   = settings.get("sourceTable") or "_mesures"
+    source_folder  = settings.get("sourceFolder")
+    date_column    = settings.get("dateColumn") or "'dim_Date'[Date]"
+    target_table   = settings.get("targetTable") or source_table
+    folder_pattern = settings.get("displayFolderPattern") or "{baseFolder}"
+    branch_folder_pattern = settings.get("branchFolderPattern") or "{baseFolder}\\__{branch}"
+    overwrite      = settings.get("overwriteExisting", True)
+    # formats « delta » : symboles par section + repli si la base n'a pas de
+    # format (sinon le delta n'a aucun format, donc aucun signe visible)
+    delta_symbols  = settings.get("deltaSymbols") or {}
+    delta_fallback = settings.get("deltaFallbackFormat", DELTA_FALLBACK)
+    if remove_orphans is None:
+        remove_orphans = settings.get("removeOrphans", False)
+    if dry_run is None:
+        dry_run = settings.get("dryRun", False)
+
+    fp = config.get("fieldParameter") or {}
+    fp_enabled = fp.get("enabled", True) if fp else False
+    fp_tables = fp.get("tableNames") or ([fp["tableName"]] if fp.get("tableName") else ["P_Indicateurs"])
+    fp_tables_kpi  = fp.get("tableNamesByKpi") or []
+    fp_tables_base = fp.get("tableNamesKpiBase") or []
+    lkp = fp.get("kpiLabelLookup") or {}
+    lkp_table = lkp.get("table") or "TD_Indicateurs"
+    lkp_key   = lkp.get("keyColumn") or "mesure"
+    lkp_lbl   = lkp.get("labelColumn") or "libelle_indicateur"
+    lkp_key_ref = "'" + lkp_table.replace("'", "''") + "'" + bracket(lkp_key)
+    lkp_lbl_ref = "'" + lkp_table.replace("'", "''") + "'" + bracket(lkp_lbl)
+    # Tables « par KPI » : afficher le LIBELLÉ du KPI (colonne labelColumn) au
+    # lieu du nom de la mesure. C'est un choix d'affichage — d'où l'option.
+    fp_kpi_label = fp.get("byKpiUsesLabel", True)
+    # Garde-fou : sans la table de correspondance dans le modèle, le
+    # LOOKUPVALUE rendrait la table paramètre invalide. On retombe alors sur le
+    # nom brut plutôt que de casser la génération.
+    lkp_ok = (tables_dir / (lkp_table + ".tmdl")).exists()
+    if not lkp_ok and (fp_kpi_label and fp_tables_kpi or fp_tables_base):
+        log(f"⚠ table de correspondance « {lkp_table} » absente du modèle — "
+            f"les tables paramètre afficheront le nom brut du KPI. "
+            f"Corrige fieldParameter.kpiLabelLookup.table.")
+    fp_kpi_col    = fp.get("kpiColumn") or "Indicateur"
+    fp_calc_col   = fp.get("calcColumn") or "Calcul"
+    fp_incl_base  = fp.get("includeBase", True)
+    fp_base_lbl   = fp.get("baseLabel") or "Base"
+    fp_branch_col = fp.get("branchColumn") or "Branche"
+    fp_nobranch   = fp.get("noBranchLabel") or "Base"
+
+    sw = config.get("switch") or {}
+    sw_enabled  = sw.get("enabled", True) if sw else False
+    sw_name     = sw.get("name") or "Switch KPI"
+    sw_selector = sw.get("selector") or "'TD_KPI'[mesure]"
+    sw_folder   = sw.get("displayFolder") or "_switch"
+    sw_fmt      = sw.get("formatString") or "#,0.0"
+    sw_dyn      = sw.get("dynamicFormat", True)
+
+    variations = config.get("variations") or {}
+    if not variations:
+        raise SystemExit("La config n'a pas d'objet 'variations'.")
+    branches = dict(config.get("branches") or {})
+
+    # le config est un CATALOGUE ; ce rapport n'en prend peut-être qu'une part
+    actives = config.get("_actives", _MANQUANT)
+    if actives is _MANQUANT:
+        actives = read_selection(model_dir.parent)
+    if actives is not None:
+        total = len(variations)
+        variations, branches = apply_selection(variations, branches, actives, log)
+        log(f"Catalogue : {len(variations)} variation(s) active(s) sur {total} "
+            f"(sélection propre à ce rapport).")
+        if not variations:
+            raise SystemExit(
+                "Aucune variation active dans ce rapport : coche-en au moins "
+                "une dans Mesures -> Variations.")
+
+    # attributs codés en dur : jeton <<label>> dans le DAX -> valeur de la colonne
+    # pour le KPI (lue dans l'Excel), au lieu d'un LOOKUPVALUE à l'exécution.
+    hardcoded = config.get("hardcodedAttributes") or {}
+    # Excel des indicateurs : défini UNE fois dans le config (cf. indicateurs_xlsx)
+    td = indicateurs_xlsx(config, model_dir.parent)
+    hc: dict = {}                 # label -> {clé KPI : valeur formatée}
+    if hardcoded.get("tokens"):
+        hx = Path(hardcoded.get("xlsx") or td["path"])
+        if not hx.is_absolute():
+            hx = model_dir.parent / hx
+        hkey = hardcoded.get("keyColumn") or td["keyColumn"]
+        for label, col in hardcoded["tokens"].items():
+            hc[label] = read_attribute_map(hx, hkey, col)
+
+    # portée par KPI -> jetons <<tables>> / <<allTables>> / <<removeFilters>>.
+    # Source à privilégier : une colonne de TD_Indicateurs (cf. read_kpi_tables)
+    kpi_tables = read_kpi_tables(
+        config.get("kpiTables"), model_dir, td["path"], td["keyColumn"], log)
+    if kpi_tables:
+        log(f"Portée par KPI : {len(kpi_tables)} KPI avec des tables déclarées.")
+    kpi_tables_auto = bool((config.get("kpiTables") or {}).get("fromMeasureDax"))
+
+
+    def branch_variation_ids(branch_id, bdef):
+        if isinstance(bdef, dict) and bdef.get("variations"):
+            return [str(x) for x in bdef["variations"]]
+        return [vid for vid in variations if vid.lower() != branch_id.lower()]
+
+    # index de tri par variation (constant par libellé — exigence SortByColumn)
+    var_order: dict = {}
+    idx = 1 if fp_incl_base else 0
+    for vid, tpl in variations.items():
+        if isinstance(tpl, dict) and tpl.get("inFieldParameter"):
+            var_order[vid] = idx
+            idx += 1
+
+    # ---- parse du fichier des mesures ---------------------------------------
+    src_path = tables_dir / (target_table + ".tmdl")
+    if not src_path.exists():
+        raise SystemExit(f"Table cible introuvable : {src_path}")
+    text = src_path.read_text(encoding="utf-8")
+    chunks = split_members(text)
+
+    existing: dict = {}      # nom -> {chunk_idx, info}
+    for ci, (kind, ctext) in enumerate(chunks):
+        if kind == "measure":
+            info = measure_info(ctext)
+            if info["name"]:
+                existing[info["name"]] = {"idx": ci, **info}
+
+    # mesures de base : sans annotation, displayFolder == sourceFolder.
+    # L'ordre fixé ici devient l'ordre des KPI dans les paramètres de champ
+    # (kpi_order plus bas) : il doit suivre le tri de Power BI, pas l'ordinal.
+    bases = sorted(
+        (n for n, e in existing.items()
+         if not e["annotation"]
+         and (source_folder is None
+              or (e["folder"] or "").lower() == source_folder.lower())),
+        key=sort_key_pbi,
+    )
+    if not bases:
+        raise SystemExit(f"Aucune mesure de base dans '{target_table}' "
+                         f"(dossier '{source_folder}').")
+
+    # portées manquantes : déduites du DAX des bases si l'option est active
+    kpi_tables = complete_kpi_tables(kpi_tables, existing, bases,
+                                     kpi_tables_auto, log)
+
+    # ---- compute : les specs de toutes les mesures générées ------------------
+    created, updated, unchanged, skipped, removed = [], [], [], [], []
+    planned: dict = {}       # tag -> spec {name, dax, fmt, folder, desc, data_cat}
+    planned_names: dict = {} # nom de mesure -> tag propriétaire (dédup par NOM)
+    fp_rows: list = []       # [affichage, réf DAX, tri, KPI, calcul, branche]
+    # (KPI, branche) -> nom RÉEL de la mesure du KPI dans cette branche, tel que
+    # la 1re passe l'a générée. C'est ce que {kpiRef} rend en branche : on ne
+    # suppose PAS « <KPI> <branche> », car le namePattern d'une branche est
+    # librement configurable (« {base} cumul », « YTD {base} »…).
+    kpi_branch_ref: dict = {}
+
+    def process(base_name, base_fmt, base_folder, kpi_lbl, vid, tpl,
+                fp_label, fp_branch, pass_folder_pattern, branch_id, fp_group=2):
+        """Port de processVariation : calcule la spec + la rangée paramètre.
+        `fp_group` = groupe de tri de la rangée (2 = variation de KPI ; 1 =
+        cible). Retourne (nom, format, dossier) ou None."""
+        delta_scale = "100" if has_scaling_percent(base_fmt) else "1"
+
+        def expand(s):
+            if s is None:
+                return None
+            # {kpi}    = le KPI RACINE, sans branche (« Weight ») — un libellé.
+            # {kpiRef} = la mesure du KPI dans la MÊME branche que la base
+            # courante : [Weight] en Réel, [Weight YTD] en branche YTD. Pour une
+            # base normale, {kpiRef} == {baseRef} ; pour une cible « Weight cible
+            # YTD », {kpiRef}=[Weight YTD] donne l'écart réel−cible COHÉRENT
+            # ({kpiRef} - {baseRef}). Écrire « [{kpi}] » à la place compare le
+            # réel COURANT à la cible YTD — les deux côtés doivent être en YTD.
+            # Le nom vient de la 1re passe (kpi_branch_ref), pas d'un suffixe
+            # supposé ; repli sur « <KPI> <branche> » si la branche n'a rien
+            # produit pour ce KPI.
+            kpi_ref_name = kpi_lbl or ""
+            if branch_id:
+                kpi_ref_name = kpi_branch_ref.get(
+                    (kpi_lbl, branch_id), kpi_ref_name + " " + branch_id)
+            kpi_ref = bracket(kpi_ref_name)
+            s = (s.replace("{baseRef}", bracket(base_name))
+                  .replace("{kpiRef}", kpi_ref)
+                  .replace("{base}", base_name)
+                  .replace("{kpi}", kpi_lbl or "")
+                  .replace("{date}", date_column)
+                  .replace("{variation}", vid)
+                  .replace("{deltaScale}", delta_scale))
+            # attributs codés en dur : <<label>> -> valeur pour ce KPI (si trouvée ;
+            # sinon le jeton reste et process() saute la mesure en avertissant)
+            for label, valmap in hc.items():
+                tok = "<<" + label + ">>"
+                v = valmap.get(kpi_lbl)
+                if tok in s and v is not None:
+                    s = s.replace(tok, v)
+            # portée par KPI (config, pas Excel) : les cibles héritent de celle
+            # de LEUR KPI, puisque kpi_lbl vaut le KPI même pour « Weight cible »
+            portee = kpi_tables.get(kpi_lbl)
+            for label, v in kpi_table_tokens(portee).items():
+                s = s.replace("<<" + label + ">>", v)
+            # jeton générique : la fonction DAX vient de TOI, on ne fait que la
+            # répéter par table (<<each ALLSELECTED({table})>>)
+            s = expand_each(s, portee)
+            return s
+
+        name = expand(tpl.get("namePattern"))
+        dax = expand(token_to_text(tpl.get("dax")))
+        desc = expand(token_to_text(tpl.get("description")))
+        fmt = resolve_format(tpl.get("formatString"), base_fmt,
+                             delta_symbols, delta_fallback)
+        if not name or not dax:
+            log(f"⚠ variation '{vid}' sans namePattern ou dax — ignorée.")
+            return None
+        if "<<" in dax or "<<" in (name or ""):
+            missing = re.findall(r"<<([^>]+)>>", dax + " " + (name or ""))
+            quoi = "portée" if any("each" in x or "able" in x for x in missing) else missing
+            log(f"⚠ « {name} » non générée : {quoi} sans valeur pour "
+                f"« {kpi_lbl} » — remplis sa colonne dans TD_Indicateurs, ou "
+                f"coche « déduire du DAX » (Réglages globaux → Portée par KPI).")
+            return None
+
+        folder_var = tpl.get("folderVariation") or vid
+        default_folder = (pass_folder_pattern
+                          .replace("{baseFolder}", base_folder or "")
+                          .replace("{base}", base_name)
+                          .replace("{variation}", folder_var)
+                          .replace("{kpi}", kpi_lbl or "")
+                          .replace("{branch}", branch_id or ""))
+        folder = ((tpl.get("displayFolder") or "{folder}")
+                  .replace("{folder}", default_folder)
+                  .replace("{baseFolder}", base_folder or "")
+                  .replace("{base}", base_name)
+                  .replace("{variation}", folder_var)
+                  .replace("{kpi}", kpi_lbl or "")
+                  .replace("{branch}", branch_id or ""))
+
+        tag = base_name + "|" + vid
+
+        # rangée du paramètre (mêmes libellés en branche : colonne Branche
+        # distingue). Clé de tri (groupe, sous-rang) en position 2 : la base et
+        # les cibles se placent AVANT les variations du KPI, identiquement dans
+        # toutes les branches (voir le tri « rang KPI-puis-calcul » plus bas).
+        if tpl.get("inFieldParameter") and fp_label is not None:
+            fp_rows.append([fp_label, bracket(name), (fp_group, var_order[vid]),
+                            kpi_lbl, fp_label, fp_branch])
+
+        prev = existing.get(name)
+        if prev is not None and not prev["annotation"]:
+            # collision avec une mesure NON générée : ne pas y toucher
+            log(f"⚠ '{name}' existe mais n'est pas générée — ignorée.")
+            skipped.append(name)
+            return (name, prev["format"], prev["folder"])
+        if prev is not None and not overwrite:
+            skipped.append(name)
+            return (name, prev["format"], prev["folder"])
+
+        # dédup par NOM : dans le modèle les noms de mesures sont UNIQUES.
+        # La passe de base et une passe de branche peuvent viser le même nom
+        # quand le namePattern est invariant par branche (utilise {kpi} au lieu
+        # de {base} — ex. une mesure « direction / libellé du KPI »). On ne
+        # garde que la 1re (la base) ; les suivantes sont ignorées. Sinon deux
+        # blocs TMDL de même nom -> Power BI refuse de charger le modèle. (Le
+        # csx ne le voyait pas : le modèle vivant écrasait la même mesure.)
+        owner = planned_names.get(name)
+        if owner is not None and owner != tag:
+            log(f"⚠ « {name} » déjà générée par « {owner.split('|', 1)[1]} » — "
+                f"variante « {vid} »" + (f" (branche {branch_id})" if branch_id else "")
+                + " ignorée : même nom (namePattern en {kpi}, invariant par branche ?).")
+            return (name, fmt, folder)
+
+        planned[tag] = {
+            "name": name, "dax": dax, "fmt": fmt, "folder": folder,
+            "desc": desc, "data_cat": tpl.get("dataCategory") or None,
+        }
+        planned_names[name] = tag
+        return (name, fmt, folder)
+
+    # -- 1re passe : bases × variations (KPI, puis cibles) --
+    # Portée par variation (contrôlée dans l'UI) : une variation va aux KPI
+    # (appliesToKpi, défaut True), aux cibles (appliesToCibles, défaut False),
+    # ou aux deux. Les cibles ne reçoivent donc QUE ce qui est coché « aux
+    # cibles » — typiquement l'écart réel−cible ({kpiRef} - {baseRef}), pas les
+    # 7d avg / sparkline. Les écarts, eux, ne vont pas aux KPI (ils vaudraient 0).
+    kpi_vids   = [vid for vid, tpl in variations.items()
+                  if isinstance(tpl, dict) and tpl.get("appliesToKpi", True)]
+    cible_vids = [vid for vid, tpl in variations.items()
+                  if isinstance(tpl, dict) and tpl.get("appliesToCibles", False)]
+
+    branch_bases: list = []   # (nom, fmt, dossier, kpi, branche, hors_param, préfixe, vids_autorisés)
+    filtres_format: dict = {}  # variation -> bases écartées par appliesToFormats
+
+    def run_base(base_name, base_fmt, base_folder, kpi_lbl, base_calcul,
+                 calc_prefix, allowed_vids):
+        """Décline UNE base dans les variations `allowed_vids` (et prépare ses
+        branches). Sert aux KPI comme aux cibles :
+        - `kpi_lbl`   : valeur Indicateur du paramètre — le VRAI KPI, même pour
+                        une cible (« Weight » pour « Weight cible ») ;
+        - `base_calcul` : libellé Calcul de la base (« Réel » ou « Cible ») ;
+        - `calc_prefix` : préfixe des Calcul de variations (« » ou « Cible ») ;
+        - `allowed_vids` : variations à générer (kpi_vids ou cible_vids)."""
+        # groupes de tri : base KPI = 0, cible (base+variations) = 1, variations
+        # du KPI = 2 -> la cible se range en 2e, avant les variations, partout.
+        is_cible = bool(calc_prefix)
+        base_group = 1 if is_cible else 0
+        var_group  = 1 if is_cible else 2
+        if fp_incl_base:
+            fp_rows.append([base_calcul, bracket(base_name), (base_group, 0),
+                            kpi_lbl, base_calcul, fp_nobranch])
+        for vid in allowed_vids:
+            tpl = variations.get(vid)
+            if not isinstance(tpl, dict):
+                log(f"⚠ variation '{vid}' n'est pas un objet — ignorée.")
+                continue
+            # filtres : la mesure n'est pas créée du tout
+            if not base_retenue(tpl, base_fmt, base_name, kpi_lbl):
+                filtres_format.setdefault(vid, []).append(base_name)
+                continue
+            is_branch = vid in branches
+            result = process(base_name, base_fmt, base_folder, kpi_lbl, vid, tpl,
+                             None if is_branch else (calc_prefix + vid), fp_nobranch,
+                             branch_folder_pattern if is_branch else folder_pattern,
+                             vid if is_branch else None, var_group)
+            if result and is_branch:
+                # mémorise la mesure de branche du KPI (jamais celle d'une
+                # cible : {kpiRef} doit rendre [Weight YTD], pas [Weight cible YTD])
+                if not is_cible:
+                    kpi_branch_ref[(kpi_lbl, vid)] = result[0]
+                if tpl.get("inFieldParameter"):
+                    fp_rows.append([base_calcul, bracket(result[0]), (base_group, 0),
+                                    kpi_lbl, base_calcul, vid])
+                branch_bases.append((result[0], result[1], result[2],
+                                     kpi_lbl, vid, False, calc_prefix, allowed_vids))
+
+    for base in bases:
+        run_base(base, existing[base]["format"], existing[base]["folder"],
+                 base, fp_base_lbl, "", kpi_vids)
+
+    if filtres_format:
+        for vid, ecartes in sorted(filtres_format.items()):
+            log(f"« {vid} » : {len(ecartes)} base(s) écartée(s) par le filtre de "
+                f"format/nom ({', '.join(sorted(ecartes))}).")
+
+    # -- mesure switch + ses variations (jamais dans les paramètres) --
+    if sw_enabled:
+        sw_lines = ["SWITCH(", "    SELECTEDVALUE(" + sw_selector + "),"]
+        for b in bases:
+            sw_lines.append('    "' + dax_str(b) + '", ' + bracket(b) + ",")
+        sw_lines.append("    BLANK()")
+        sw_lines.append(")")
+        sw_tag = "switch|" + sw_name
+        sw_prev = existing.get(sw_name)
+        if sw_prev is not None and not sw_prev["annotation"]:
+            log(f"⚠ '{sw_name}' existe mais n'est pas générée — switch ignoré.")
+            sw_enabled = False
+    if sw_enabled:
+        sw_spec = {
+            "name": sw_name, "dax": "\n".join(sw_lines), "folder": sw_folder,
+            "desc": None, "data_cat": None,
+        }
+        if sw_dyn:
+            fmt_lines = ["SWITCH(", "    SELECTEDVALUE(" + sw_selector + "),"]
+            for b in bases:
+                if existing[b]["format"]:
+                    fmt_lines.append('    "' + dax_str(b) + '", "'
+                                     + dax_str(existing[b]["format"]) + '",')
+            fmt_lines.append('    "' + dax_str(sw_fmt) + '"')
+            fmt_lines.append(")")
+            sw_spec["fmt"] = None
+            sw_spec["dyn_fmt"] = "\n".join(fmt_lines)   # à valider au 1er usage
+        else:
+            sw_spec["fmt"] = sw_fmt
+        planned[sw_tag] = sw_spec
+        planned_names[sw_name] = sw_tag
+
+        for vid in kpi_vids:                 # le switch suit la portée « KPI »
+            tpl = variations.get(vid)
+            if not isinstance(tpl, dict):
+                continue
+            if not base_retenue(tpl, sw_fmt, sw_name):
+                continue
+            is_branch = vid in branches
+            result = process(sw_name, sw_fmt, sw_folder, sw_name, vid, tpl,
+                             None, fp_nobranch,
+                             branch_folder_pattern if is_branch else folder_pattern,
+                             vid if is_branch else None)
+            if result and is_branch:
+                branch_bases.append((result[0], result[1], result[2],
+                                     sw_name, vid, True, "", kpi_vids))
+
+    # -- mesures « cibles » : bases SUPPLÉMENTAIRES d'un dossier dédié ---------
+    # L'utilisateur crée à la main la cible RACINE par KPI (ex. « Weight cible »,
+    # DAX spécifique : value-at-close…). Le générateur la décline en TOUTES les
+    # variations, comme un KPI (elles enveloppent [Weight cible] ; « Weight cible
+    # YTD » = CALCULATE([Weight cible], DATESYTD)). Au paramètre : Indicateur = le
+    # KPI (Weight), Calcul = « Cible » / « Cible 7d avg »… (préfixé pour ne pas
+    # collisionner avec les Calcul du KPI), Branche gérée comme d'habitude.
+    bases_by_len = sorted(bases, key=len, reverse=True)   # plus long préfixe d'abord
+    var_branch_suffixes = list(variations) + list(branches)
+    for spec in (config.get("kpiMeasureFolders") or []):
+        if not isinstance(spec, dict):
+            continue
+        cfolder = (spec.get("folder") or "").strip()
+        calcul  = spec.get("calcul") or cfolder or "Cible"
+        if not cfolder:
+            continue
+        if source_folder and cfolder.lower() == source_folder.lower():
+            log(f"⚠ kpiMeasureFolders : « {cfolder} » est le dossier des bases — ignoré.")
+            continue
+        found = 0
+        cnames = sorted((n for n, e in existing.items()
+                         if not e["annotation"] and folder_matches(e["folder"], cfolder)),
+                        key=sort_key_pbi)
+        for cname in cnames:
+            # on ne décline QUE la cible RACINE : on saute ce qui ressemble déjà
+            # à une variation/branche (le générateur les crée lui-même)
+            if any(cname.endswith(" " + s) for s in var_branch_suffixes):
+                log(f"⚠ « {cname} » ressemble à une variation/branche — ignorée. "
+                    f"Ne mets que la cible RACINE (« <KPI> cible ») dans le dossier ; "
+                    f"le générateur décline le reste.")
+                continue
+            kpi = match_kpi(cname, bases_by_len)
+            if kpi is None:
+                log(f"⚠ cible « {cname} » : aucun KPI ne correspond au préfixe — ignorée.")
+                continue
+            e = existing[cname]
+            run_base(cname, e["format"], e["folder"], kpi, calcul, calcul + " ",
+                     cible_vids)
+            found += 1
+        if found:
+            log(f"Cibles ({cfolder}) : {found} cible(s) racine déclinée(s) en variations "
+                f"(Indicateur = KPI, Calcul « {calcul}… »).")
+        else:
+            seen_folders = sorted({e["folder"] for e in existing.values()
+                                   if e["folder"] and not e["annotation"]})
+            log(f"⚠ Cibles ({cfolder}) : AUCUNE cible racine trouvée dans « {target_table} ». "
+                f"Vérifie : (1) tes cibles sont dans cette table ; (2) leur dossier "
+                f"correspond ; (3) leur nom commence par un KPI de base (ex. "
+                f"« Weight cible »). Dossiers présents : {', '.join(seen_folders) or '(aucun)'}.")
+
+    # -- 2e passe : branches (KPI, switch ET cibles) --
+    for bname, bfmt, bfolder, bkpi, branch_id, no_fp, calc_prefix, allowed_vids in branch_bases:
+        bdef = branches.get(branch_id)
+        allowed_set = set(allowed_vids)          # portée de la base (KPI ou cible)
+        for vid in branch_variation_ids(branch_id, bdef):
+            if vid not in allowed_set:            # respecte aux KPI / aux cibles
+                continue
+            if vid.lower() == branch_id.lower():
+                log(f"⚠ branche '{branch_id}' : ne peut pas s'appliquer à elle-même.")
+                continue
+            tpl = variations.get(vid)
+            if not isinstance(tpl, dict):
+                log(f"⚠ branche '{branch_id}' : variation inconnue '{vid}'.")
+                continue
+            # mêmes filtres en branche (le nom de branche contient le KPI,
+            # donc exclusion comme inclusion l'attrapent aussi)
+            if not base_retenue(tpl, bfmt, bname, bkpi):
+                continue
+            process(bname, bfmt, bfolder, bkpi, vid, tpl,
+                    None if no_fp else (calc_prefix + vid), branch_id, folder_pattern,
+                    branch_id, 1 if calc_prefix else 2)
+
+    # ---- classement des specs vs l'existant ----------------------------------
+    def normalized(block_text):
+        """Bloc sans lineageTag ni espaces de fin (comparaison « inchangée »)."""
+        return re.sub(r"^\t\tlineageTag: .*\n", "", block_text, flags=re.M).rstrip()
+
+    new_chunks_by_tag: dict = {}
+    for tag, spec in planned.items():
+        prev = existing.get(spec["name"])
+        lineage = (prev or {}).get("lineage") or str(uuid.uuid4())
+        block = measure_block(spec["name"], spec["dax"], spec.get("fmt"),
+                              spec["folder"], spec["desc"], tag,
+                              spec.get("data_cat"), lineage)
+        if spec.get("dyn_fmt"):
+            lines = block.split("\n")
+            anchor = next(i for i, l in enumerate(lines) if l.startswith("\t\tlineageTag:"))
+            lines[anchor:anchor] = dyn_format_lines(spec["dyn_fmt"])
+            block = "\n".join(lines)
+        new_chunks_by_tag[tag] = block
+        if prev is None:
+            created.append(spec["name"])
+        elif normalized(chunks[prev["idx"]][1]) == normalized(block):
+            unchanged.append(spec["name"])
+        else:
+            updated.append(spec["name"])
+
+    # ---- reconstruction du fichier des mesures --------------------------------
+    kept: list = []
+    for kind, ctext in chunks:
+        if kind == "measure":
+            info = measure_info(ctext)
+            tag = info["annotation"]
+            if tag:
+                if tag in planned:
+                    continue          # remplacée par la version recalculée
+                if remove_orphans:
+                    removed.append(info["name"])
+                    continue          # orpheline supprimée
+                # orpheline conservée telle quelle
+        kept.append([kind, ctext])
+
+    # insertion : après la dernière mesure conservée, sinon avant la 1re partition
+    insert_at = None
+    for i, (kind, _) in enumerate(kept):
+        if kind == "measure":
+            insert_at = i + 1
+    if insert_at is None:
+        insert_at = next((i for i, (k, _) in enumerate(kept) if k == "partition"),
+                         len(kept))
+
+    gen_blocks = [new_chunks_by_tag[t] + "\n" for t in planned]
+    new_text = ("".join(c for _, c in kept[:insert_at])
+                + "".join(gen_blocks)
+                + "".join(c for _, c in kept[insert_at:]))
+    new_text = re.sub(r"\n{3,}", "\n\n", new_text).rstrip() + "\n"
+
+    # ---- tables paramètre ------------------------------------------------------
+    fp_statuses: list = []
+    fp_writes: list = []      # (path, contenu)
+    model_refs_needed: list = []
+    if fp_enabled and fp_rows:
+        kpi_order = {b: i for i, b in enumerate(bases)}
+        fp_rows_kpi = [[r[3], r[1], kpi_order[r[3]], r[3], r[4], r[5]] for r in fp_rows]
+
+        # rang unique KPI-puis-(groupe, sous-rang) : chaque rangée porte en
+        # position 2 une clé (groupe, sous-rang) — base=0, cible=1, variations
+        # KPI=2 — donc la cible se range en 2e AVANT les variations, à
+        # l'identique dans toutes les branches (l'ancien tri par ordre
+        # d'insertion plaçait la cible différemment selon la branche). `i`
+        # départage de façon stable.
+        order_idx = sorted(range(len(fp_rows)),
+                           key=lambda i: (kpi_order[fp_rows[i][3]], fp_rows[i][2], i))
+        for rank, i in enumerate(order_idx):
+            fp_rows[i][2] = rank
+
+        def build_expr(rows, kpi_base_display, kpi_label=False):
+            """`kpi_base_display` : la rangée de BASE porte le libellé du KPI
+            (table « base = libellé »). `kpi_label` : TOUTES les rangées le
+            portent (table « par KPI » — c'est le KPI qu'on y choisit, donc on
+            affiche son libellé lisible, pas le nom de la mesure)."""
+            lines = []
+            for disp0, ref, order, kpi, calc, branch in rows:
+                if (kpi_label or (kpi_base_display and calc == fp_base_lbl)) \
+                        and lkp_ok:
+                    disp = ("LOOKUPVALUE(" + lkp_lbl_ref + ", " + lkp_key_ref
+                            + ', "' + dax_str(kpi) + '")')
+                else:
+                    disp = '"' + dax_str(disp0) + '"'
+                lines.append('    (' + disp + ", NAMEOF(" + ref + "), " + str(order)
+                             + ', "' + dax_str(kpi) + '", "' + dax_str(calc)
+                             + '", "' + dax_str(branch) + '")')
+            return "{\n" + ",\n".join(lines) + "\n}"
+
+        targets = ([(n, build_expr(fp_rows, False)) for n in fp_tables]
+                   + [(n, build_expr(fp_rows_kpi, False, kpi_label=fp_kpi_label))
+                      for n in fp_tables_kpi]
+                   + [(n, build_expr(fp_rows, True)) for n in fp_tables_base])
+
+        for tname, expr in targets:
+            tpath = tables_dir / (tname + ".tmdl")
+            indented = "\n".join("\t\t\t\t" + l for l in expr.split("\n"))
+            if tpath.exists():
+                ttext = tpath.read_text(encoding="utf-8")
+                m = SOURCE_BLOCK_RE.search(ttext)
+                if not m:
+                    fp_statuses.append(f"⚠ {tname} : bloc `source =` introuvable — non modifiée")
+                    continue
+                new_ttext = ttext[: m.start(2)] + indented + "\n" + ttext[m.end(2):]
+                new_ttext = re.sub(r"\n{3,}", "\n\n", new_ttext)
+                if new_ttext != ttext:
+                    fp_writes.append((tpath, new_ttext))
+                    fp_statuses.append(f"{tname} — expression mise à jour ({len(fp_rows)} rangées)")
+                else:
+                    fp_statuses.append(f"{tname} — inchangée ({len(fp_rows)} rangées)")
+            else:
+                content = param_table_file(tname, expr, fp_kpi_col, fp_calc_col,
+                                           fp_branch_col, {})
+                fp_writes.append((tpath, content))
+                model_refs_needed.append(tname)
+                fp_statuses.append(f"{tname} — CRÉÉE ({len(fp_rows)} rangées) — penser à la "
+                                   f"relation TD → {fp_kpi_col} à créer une fois dans Desktop)")
+
+    # ---- résumé / écriture -----------------------------------------------------
+    log(f"{len(bases)} mesure(s) de base : " + ", ".join(bases))
+    log(f"Mesures générées : {len(created)} à créer, {len(updated)} à mettre à jour, "
+        f"{len(unchanged)} inchangée(s), {len(skipped)} ignorée(s), "
+        f"{len(removed)} orpheline(s) supprimée(s)")
+    for s in fp_statuses:
+        log("Paramètre : " + s)
+    for n in created:
+        log("  + " + n)
+    for n in updated:
+        log("  ~ " + n)
+    for n in removed:
+        log("  - " + n)
+
+    stats = {"bases": bases, "created": created, "updated": updated,
+             "unchanged": unchanged, "skipped": skipped, "removed": removed,
+             "fp_statuses": fp_statuses, "dry_run": bool(dry_run)}
+
+    if dry_run:
+        log("*** DRY_RUN : aucun fichier modifié ***")
+        return stats
+
+    # backup puis écriture
+    stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    backup_dir = model_dir.parent / "_tmdl_backups" / stamp
+    to_write = [(src_path, new_text)] + fp_writes
+    model_path = model_dir / "definition" / "model.tmdl"
+    if model_refs_needed:
+        mtext = model_path.read_text(encoding="utf-8")
+        add = "".join("ref table " + quote_tmdl(t) + "\n"
+                      for t in model_refs_needed
+                      if re.search(r"^ref table " + re.escape(quote_tmdl(t)) + r"\s*$",
+                                   mtext, re.M) is None)
+        if add:
+            if "\nref cultureInfo" in mtext:
+                mtext = mtext.replace("\nref cultureInfo", "\n" + add + "\nref cultureInfo", 1)
+            else:
+                mtext = mtext.rstrip() + "\n" + add
+            to_write.append((model_path, mtext))
+
+    backup_dir.mkdir(parents=True, exist_ok=True)
+    for path, _ in to_write:
+        if path.exists():
+            (backup_dir / path.name).write_text(path.read_text(encoding="utf-8"),
+                                                encoding="utf-8")
+    for path, content in to_write:
+        path.write_text(content, encoding="utf-8")
+    log(f"Écrit : {', '.join(p.name for p, _ in to_write)}  (backup : {backup_dir.name})")
+    log("Rouvre le .pbip dans Power BI Desktop pour charger le nouveau modèle.")
+    return stats
+
+
+def main() -> None:
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+    if not CONFIG_PATH.exists():
+        raise SystemExit(f"Config introuvable : {CONFIG_PATH}")
+    config = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
+    generate(PBIP_DIR / (PROJECT + ".SemanticModel"), config)
+
+
+if __name__ == "__main__":
+    main()

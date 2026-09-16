@@ -1,0 +1,34 @@
+{
+  "_comment": "Mesures SVG autonomes (sans UDF) générées par create_svg_measures.csx. Chaque recette = un fichier svg_recipes/<recipe>.dax avec des placeholders <<...>>. Les settings absents prennent les défauts du script.",
+  "settings": {
+    "recipesFolder": "svg_recipes",
+    "overwriteExisting": true,
+    "dataCategory": "ImageUrl"
+  },
+  "measures": [
+    {
+      "name": "Shaded Between (autonome)",
+      "table": "dim_Date",
+      "displayFolder": "SVG",
+      "recipe": "ShadedBetween",
+      "ma1": "[Weight MA1]",
+      "ma2": "[Weight MA2]",
+      "binColumn": "dim_Date[1 month]",
+      "anchorColumn": "dim_Date[Date]",
+      "settings": {
+        "W": 300,
+        "H": 100,
+        "Pad": 5,
+        "YPad": 0.05,
+        "Above": "#2E7D32",
+        "Below": "#C62828",
+        "FillOp": 0.25,
+        "MA1W": 4,
+        "MA1Op": 0.9,
+        "MA2C": "#000000",
+        "MA2W": 3,
+        "MA2Dash": "4,4"
+      }
+    }
+  ]
+}

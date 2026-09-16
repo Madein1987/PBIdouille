@@ -1,0 +1,123 @@
+// ================================================================
+//  RECETTE ShadedBetween (gabarit pour create_svg_measures.csx)
+//  Les placeholders (chevrons doubles) sont remplis par le script
+//  depuis le JSON. Délimiteur chevrons et non accolades : le DAX a
+//  déjà des { ad }. Les VAR de réglages restent éditables ensuite.
+// ================================================================
+
+// ---------- RÉGLAGES ----------
+VAR _W      = <<W>>          // largeur px
+VAR _H      = <<H>>          // hauteur px
+VAR _Pad    = <<Pad>>        // marge autour (px)
+VAR _YPad   = <<YPad>>       // marge verticale (fraction de l'amplitude)
+VAR _Above  = "<<Above>>"    // MA1 AU-DESSUS de MA2 (vert)
+VAR _Below  = "<<Below>>"    // MA1 EN-DESSOUS de MA2 (rouge)
+VAR _FillOp = <<FillOp>>     // opacité du remplissage
+VAR _MA1W   = <<MA1W>>       // épaisseur ligne MA1
+VAR _MA1Op  = <<MA1Op>>      // opacité ligne MA1
+VAR _MA2C   = "<<MA2C>>"     // couleur ligne MA2
+VAR _MA2W   = <<MA2W>>       // épaisseur ligne MA2
+VAR _MA2Dash = "<<MA2Dash>>" // tirets MA2 ("" = ligne pleine)
+
+VAR _AboveE = SUBSTITUTE ( _Above, "#", "%23" )
+VAR _BelowE = SUBSTITUTE ( _Below, "#", "%23" )
+VAR _MA2E   = SUBSTITUTE ( _MA2C,  "#", "%23" )
+
+// ---------- SÉRIES & AXE ----------
+VAR BaseBins = SELECTCOLUMNS ( VALUES ( <<binColumn>> ), "BinDate", <<binColumn>> )
+VAR Bins0 = ADDCOLUMNS ( BaseBins, "AnchorDay", CALCULATE ( MAX ( <<anchorColumn>> ) ) )
+VAR BinsWithValues =
+    ADDCOLUMNS (
+        Bins0,
+        "V1", VAR ad = [AnchorDay] RETURN CALCULATE ( <<ma1>>, KEEPFILTERS ( TREATAS ( { ad }, <<anchorColumn>> ) ) ),
+        "V2", VAR ad = [AnchorDay] RETURN CALCULATE ( <<ma2>>, KEEPFILTERS ( TREATAS ( { ad }, <<anchorColumn>> ) ) )
+    )
+VAR ValidBins = FILTER ( BinsWithValues, NOT ISBLANK ( [AnchorDay] ) && NOT ISBLANK ( [V1] ) && NOT ISBLANK ( [V2] ) )
+VAR HasData = COUNTROWS ( ValidBins ) > 1
+
+// ---------- ÉCHELLES ----------
+VAR XMinDate = MINX ( ValidBins, [BinDate] )
+VAR XMaxDate = MAXX ( ValidBins, [BinDate] )
+VAR XSpanSafe = IF ( XMaxDate - XMinDate = 0, 1, XMaxDate - XMinDate )
+VAR YMinValue = MINX ( ValidBins, MIN ( [V1], [V2] ) )
+VAR YMaxValue = MAXX ( ValidBins, MAX ( [V1], [V2] ) )
+VAR YSpanSafe = IF ( YMaxValue - YMinValue = 0, 1, YMaxValue - YMinValue )
+VAR YMinPadded = YMinValue - ( YSpanSafe * _YPad )
+VAR YSpanPadded = ( YMaxValue + YSpanSafe * _YPad ) - YMinPadded
+
+VAR Pxy =
+    ADDCOLUMNS (
+        ValidBins,
+        "X", _W * DIVIDE ( [BinDate] - XMinDate, XSpanSafe, 0 ),
+        "Y1", _H - ( _H * DIVIDE ( [V1] - YMinPadded, YSpanPadded, 0 ) ),
+        "Y2", _H - ( _H * DIVIDE ( [V2] - YMinPadded, YSpanPadded, 0 ) )
+    )
+VAR P = ADDCOLUMNS ( Pxy, "Idx", RANKX ( Pxy, [BinDate], , ASC, Dense ), "Delta", [Y2] - [Y1] )
+VAR MaxIdx = MAXX ( P, [Idx] )
+VAR Segments = FILTER ( P, [Idx] < MaxIdx )
+VAR SegWithNext =
+    ADDCOLUMNS (
+        Segments,
+        "X2",   MAXX ( FILTER ( P, [Idx] = EARLIER ( [Idx] ) + 1 ), [X] ),
+        "Y1_2", MAXX ( FILTER ( P, [Idx] = EARLIER ( [Idx] ) + 1 ), [Y1] ),
+        "Y2_2", MAXX ( FILTER ( P, [Idx] = EARLIER ( [Idx] ) + 1 ), [Y2] ),
+        "D2",   MAXX ( FILTER ( P, [Idx] = EARLIER ( [Idx] ) + 1 ), [Delta] )
+    )
+VAR CrossRaw =
+    ADDCOLUMNS (
+        SegWithNext,
+        "HasCross", ( [Delta] = 0 ) || ( [D2] = 0 ) || ( SIGN ( [Delta] ) <> SIGN ( [D2] ) ),
+        "t_in", VAR d1 = [Delta] VAR d2 = [D2] RETURN DIVIDE ( d1, d1 - d2 )
+    )
+VAR CrossPoints =
+    FILTER (
+        ADDCOLUMNS (
+            CrossRaw,
+            "Xc", VAR d1 = [Delta] VAR d2 = [D2] VAR t = DIVIDE ( d1, d1 - d2 ) RETURN [X] + t * ( [X2] - [X] ),
+            "Yc", VAR d1 = [Delta] VAR d2 = [D2] VAR t = DIVIDE ( d1, d1 - d2 ) RETURN [Y1] + t * ( [Y1_2] - [Y1] )
+        ),
+        [HasCross] && [t_in] > 0 && [t_in] < 1
+    )
+VAR P_Cross =
+    UNION (
+        SELECTCOLUMNS ( CrossPoints, "X", [Xc], "Y1", [Yc], "Y2", [Yc], "Idx", [Idx] + 0.49, "Delta", [Delta] ),
+        SELECTCOLUMNS ( CrossPoints, "X", [Xc], "Y1", [Yc], "Y2", [Yc], "Idx", [Idx] + 0.51, "Delta", [D2] )
+    )
+VAR P_AllRaw = UNION ( SELECTCOLUMNS ( P, "X", [X], "Y1", [Y1], "Y2", [Y2], "Idx", [Idx], "Delta", [Delta] ), P_Cross )
+VAR P_All = ADDCOLUMNS ( P_AllRaw, "Order", RANKX ( P_AllRaw, [Idx], , ASC, Dense ), "Sign", IF ( [Delta] > 0, 1, -1 ) )
+VAR P_WithBreak =
+    ADDCOLUMNS ( P_All, "Break", VAR i = [Order] VAR s = [Sign] VAR prevS = MAXX ( FILTER ( P_All, [Order] = i - 1 ), [Sign] ) RETURN IF ( i = 1 || s <> prevS, 1, 0 ) )
+VAR P_WithRun = ADDCOLUMNS ( P_WithBreak, "RunId", SUMX ( FILTER ( P_WithBreak, [Order] <= EARLIER ( [Order] ) ), [Break] ) )
+VAR P_RunProj = SELECTCOLUMNS ( P_WithRun, "X", [X], "Y1", [Y1], "Y2", [Y2], "Order", [Order], "Sign", [Sign], "RunId", [RunId] )
+VAR Runs = ADDCOLUMNS ( SUMMARIZE ( P_RunProj, [RunId] ), "RunSign", MAXX ( FILTER ( P_RunProj, [RunId] = EARLIER ( [RunId] ) ), [Sign] ) )
+
+VAR Line2Path = "M " & CONCATENATEX ( P_RunProj, INT ( [X] ) & " " & INT ( [Y2] ), " L ", [Order] )
+VAR FillAndMA1 =
+    CONCATENATEX (
+        Runs,
+        VAR rid = [RunId]
+        VAR runColor = IF ( [RunSign] = 1, _AboveE, _BelowE )
+        VAR RunPoints = FILTER ( P_RunProj, [RunId] = rid )
+        VAR TopPts = CONCATENATEX ( RunPoints, INT ( [X] ) & " " & INT ( [Y1] ), " L ", [Order] )
+        VAR BottomPts = CONCATENATEX ( RunPoints, INT ( [X] ) & " " & INT ( [Y2] ), " L ", [Order], DESC )
+        VAR FirstOrder = MINX ( RunPoints, [Order] )
+        VAR FirstX = MAXX ( FILTER ( RunPoints, [Order] = FirstOrder ), [X] )
+        VAR FirstY1 = MAXX ( FILTER ( RunPoints, [Order] = FirstOrder ), [Y1] )
+        VAR FillPath = "<path d='M " & INT ( FirstX ) & " " & INT ( FirstY1 ) & " L " & TopPts & " L " & BottomPts & " Z' fill='" & runColor & "' fill-opacity='" & _FillOp & "' stroke='none' />"
+        VAR MA1Stroke = "<path d='M " & INT ( FirstX ) & " " & INT ( FirstY1 ) & " L " & TopPts & "' fill='none' stroke='" & runColor & "' stroke-opacity='" & _MA1Op & "' stroke-width='" & _MA1W & "' stroke-linecap='round' stroke-linejoin='round' />"
+        RETURN FillPath & MA1Stroke,
+        "",
+        [RunId]
+    )
+VAR DashAttr = IF ( _MA2Dash = "", "", " stroke-dasharray='" & _MA2Dash & "'" )
+
+RETURN
+    IF (
+        NOT HasData,
+        BLANK (),
+        "data:image/svg+xml;utf8,"
+            & "<svg xmlns='http://www.w3.org/2000/svg' viewBox='" & ( - _Pad ) & " " & ( - _Pad ) & " " & ( _W + 2 * _Pad ) & " " & ( _H + 2 * _Pad ) & "'>"
+            & FillAndMA1
+            & "<path d='" & Line2Path & "' fill='none' stroke='" & _MA2E & "' stroke-width='" & _MA2W & "' stroke-opacity='1'" & DashAttr & " stroke-linecap='round' stroke-linejoin='round' />"
+            & "</svg>"
+    )

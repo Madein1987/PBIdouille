@@ -1,0 +1,45 @@
+# Ce dépôt ne contient que l'OUTIL. Le dossier de travail, lui, héberge aussi
+# des projets Power BI, leurs sauvegardes et les livrables — rien de tout ça
+# n'a sa place ici.
+
+# --- projets Power BI (données) ---
+*.pbip
+*.Report/
+*.SemanticModel/
+*.pbix
+TD_Indicateurs.xlsx
+*.xlsx
+
+# --- sauvegardes écrites par l'outil ---
+_tmdl_backups/
+_propagate_backups/
+_wireframe_backups/
+*.bak
+
+# --- état propre à un rapport (jamais partagé) ---
+pbidouille_variations.json
+
+# --- sorties générées ---
+pbi_lineage.csv
+unused_measures.csv
+delete_unused_measures.csx
+
+# --- livrables et archives ---
+outils_pbi_travail_*.zip
+pbi_toolkit_*.zip
+pbi_toolkit_*.7z
+codes.7z
+codes/
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# --- divers ---
+.DS_Store
+Thumbs.db
+
+# --- temporaires OneDrive ---
+.tmp.drive*/
