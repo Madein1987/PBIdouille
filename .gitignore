@@ -19,6 +19,18 @@ _wireframe_backups/
 # --- état propre à un rapport (jamais partagé) ---
 pbidouille_variations.json
 
+# --- hors périmètre : ce dépôt ne porte que l'APPLICATION ---
+# outils autonomes (lignes de commande), scripts Tabular Editor et recettes,
+# qui vivent dans le dossier de travail mais ne font pas partie de l'app
+env_check.py
+gme.py
+scan_lineage.py
+*.csx
+*.dax
+svg_recipes/
+svg_measures_config.json
+measures_config.json
+
 # --- sorties générées ---
 pbi_lineage.csv
 unused_measures.csv

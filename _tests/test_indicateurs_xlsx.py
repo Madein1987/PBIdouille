@@ -26,7 +26,8 @@ import generate_measures as gm                               # noqa: E402
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from _fixture import exiger_projet, PROJET_DEMO   # noqa: E402
 
-exiger_projet(FIT, xlsx="TD_Indicateurs.xlsx")
+exiger_projet(FIT, PROJET_DEMO, "TD_Indicateurs.xlsx",
+              "measures_config.json")
 
 
 PROJ = "Fitbit for random devs"
