@@ -29,6 +29,8 @@ scan_lineage.py
 *.dax
 svg_recipes/
 svg_measures_config.json
+
+# le lanceur du dossier de travail n'est pas celui du depot
 measures_config.json
 
 # --- sorties générées ---

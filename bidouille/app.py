@@ -11,11 +11,14 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-# bidouille\ (pour core, tabs) et Fitbit\ (pour les scripts racine) sur le path,
-# quel que soit le répertoire de lancement.
+# bidouille\ (pour core, tabs) et bidouille\moteurs\ (pour les moteurs
+# d'écriture PBIP) sur le path, quel que soit le répertoire de lancement.
 _APP_DIR = Path(__file__).resolve().parent
-_FITBIT_DIR = _APP_DIR.parent
-for _p in (str(_APP_DIR), str(_FITBIT_DIR)):
+_MOTEURS = _APP_DIR / "moteurs"
+# dossier qui CONTIENT l'app : point de depart des boites de dialogue, et
+# endroit ou l'on cherche un projet a defaut d'en avoir memorise un
+_DOSSIER_PARENT = _APP_DIR.parent
+for _p in (str(_APP_DIR), str(_MOTEURS)):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
@@ -166,7 +169,7 @@ class BidouilleWindow(QMainWindow):
 
     def _load_initial_project(self):
         last = self.settings.value("last_pbip", "")
-        default = _FITBIT_DIR / DEFAULT_PBIP
+        default = _DOSSIER_PARENT / DEFAULT_PBIP
         for cand in (last, str(default)):
             if cand and Path(cand).exists():
                 self._set_project(cand)
@@ -174,7 +177,7 @@ class BidouilleWindow(QMainWindow):
         self.project_label.setText("Aucun projet — clique « Changer de rapport… ».")
 
     def _choose_project(self):
-        start = str(self.project.folder) if self.project else str(_FITBIT_DIR)
+        start = str(self.project.folder) if self.project else str(_DOSSIER_PARENT)
         path, _ = QFileDialog.getOpenFileName(
             self, "Choisir un projet Power BI", start, "Projet Power BI (*.pbip)")
         if path:

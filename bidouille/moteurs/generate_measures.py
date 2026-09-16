@@ -35,6 +35,7 @@ from datetime import datetime
 from pathlib import Path
 
 # réutilise le découpage TMDL éprouvé de unused_measures (mêmes fichiers cibles)
+sys.path.insert(0, str(Path(__file__).resolve().parent))   # moteurs\ voisins
 from unused_measures import MEMBER_RE, MEASURE_NAME_RE, _first_group
 
 # ---------------------------------------------------------------------------

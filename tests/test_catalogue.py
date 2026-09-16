@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """Catalogue de variations + selection par rapport.
 
-    py _tests\\test_catalogue.py
+    py tests\\test_catalogue.py
 
 Le measures_config.json porte TOUTES les variations et voyage d'un rapport a
 l'autre ; chaque rapport choisit les siennes dans pbidouille_variations.json,
@@ -21,8 +21,8 @@ from pathlib import Path
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 FIT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(FIT))
 sys.path.insert(0, str(FIT / "bidouille"))
+sys.path.insert(0, str(FIT / "bidouille" / "moteurs"))
 import generate_measures as gm                               # noqa: E402
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from _fixture import exiger_projet, PROJET_DEMO   # noqa: E402

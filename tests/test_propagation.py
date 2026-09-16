@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """Tests de la propagation (propagate_cf) — à lancer Desktop fermé :
 
-    py _tests\\test_propagation.py
+    py tests\\test_propagation.py
 
 Travaille TOUJOURS sur une copie du projet dans %TEMP%, jamais sur le rapport
 vivant. Sortie : une ligne par vérification, code de sortie 0 si tout passe.
@@ -22,7 +22,8 @@ import tempfile
 from pathlib import Path
 
 FIT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(FIT))
+sys.path.insert(0, str(FIT / "bidouille"))
+sys.path.insert(0, str(FIT / "bidouille" / "moteurs"))
 import propagate_cf as pc                                    # noqa: E402
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from _fixture import exiger_projet, PROJET_DEMO   # noqa: E402

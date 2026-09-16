@@ -25,8 +25,9 @@ def rmtree_force(path) -> None:
         func(p)
     shutil.rmtree(str(path), onerror=onerror)
 
-# scripts racine importables (report_reader est 3 niveaux sous Fitbit\)
-_FITBIT_DIR = Path(__file__).resolve().parent.parent.parent
+# moteurs importables quel que soit le lanceur (core\ et moteurs\ sont
+# deux dossiers frères sous bidouille\).
+_FITBIT_DIR = Path(__file__).resolve().parent.parent / "moteurs"
 if str(_FITBIT_DIR) not in sys.path:
     sys.path.insert(0, str(_FITBIT_DIR))
 

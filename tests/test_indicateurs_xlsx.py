@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """L'Excel des indicateurs est défini UNE fois, dans measures_config.json.
 
-    py _tests\\test_indicateurs_xlsx.py
+    py tests\\test_indicateurs_xlsx.py
 
 Vérifie que le générateur (jetons <<…>>, portée par KPI) ET l'onglet Rapport
 (couleurs des matrices) lisent la MÊME définition — c'était auparavant deux
@@ -20,8 +20,8 @@ from pathlib import Path
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 FIT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(FIT))
 sys.path.insert(0, str(FIT / "bidouille"))
+sys.path.insert(0, str(FIT / "bidouille" / "moteurs"))
 import generate_measures as gm                               # noqa: E402
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from _fixture import exiger_projet, PROJET_DEMO   # noqa: E402

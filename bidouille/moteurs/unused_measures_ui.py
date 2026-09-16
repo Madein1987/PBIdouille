@@ -57,7 +57,7 @@ import unused_measures as um
 # Thème partagé BIdouille (« Dark Teal Pro » : vert néon sur bleu nuit).
 # Fallback : si le dossier bidouille\ n'est pas à côté (copie isolée de
 # ChopChop), on retombe sur l'ancien style autonome (qdarkstyle + rose).
-sys.path.insert(0, str(Path(__file__).resolve().parent / "bidouille"))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 try:
     from core import theme as _theme
 except ImportError:
