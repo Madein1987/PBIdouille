@@ -112,6 +112,10 @@ class BidouilleWindow(QMainWindow):
         self.tabs.addTab(self.tab_chopchop, "ChopChop 🪓")
         v.addWidget(self.tabs, 1)
 
+        # une generation qui ecrit change le modele : les onglets qui le
+        # lisent doivent revoir la liste des KPI, sans rechargement manuel
+        self.tab_config.model_panel.modele_genere.connect(self._apres_generation)
+
         self._tabs = [self.tab_report, self.tab_wireframe, self.tab_config,
                       self.tab_chopchop]
         self._reload_recents()
@@ -126,6 +130,20 @@ class BidouilleWindow(QMainWindow):
                 fn()
 
     # ---- projet ---------------------------------------------------------------
+
+    def _apres_generation(self):
+        """Une generation vient d'ECRIRE dans le modele. Les onglets qui le
+        lisent doivent revoir la liste des KPI — sinon propager juste apres
+        travaillait sur une liste perimee, et il fallait recharger le rapport
+        a la main pour voir un KPI tout neuf.
+
+        On ne rappelle PAS set_project : ca reinitialiserait les choix en cours
+        (KPI template, cases cochees) et, pour l'onglet Mesures, ca ecraserait
+        un config pas encore enregistre."""
+        if not self.project:
+            return
+        self.tab_report.refresh_model()
+        self.tab_chopchop.set_project(self.project)   # reanalyse differee
 
     def _set_project(self, pbip):
         project = Project(pbip)

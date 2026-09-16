@@ -197,12 +197,7 @@ class ReportTab(QWidget):
         self.project = project
         self._refresh_td_label()
 
-        try:
-            kpis = model_reader.kpis(project)
-        except Exception as e:  # RuntimeError (tmdl absent) ou autre
-            kpis = []
-            self.log.appendPlainText("KPI illisibles : " + str(e))
-
+        kpis = self._lire_kpis()
         self.cmb_template.clear()
         self.cmb_template.addItems(kpis)
         if "Total Steps" in kpis:
@@ -213,6 +208,57 @@ class ReportTab(QWidget):
         self._set_enabled(project.valid)
         if not project.valid:
             self.log.appendPlainText("Projet invalide : dossiers .Report/.SemanticModel introuvables.")
+
+    def _lire_kpis(self) -> list:
+        try:
+            return model_reader.kpis(self.project)
+        except Exception as e:      # RuntimeError (tmdl absent) ou autre
+            self.log.appendPlainText("KPI illisibles : " + str(e))
+            return []
+
+    def refresh_model(self):
+        """Relit KPI et branches APRÈS une génération, sans défaire les choix
+        en cours : le KPI template reste sélectionné s'il existe toujours, et
+        les cases déjà décochées le restent. Les nouveautés arrivent cochées.
+
+        Sans ça, il fallait recharger le rapport à la main pour qu'un KPI
+        fraîchement généré apparaisse dans la liste."""
+        if not self.project:
+            return
+        kpis = self._lire_kpis()
+        avant = set(self._checked(self.lst_targets))
+        connus = {self.lst_targets.item(i).text()
+                  for i in range(self.lst_targets.count())}
+        template = self.cmb_template.currentText()
+
+        self.cmb_template.blockSignals(True)
+        self.cmb_template.clear()
+        self.cmb_template.addItems(kpis)
+        if template in kpis:
+            self.cmb_template.setCurrentText(template)
+        self.cmb_template.blockSignals(False)
+
+        # un KPI déjà présent garde son état ; un nouveau arrive coché
+        self._fill_checklist(self.lst_targets, kpis, checked=True)
+        for i in range(self.lst_targets.count()):
+            it = self.lst_targets.item(i)
+            if it.text() in connus and it.text() not in avant:
+                it.setCheckState(Qt.Unchecked)
+
+        branches = model_reader.branches(self.project)
+        b_avant = set(self._checked(self.lst_branches))
+        b_connus = {self.lst_branches.item(i).text()
+                    for i in range(self.lst_branches.count())}
+        self._fill_checklist(self.lst_branches, branches, checked=True)
+        for i in range(self.lst_branches.count()):
+            it = self.lst_branches.item(i)
+            if it.text() in b_connus and it.text() not in b_avant:
+                it.setCheckState(Qt.Unchecked)
+
+        nouveaux = [k for k in kpis if k not in connus]
+        if nouveaux:
+            self.log.appendPlainText(
+                "Liste des KPI rafraîchie — nouveau(x) : " + ", ".join(nouveaux))
 
     # ---- helpers listes cochables --------------------------------------------
 

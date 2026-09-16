@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import json
 
-from qtpy.QtCore import Qt
+from qtpy.QtCore import Qt, Signal
 from qtpy.QtGui import QFont
 from qtpy.QtWidgets import (
     QCheckBox,
@@ -32,6 +32,10 @@ import generate_measures
 
 
 class ModelTab(QWidget):
+    # emis apres une generation qui a REELLEMENT ecrit : les onglets qui
+    # lisent le modele doivent relire la liste des KPI
+    modele_genere = Signal()
+
     def __init__(self):
         super().__init__()
         self.project = None
@@ -147,10 +151,21 @@ class ModelTab(QWidget):
                        remove_orphans=self.chk_orphans.isChecked())
         r.line.connect(self.log.appendPlainText)
         r.fail.connect(lambda m: self.log.appendPlainText("ERREUR : " + m))
+        r.ok.connect(self._apres_succes)
         r.finished.connect(self._done)
+        self._ecriture = not dry
         self._runner = r
         self.btn_generate.setEnabled(False)
         r.start()
+
+    def _apres_succes(self, _resultat):
+        """Génération terminée SANS erreur. Si elle a réellement écrit, le
+        modèle a changé : on prévient l'application pour que les onglets qui
+        lisent le modèle revoient la liste des KPI. Sans ça, propager juste
+        après générait sur une liste périmée — il fallait recharger le rapport
+        à la main pour voir un KPI tout neuf."""
+        if getattr(self, "_ecriture", False):
+            self.modele_genere.emit()
 
     def _done(self):
         self._runner = None
