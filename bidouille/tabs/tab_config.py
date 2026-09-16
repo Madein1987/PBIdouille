@@ -222,38 +222,34 @@ class ConfigTab(QWidget):
         lv.setContentsMargins(0, 0, 0, 0)
         self.lst = QListWidget()
         self.lst.currentTextChanged.connect(self._on_select)
-        self.lst.itemChanged.connect(self._on_variation_checked)
         lv.addWidget(self.lst, 1)
         self.lbl_catalogue = QLabel("")
         self.lbl_catalogue.setWordWrap(True)
         self.lbl_catalogue.setStyleSheet(f"color:{TEXT_DIM};")
         lv.addWidget(self.lbl_catalogue)
-        sel = QHBoxLayout()
-        b_tout = QPushButton("Tout")
-        b_tout.setToolTip("Activer toutes les variations du catalogue\n"
-                          "dans ce rapport.")
-        b_tout.clicked.connect(lambda: self._tout_cocher(True))
-        b_rien = QPushButton("Aucune")
-        b_rien.clicked.connect(lambda: self._tout_cocher(False))
-        sel.addWidget(QLabel("Actives :"))
-        sel.addWidget(b_tout)
-        sel.addWidget(b_rien)
-        sel.addWidget(self._help("Catalogue et sélection", (
-            "La liste ci-dessus est un CATALOGUE : le measures_config.json\n"
-            "les porte toutes et voyage d'un rapport à l'autre.\n\n"
-            "La CASE de chaque ligne dit si la variation est générée dans\n"
-            "CE rapport-ci. Ce choix est écrit dans un petit fichier posé\n"
-            "à côté du .pbip (pbidouille_variations.json), jamais dans le\n"
-            "config — un autre rapport qui réutilise le même catalogue\n"
-            "garde donc sa propre sélection.\n\n"
-            "Décocher une variation ne SUPPRIME pas les mesures déjà\n"
-            "générées : elles deviennent orphelines. Coche « removeOrphans »\n"
-            "(Réglages globaux) si tu veux qu'elles soient retirées.\n\n"
-            "Décocher une variation qui sert de BRANCHE retire aussi la\n"
-            "branche — le journal le dit.\n\n"
-            "Tout coché = aucun fichier de sélection (état par défaut).")))
-        sel.addStretch()
-        lv.addLayout(sel)
+        biblio = QHBoxLayout()
+        b_biblio = QPushButton("Bibliothèque…")
+        b_biblio.setToolTip(
+            "Piocher des variations dans un fichier GLOBAL, hors projet." + chr(10) +
+            "Ce qui est importé entre dans le config de CE rapport.")
+        b_biblio.clicked.connect(self._ouvrir_biblio)
+        biblio.addWidget(b_biblio)
+        biblio.addWidget(self._help("Bibliothèque de variations", (
+            "Un fichier GLOBAL, hors projet, où tu gardes les variations que\n"
+            "tu réutilises d'un rapport à l'autre.\n\n"
+            "IMPORTER copie la variation choisie DANS le measures_config.json\n"
+            "de ce rapport. Le config reste donc autonome : ce qu'il contient\n"
+            "est exactement ce qui sera généré — rien à cocher ni à retenir\n"
+            "projet par projet.\n\n"
+            "PUBLIER fait l'inverse : une variation écrite ici part dans la\n"
+            "bibliothèque pour servir ailleurs.\n\n"
+            "Une variation qui sert de BRANCHE amène son entrée de branche.\n"
+            "Importer une variation déjà présente la REMPLACE (on confirme).\n\n"
+            "Le chemin du fichier est retenu au niveau de l'application, pas\n"
+            "du projet : pose-le sur un lecteur partagé et toute l'équipe y\n"
+            "puise.")))
+        biblio.addStretch()
+        lv.addLayout(biblio)
         row1 = QHBoxLayout()
         for label, slot in (("Ajouter", self._add), ("Dupliquer", self._duplicate)):
             b = QPushButton(label)
@@ -1372,46 +1368,34 @@ class ConfigTab(QWidget):
 
     # ---- liste des variations -----------------------------------------------
 
-    def _selection_actives(self):
-        """Ids actifs DANS CE RAPPORT, ou None si aucun choix n'a été fait
-        (= toutes, comme avant). Lu dans le fichier posé à côté du .pbip,
-        jamais dans le config : celui-ci est le catalogue partagé."""
-        if not self.project:
-            return None
-        return gm.read_selection(self.project.folder)
+    def _chemin_biblio(self) -> str:
+        """Fichier de bibliothèque, mémorisé au niveau de l'application (pas du
+        projet) : c'est justement ce qu'on veut partager entre rapports."""
+        from qtpy.QtCore import QSettings
+        s = QSettings("PBIdouille", "PBIdouille")
+        defaut = str(Path(__file__).resolve().parents[2] / gm.BIBLIO_DEFAUT)
+        return s.value("biblio_path", defaut) or defaut
 
-    def _cochees(self) -> list:
-        return [self.lst.item(i).text() for i in range(self.lst.count())
-                if self.lst.item(i).checkState() == Qt.Checked]
+    def _memoriser_biblio(self, chemin):
+        from qtpy.QtCore import QSettings
+        QSettings("PBIdouille", "PBIdouille").setValue("biblio_path", chemin)
 
-    def _on_variation_checked(self, item):
-        """Une case a bougé : on écrit la sélection du rapport tout de
-        suite. Elle ne passe PAS par le config — donc aucun risque de la
-        propager au prochain rapport qui réutilisera ce catalogue."""
-        if self._loading or not self.project:
-            return
-        gm.write_selection(self.project.folder, self._cochees(),
-                           list(self._variations()))
-        self._refresh_catalogue_label()
+    def _ouvrir_biblio(self):
+        """Pioche des variations dans la bibliothèque globale, ou y publie les
+        siennes. Ce qui est importé entre DANS le config du rapport."""
+        from tabs.dialog_catalogue import CatalogueDialog
+        dlg = CatalogueDialog(self._config, self._chemin_biblio(), self)
+        dlg.exec_() if hasattr(dlg, "exec_") else dlg.exec()
+        self._memoriser_biblio(dlg.chemin())
+        if dlg.modifie:
+            self._mark_dirty()
+            self._populate_list(select=self._current)
 
     def _refresh_catalogue_label(self):
-        total = len(self._variations())
-        actifs = len(self._cochees()) if self.lst.count() else total
-        if not self.project:
-            self.lbl_catalogue.setText("")
-        elif actifs == total:
-            self.lbl_catalogue.setText(
-                f"{total} variation(s) — toutes actives dans ce rapport")
-        else:
-            self.lbl_catalogue.setText(
-                f"{actifs} active(s) sur {total} dans CE rapport")
-
-    def _tout_cocher(self, etat):
-        self._loading = True
-        for i in range(self.lst.count()):
-            self.lst.item(i).setCheckState(Qt.Checked if etat else Qt.Unchecked)
-        self._loading = False
-        self._on_variation_checked(None)
+        n = len(self._variations())
+        self.lbl_catalogue.setText(
+            f"{n} variation(s) dans ce rapport"
+            + ("" if n else " — clique « Bibliothèque… » pour en importer"))
 
     def _variations(self) -> dict:
         return self._config.setdefault("variations", {})
@@ -1420,13 +1404,8 @@ class ConfigTab(QWidget):
         self._loading = True
         self._current = None
         self.lst.clear()
-        actives = self._selection_actives()
         for vid in self._variations():
-            it = QListWidgetItem(vid)
-            it.setFlags(it.flags() | Qt.ItemIsUserCheckable)
-            it.setCheckState(Qt.Checked if (actives is None or vid in actives)
-                             else Qt.Unchecked)
-            self.lst.addItem(it)
+            self.lst.addItem(QListWidgetItem(vid))
         self._loading = False
         self._refresh_catalogue_label()
         if self.lst.count():
@@ -1644,11 +1623,6 @@ class ConfigTab(QWidget):
                 "guillemets, ni backslash. Écris « #,0.00 $ ». "
                 "(espace, + - $ ( ) s'affichent d'eux-mêmes ; seules les "
                 "lettres et symboles demandent un backslash, ex. \\p\\t\\s.)")
-        if self._current and self.lst.count():
-            if self._current not in self._cochees():
-                avertissements.append(
-                    "Variation DESACTIVEE dans ce rapport (case decochee a "
-                    "gauche) : elle ne sera pas generee ici.")
         self.lbl_lint.setText("\n".join(avertissements))
 
         # aperçu des noms générés : reproduit l'expansion du générateur —

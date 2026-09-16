@@ -1,12 +1,11 @@
 # -*- coding: utf-8 -*-
-"""Catalogue de variations + selection par rapport.
+"""Bibliotheque GLOBALE de variations, dans laquelle chaque rapport pioche.
 
     py tests\\test_catalogue.py
 
-Le measures_config.json porte TOUTES les variations et voyage d'un rapport a
-l'autre ; chaque rapport choisit les siennes dans pbidouille_variations.json,
-pose a cote du .pbip. Ce test verifie que la selection filtre bien la
-generation, sans jamais toucher au catalogue partage.
+Le measures_config.json d'un rapport est AUTONOME : ce qu'il contient est
+exactement ce qui sera genere. La bibliotheque vit hors projet ; importer copie
+une variation DEDANS. Plus rien a cocher ni a retenir projet par projet.
 """
 
 from __future__ import annotations
@@ -23,15 +22,14 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 FIT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(FIT / "bidouille"))
 sys.path.insert(0, str(FIT / "bidouille" / "moteurs"))
-import generate_measures as gm                               # noqa: E402
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from _fixture import exiger_projet, PROJET_DEMO   # noqa: E402
 
-exiger_projet(FIT, PROJET_DEMO, "TD_Indicateurs.xlsx",
-              "measures_config.json")
+exiger_projet(FIT, PROJET_DEMO, "TD_Indicateurs.xlsx", "measures_config.json")
 
+import generate_measures as gm                     # noqa: E402
 
-PROJ = "Fitbit for random devs"
+PROJ = PROJET_DEMO
 _ok = True
 
 
@@ -46,127 +44,140 @@ def rmtree(p):
         shutil.rmtree(p, onerror=lambda f, path, e: (os.chmod(path, stat.S_IWRITE), f(path)))
 
 
-def projet():
-    c = Path(tempfile.gettempdir()) / "pbidouille_cat"
-    rmtree(c)
-    c.mkdir(parents=True)
-    for suffixe in (".Report", ".SemanticModel"):
-        shutil.copytree(FIT / (PROJ + suffixe), c / (PROJ + suffixe))
-    shutil.copy2(FIT / (PROJ + ".pbip"), c / (PROJ + ".pbip"))
-    shutil.copy2(FIT / "TD_Indicateurs.xlsx", c / "TD_Indicateurs.xlsx")
-    return c
+c = Path(tempfile.gettempdir()) / "pbidouille_biblio"
+rmtree(c)
+c.mkdir(parents=True)
+for suffixe in (".Report", ".SemanticModel"):
+    shutil.copytree(FIT / (PROJ + suffixe), c / (PROJ + suffixe))
+for f in ((PROJ + ".pbip"), "TD_Indicateurs.xlsx"):
+    shutil.copy2(FIT / f, c / f)
 
+complet = json.loads((FIT / "measures_config.json").read_text(encoding="utf-8"))
+BIBLIO = c / "biblio" / "catalogue_variations.json"
 
 # ===================================================================== 1
-print("1. lecture / ecriture de la selection")
-c = projet()
-check("aucun fichier = aucun choix (toutes actives)", gm.read_selection(c) is None)
-gm.write_selection(c, ["7d avg", "PY"], ["7d avg", "PY", "YTD"])
-check("fichier ecrit", (c / gm.SELECTION_FILE).exists())
-check("relu tel quel", gm.read_selection(c) == ["7d avg", "PY"])
-gm.write_selection(c, ["7d avg", "PY", "YTD"], ["7d avg", "PY", "YTD"])
-check("tout coche = le fichier disparait (etat par defaut)",
-      not (c / gm.SELECTION_FILE).exists() and gm.read_selection(c) is None)
-(c / gm.SELECTION_FILE).write_text("pas du json", encoding="utf-8")
-check("fichier illisible = on retombe sur « toutes »", gm.read_selection(c) is None)
-(c / gm.SELECTION_FILE).unlink()
+print("1. lecture / ecriture de la bibliotheque")
+check("fichier absent = bibliotheque vide, pas une erreur",
+      gm.read_biblio(BIBLIO) == {"variations": {}, "branches": {}})
+check("chemin vide = idem", gm.read_biblio("") == {"variations": {}, "branches": {}})
+gm.write_biblio(BIBLIO, complet["variations"], complet["branches"])
+check("ecrite (dossier cree au besoin)", BIBLIO.exists())
+b = gm.read_biblio(BIBLIO)
+check("relue entiere", set(b["variations"]) == set(complet["variations"]))
+check("les branches suivent", set(b["branches"]) == set(complet["branches"]))
+BIBLIO.write_text("pas du json", encoding="utf-8")
+check("fichier illisible = vide, pas une erreur",
+      gm.read_biblio(BIBLIO)["variations"] == {})
+gm.write_biblio(BIBLIO, complet["variations"], complet["branches"])
 
 # ===================================================================== 2
-print("2. apply_selection : variations et branches")
-cfg = json.loads((FIT / "measures_config.json").read_text(encoding="utf-8"))
-V, B = cfg["variations"], cfg["branches"]
-v, b = gm.apply_selection(dict(V), dict(B), ["7d avg", "YTD", "PY"], lambda *_: None)
-check("seules les actives restent", set(v) == {"7d avg", "YTD", "PY"})
-check("la branche YTD survit car sa variation est active", list(b) == ["YTD"])
-v, b = gm.apply_selection(dict(V), dict(B), ["7d avg", "PY"], lambda *_: None)
-check("desactiver YTD retire aussi la BRANCHE YTD", list(b) == [])
+print("2. importer : la variation entre DANS le config du rapport")
+rapport = {"settings": complet["settings"], "variations": {}}
+b = gm.read_biblio(BIBLIO)
+faits = gm.import_variations(rapport, b, ["7d avg", "PY", "YTD"], lambda *_: None)
+check("trois importees", faits == ["7d avg", "PY", "YTD"])
+check("le config du rapport les contient",
+      set(rapport["variations"]) == {"7d avg", "PY", "YTD"})
+check("YTD amene son entree de BRANCHE", "YTD" in (rapport.get("branches") or {}))
+check("7d avg n'en amene pas", "7d avg" not in (rapport.get("branches") or {}))
 journal = []
-gm.apply_selection(dict(V), dict(B), ["7d avg", "inexistante"], journal.append)
+gm.import_variations(rapport, b, ["inexistante"], journal.append)
 check("un id inconnu est signale, pas fatal",
       any("inexistante" in l for l in journal))
-v, b = gm.apply_selection(dict(V), dict(B), None, lambda *_: None)
-check("None = catalogue complet", len(v) == len(V))
+check("la bibliotheque n'a pas bouge",
+      len(gm.read_biblio(BIBLIO)["variations"]) == len(complet["variations"]))
+
+# une copie PROFONDE : modifier le rapport ne touche pas la bibliotheque
+rapport["variations"]["PY"]["namePattern"] = "{base} MODIFIE"
+check("copie profonde (le rapport n'altere pas la bibliotheque)",
+      gm.read_biblio(BIBLIO)["variations"]["PY"]["namePattern"] != "{base} MODIFIE")
 
 # ===================================================================== 3
-print("3. generation reelle : le rapport ne recoit QUE sa selection")
-shutil.copy2(FIT / "measures_config.json", c / "measures_config.json")
-SM = c / (PROJ + ".SemanticModel")
+print("3. generation : le rapport ne genere QUE ce qu'il contient")
+(c / "measures_config.json").write_text(
+    json.dumps(rapport, indent=2, ensure_ascii=False), encoding="utf-8")
+rapport["variations"]["PY"]["namePattern"] = "{base} PY"       # on remet
+(c / "measures_config.json").write_text(
+    json.dumps(rapport, indent=2, ensure_ascii=False), encoding="utf-8")
+conf = json.loads((c / "measures_config.json").read_text(encoding="utf-8"))
+logs = []
+st = gm.generate(c / (PROJ + ".SemanticModel"), conf, dry_run=True, log=logs.append)
+noms = set(st["created"]) | set(st["updated"]) | set(st["unchanged"])
+check("les 7d avg sont generees", any(n.endswith(" 7d avg") for n in noms))
+check("les PY aussi", any(n.endswith(" PY") for n in noms))
+check("sparkline JAMAIS importee = jamais generee",
+      not any(n.endswith(" sparkline") for n in noms))
+check("MTD non importee = non generee", not any(n.endswith(" MTD") for n in noms))
+check("la branche YTD fonctionne", any(" YTD" in n for n in noms))
+check("aucune mention de selection dans le journal",
+      not any("active(s) sur" in l for l in logs))
 
-
-def genere():
-    conf = json.loads((c / "measures_config.json").read_text(encoding="utf-8"))
-    logs = []
-    st = gm.generate(SM, conf, dry_run=True, log=logs.append)
-    return set(st["created"]) | set(st["updated"]) | set(st["unchanged"]), logs
-
-
-tout, _ = genere()
-check("sans selection : les 7d avg sont generees",
-      any(n.endswith(" 7d avg") for n in tout))
-check("… et les sparkline aussi", any(n.endswith(" sparkline") for n in tout))
-
-gm.write_selection(c, ["7d avg", "PY", "YTD"], list(cfg["variations"]))
-part, logs = genere()
-check("avec selection : 7d avg toujours la",
-      any(n.endswith(" 7d avg") for n in part))
-check("sparkline DESACTIVEE : plus aucune",
-      not any(n.endswith(" sparkline") for n in part))
-check("MTD desactivee : plus aucune", not any(n.endswith(" MTD") for n in part))
-check("la branche YTD fonctionne encore",
-      any(" YTD " in n or n.endswith(" YTD") for n in part))
-check("moins de mesures qu'avec tout le catalogue", len(part) < len(tout))
-check("le journal annonce la selection",
-      any("Catalogue :" in l and "active(s)" in l for l in logs))
-print("   " + next(l for l in logs if "Catalogue :" in l))
-
-check("le CATALOGUE partage n'a pas bouge",
-      json.loads((c / "measures_config.json").read_text(encoding="utf-8"))["variations"].keys()
-      == cfg["variations"].keys())
-
-gm.write_selection(c, [], list(cfg["variations"]))
+vide = {"settings": complet["settings"], "variations": {}}
 try:
-    genere()
-    check("selection vide = erreur actionnable", False)
+    gm.generate(c / (PROJ + ".SemanticModel"), vide, dry_run=True, log=lambda *_: None)
+    check("config sans variation = erreur actionnable", False)
 except SystemExit as e:
-    check("selection vide = erreur actionnable", "Aucune variation active" in str(e))
+    check("config sans variation = erreur actionnable", "bibliothèque" in str(e))
 
 # ===================================================================== 4
-print("4. UI : cases a cocher et fichier de selection")
-from PySide6.QtWidgets import QApplication                   # noqa: E402
-from PySide6.QtCore import Qt                                # noqa: E402
-from core.project import Project                             # noqa: E402
-import tabs.tab_config as tc                                 # noqa: E402
+print("4. publier : du rapport VERS la bibliotheque")
+maison = {"namePattern": "{base} maison", "dax": "{baseRef}",
+          "inFieldParameter": False}
+rapport["variations"]["maison"] = maison
+b = gm.read_biblio(BIBLIO)
+avant = len(b["variations"])
+faits = gm.export_variations(rapport, b, ["maison"])
+gm.write_biblio(BIBLIO, b["variations"], b["branches"])
+check("publiee", faits == ["maison"])
+relu = gm.read_biblio(BIBLIO)
+check("la bibliotheque l'a gagnee", "maison" in relu["variations"])
+check("et n'a rien perdu", len(relu["variations"]) == avant + 1)
+check("contenu fidele",
+      relu["variations"]["maison"]["namePattern"] == "{base} maison")
 
-(c / gm.SELECTION_FILE).unlink(missing_ok=True)
+# ===================================================================== 5
+print("5. UI : le dialogue et le bouton")
+from PySide6.QtWidgets import QApplication, QPushButton     # noqa: E402
+from core.project import Project                            # noqa: E402
+import tabs.tab_config as tc                                # noqa: E402
+from tabs.dialog_catalogue import CatalogueDialog           # noqa: E402
+
 app = QApplication.instance() or QApplication([])
-tab = tc.ConfigTab()
-tab.set_project(Project(c / (PROJ + ".pbip")))
-tab._config = json.loads((c / "measures_config.json").read_text(encoding="utf-8"))
-tab._populate_list()
-check("toutes cochees au depart", len(tab._cochees()) == len(tab._variations()))
-check("aucun fichier cree tant qu'on ne touche a rien",
-      not (c / gm.SELECTION_FILE).exists())
-check("etiquette « toutes actives »", "toutes actives" in tab.lbl_catalogue.text())
+onglet = tc.ConfigTab()
+onglet.set_project(Project(c / (PROJ + ".pbip")))
+onglet._config = json.loads(json.dumps(rapport))
+onglet._populate_list()
+check("le bouton Bibliotheque existe",
+      any(b.text() == "Bibliothèque…" for b in onglet.findChildren(QPushButton)))
+from PySide6.QtCore import Qt as _Qt                          # noqa: E402
+# une case ne se DESSINE que si le role CheckState est pose (le drapeau
+# ItemIsUserCheckable, lui, fait partie des valeurs par defaut de Qt)
+check("plus aucune case a cocher dans la liste",
+      all(onglet.lst.item(i).data(_Qt.CheckStateRole) is None
+          for i in range(onglet.lst.count())))
+check("etiquette centree sur le rapport",
+      "dans ce rapport" in onglet.lbl_catalogue.text())
 
-for i in range(tab.lst.count()):
-    if tab.lst.item(i).text() in ("sparkline", "MTD"):
-        tab.lst.item(i).setCheckState(Qt.Unchecked)
-check("le fichier de selection est ecrit aussitot",
-      (c / gm.SELECTION_FILE).exists())
-check("il contient les actives, pas les desactivees",
-      "sparkline" not in gm.read_selection(c) and "7d avg" in gm.read_selection(c))
-check("etiquette mise a jour", "sur" in tab.lbl_catalogue.text())
-check("le config en memoire garde TOUT le catalogue",
-      len(tab._variations()) == len(cfg["variations"]))
+dlg = CatalogueDialog(onglet._config, str(BIBLIO), onglet)
+check("la bibliotheque est listee", dlg.lst_biblio.count() == len(relu["variations"]))
+check("le rapport est liste", dlg.lst_rapport.count() == len(rapport["variations"]))
+deja = [dlg.lst_biblio.item(i).text() for i in range(dlg.lst_biblio.count())
+        if "déjà dans ce rapport" in dlg.lst_biblio.item(i).text()]
+check("les variations deja presentes sont signalees", bool(deja))
+dlg.lst_biblio.clearSelection()
+for i in range(dlg.lst_biblio.count()):
+    if dlg.lst_biblio.item(i).data(_Qt.UserRole) == "sparkline":
+        dlg.lst_biblio.item(i).setSelected(True)
+import tabs.dialog_catalogue as dc                           # noqa: E402
+dc.QMessageBox.question = staticmethod(lambda *a, **k: dc.QMessageBox.Yes)
+dc.QMessageBox.information = staticmethod(lambda *a, **k: None)
+dlg._importer()
+check("importer depuis le dialogue ajoute au config",
+      "sparkline" in onglet._config["variations"])
+check("le dialogue signale la modification", dlg.modifie is True)
 
-tab._tout_cocher(True)
-check("« Tout » remet le defaut et retire le fichier",
-      not (c / gm.SELECTION_FILE).exists())
-tab._tout_cocher(False)
-check("« Aucune » est possible (l'erreur vient a la generation)",
-      gm.read_selection(c) == [])
-
-tab.deleteLater()
+dlg.deleteLater()
+onglet.deleteLater()
 app.processEvents()
 rmtree(c)
 

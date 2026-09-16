@@ -354,47 +354,40 @@ rien et n'avait donc **aucun format, donc aucun signe** — quels que soient les
 symboles. Le repli lui donne un format numérique pour que le signe apparaisse.
 `""` rétablit l'ancien comportement.
 
-### Catalogue de variations et sélection par rapport
+### Bibliothèque de variations
 
-`measures_config.json` est un **catalogue** : il porte toutes les variations et
-voyage d'un rapport à l'autre. Mais un rapport ne veut pas forcément les mêmes
-que le précédent — la **sélection** est donc propre au projet, dans un petit
-fichier posé à côté du `.pbip` :
+Le `measures_config.json` d'un rapport est **autonome** : ce qu'il contient est
+exactement ce qui sera généré. À côté, un fichier **global** garde les
+variations qu'on réutilise d'un rapport à l'autre — et on y **pioche**.
 
 ```json
-// pbidouille_variations.json
-{ "actives": ["7d avg", "PY", "YTD"] }
+// catalogue_variations.json  (hors projet)
+{ "variations": { "7d avg": {...}, "YTD": {...}, "% du total": {...} },
+  "branches":   { "YTD": {} } }
 ```
 
-Dans **Mesures → Variations**, chaque ligne de la liste porte une **case** :
-cochée = générée dans CE rapport. Boutons *Tout* / *Aucune*, et un compteur
-sous la liste (« 8 active(s) sur 11 dans CE rapport »). La variation affichée
-dans le formulaire signale en jaune qu'elle est désactivée, le cas échéant.
+**Mesures → Bibliothèque…** ouvre deux listes face à face :
 
-| Où | Quoi | Voyage ? |
-|---|---|---|
-| `measures_config.json` | le catalogue complet | oui — partagé entre rapports |
-| `pbidouille_variations.json` | les ids actifs ici | non — propre au projet |
+| | |
+|---|---|
+| **Importer →** | copie la variation de la bibliothèque **dans** le config du rapport |
+| **← Publier** | l'inverse : une variation écrite ici part dans la bibliothèque |
 
-Trois comportements à connaître :
+Une fois importée, la variation **appartient au rapport** — rien à cocher ni à
+retenir projet par projet, et la génération ne lit jamais la bibliothèque.
 
-- **Fichier absent = toutes actives.** Tout cocher le supprime : l'état par
-  défaut ne laisse aucun fichier derrière lui, et les projets existants ne
-  changent pas de comportement.
-- **Décocher une variation qui sert de BRANCHE** retire aussi la branche — le
-  journal le dit (`Branches désactivées avec leur variation : YTD`).
-- **Décocher ne supprime pas** les mesures déjà générées : elles deviennent
-  orphelines. Coche `removeOrphans` (Réglages globaux) pour qu'elles partent.
+Trois comportements :
 
-Le journal de génération résume :
+- une variation qui sert de **branche** amène son entrée `branches`, sinon la
+  2ᵉ passe irait chercher une branche inexistante ;
+- importer une variation **déjà présente** la remplace par celle de la
+  bibliothèque — c'est ce qu'on demande en important — avec confirmation ;
+- la copie est **profonde** : retoucher la variation dans le rapport n'altère
+  pas la bibliothèque, et réciproquement.
 
-```
-Catalogue : 3 variation(s) active(s) sur 11 (sélection propre à ce rapport).
-```
-
-Sélection vide = erreur explicite plutôt qu'une génération silencieusement
-vide. Un id inconnu du catalogue (variation renommée depuis) est signalé et
-ignoré, sans bloquer.
+Le chemin du fichier est retenu au niveau de **l'application**, pas du projet :
+pose-le sur un lecteur partagé et toute l'équipe y puise. Fichier absent ou
+illisible = bibliothèque vide, jamais une erreur ; « Publier » le crée.
 
 ### branches
 

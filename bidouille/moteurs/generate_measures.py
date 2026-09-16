@@ -727,72 +727,86 @@ INDICATEURS_DEFAUT = {
 }
 
 
-# Sélection des variations PROPRE AU RAPPORT. Le measures_config.json est un
-# CATALOGUE : il voyage d'un rapport à l'autre et les porte toutes. Mais tous
-# les rapports ne veulent pas les mêmes — d'où ce petit fichier, posé à côté du
-# .pbip, qui ne contient que la liste de celles qu'on garde ici.
-SELECTION_FILE = "pbidouille_variations.json"
+# BIBLIOTHEQUE de variations : un fichier GLOBAL, hors projet, où l'on garde
+# toutes les variations qu'on réutilise d'un rapport à l'autre. On y PIOCHE :
+# la variation choisie est COPIÉE dans le measures_config.json du rapport, qui
+# reste donc autonome — la génération ne lit jamais la bibliothèque.
+#
+# C'est l'inverse d'un catalogue partagé qu'on filtrerait par rapport : plus
+# rien à cocher ni à retenir projet par projet, ce que le config du rapport
+# contient est exactement ce qu'il génère.
+BIBLIO_DEFAUT = "catalogue_variations.json"
 
-_MANQUANT = object()   # distingue « clé absente » de « None = toutes »
 
-
-def read_selection(project_dir) -> list | None:
-    """Ids des variations actives dans CE rapport, ou None si le rapport n'a
-    pas fait de choix (= toutes, comportement d'avant)."""
-    if not project_dir:
-        return None
-    f = Path(project_dir) / SELECTION_FILE
-    if not f.exists():
-        return None
+def read_biblio(chemin) -> dict:
+    """{variations, branches} de la bibliothèque. Fichier absent ou illisible
+    = bibliothèque vide, jamais une erreur : elle est facultative."""
+    if not chemin:
+        return {"variations": {}, "branches": {}}
+    p = Path(chemin)
+    if not p.exists():
+        return {"variations": {}, "branches": {}}
     try:
-        data = json.loads(f.read_text(encoding="utf-8"))
+        data = json.loads(p.read_text(encoding="utf-8"))
     except (OSError, ValueError):
-        return None
-    actives = data.get("actives") if isinstance(data, dict) else data
-    return [str(x) for x in actives] if isinstance(actives, list) else None
+        return {"variations": {}, "branches": {}}
+    if not isinstance(data, dict):
+        return {"variations": {}, "branches": {}}
+    return {"variations": data.get("variations") or {},
+            "branches": data.get("branches") or {}}
 
 
-def write_selection(project_dir, actives, catalogue=None) -> Path | None:
-    """Écrit la sélection du rapport. `actives` à None — ou couvrant tout le
-    catalogue — retire le fichier : « aucun choix » reste l'état par défaut,
-    et on ne laisse pas traîner un fichier qui ne dit rien."""
-    f = Path(project_dir) / SELECTION_FILE
-    tout = catalogue is not None and set(actives or []) >= set(catalogue)
-    if actives is None or tout:
-        if f.exists():
-            f.unlink()
-        return None
-    f.write_text(json.dumps({"actives": list(actives)}, indent=2,
-                            ensure_ascii=False) + "\n", encoding="utf-8")
-    return f
+def write_biblio(chemin, variations, branches=None) -> Path:
+    """Écrit la bibliothèque (crée le dossier au besoin)."""
+    p = Path(chemin)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(json.dumps({"variations": variations,
+                             "branches": branches or {}},
+                            indent=2, ensure_ascii=False) + "\n",
+                 encoding="utf-8")
+    return p
 
 
-def apply_selection(variations, branches, actives, log=print) -> tuple:
-    """Restreint le catalogue aux variations actives. Retourne
-    (variations, branches) filtrés.
+def import_variations(config, biblio, ids, log=print) -> list:
+    """Copie les variations `ids` de la bibliothèque dans `config` (modifié sur
+    place). Retourne les ids réellement importés.
 
-    Une BRANCHE désactivée disparaît aussi de `branches` — sinon la 2e passe
-    irait chercher une variation qui n'existe plus. Une branche encore active
-    dont une variation restreinte a été désactivée voit simplement sa liste
-    rétrécir."""
-    if actives is None:
-        return variations, branches
-    garde = [v for v in actives if v in variations]
-    inconnues = [v for v in actives if v not in variations]
-    if inconnues:
-        log("⚠ sélection : " + ", ".join(sorted(inconnues))
-            + " — absente(s) du catalogue, ignorée(s).")
-    variations = {k: v for k, v in variations.items() if k in garde}
-    retirees = [b for b in branches if b not in variations]
-    if retirees:
-        log("Branches désactivées avec leur variation : " + ", ".join(retirees))
-    branches = {k: v for k, v in branches.items() if k in variations}
-    for bid, bdef in branches.items():
-        if isinstance(bdef, dict) and isinstance(bdef.get("variations"), list):
-            bdef = dict(bdef)
-            bdef["variations"] = [x for x in bdef["variations"] if x in variations]
-            branches[bid] = bdef
-    return variations, branches
+    Une variation qui sert de BRANCHE amène son entrée `branches`, sinon la 2e
+    passe irait chercher une branche inexistante. Un id déjà présent dans le
+    rapport est ÉCRASÉ par la version de la bibliothèque — importer, c'est
+    demander celle-ci."""
+    src_v = (biblio or {}).get("variations") or {}
+    src_b = (biblio or {}).get("branches") or {}
+    dst_v = config.setdefault("variations", {})
+    faits = []
+    for vid in ids:
+        if vid not in src_v:
+            log(f"⚠ « {vid} » absente de la bibliothèque — ignorée.")
+            continue
+        dst_v[vid] = json.loads(json.dumps(src_v[vid]))   # copie profonde
+        faits.append(vid)
+        if vid in src_b:
+            config.setdefault("branches", {})[vid] = \
+                json.loads(json.dumps(src_b[vid]))
+    return faits
+
+
+def export_variations(config, biblio, ids) -> list:
+    """Sens inverse : publie des variations DU RAPPORT dans la bibliothèque
+    (`biblio` modifié sur place), pour les réutiliser ailleurs."""
+    src_v = config.get("variations") or {}
+    src_b = config.get("branches") or {}
+    dst_v = biblio.setdefault("variations", {})
+    faits = []
+    for vid in ids:
+        if vid not in src_v:
+            continue
+        dst_v[vid] = json.loads(json.dumps(src_v[vid]))
+        faits.append(vid)
+        if vid in src_b:
+            biblio.setdefault("branches", {})[vid] = \
+                json.loads(json.dumps(src_b[vid]))
+    return faits
 
 
 def indicateurs_xlsx(config, project_dir=None) -> dict:
@@ -923,8 +937,6 @@ def scan_cibles(model_dir, config) -> list:
     bases_by_len = sorted(bases, key=len, reverse=True)
     source_folder = ((config.get("settings") or {}).get("sourceFolder") or "")
     suffixes = list(config.get("variations") or {}) + list(config.get("branches") or {})
-    # (scan_cibles lit le catalogue COMPLET : une variation désactivée reste un
-    # suffixe à ne pas confondre avec une cible racine)
     out = []
     for spec in (config.get("kpiMeasureFolders") or []):
         if not isinstance(spec, dict):
@@ -1008,24 +1020,14 @@ def generate(model_dir, config, *, dry_run=None, remove_orphans=None, log=print)
     sw_fmt      = sw.get("formatString") or "#,0.0"
     sw_dyn      = sw.get("dynamicFormat", True)
 
+    # le config du rapport est AUTONOME : ce qu'il contient est exactement ce
+    # qui sera généré (les variations viennent de la bibliothèque par import)
     variations = config.get("variations") or {}
     if not variations:
-        raise SystemExit("La config n'a pas d'objet 'variations'.")
+        raise SystemExit(
+            "La config n'a pas d'objet 'variations' — importe-en depuis la "
+            "bibliothèque (Mesures -> Bibliothèque…).")
     branches = dict(config.get("branches") or {})
-
-    # le config est un CATALOGUE ; ce rapport n'en prend peut-être qu'une part
-    actives = config.get("_actives", _MANQUANT)
-    if actives is _MANQUANT:
-        actives = read_selection(model_dir.parent)
-    if actives is not None:
-        total = len(variations)
-        variations, branches = apply_selection(variations, branches, actives, log)
-        log(f"Catalogue : {len(variations)} variation(s) active(s) sur {total} "
-            f"(sélection propre à ce rapport).")
-        if not variations:
-            raise SystemExit(
-                "Aucune variation active dans ce rapport : coche-en au moins "
-                "une dans Mesures -> Variations.")
 
     # attributs codés en dur : jeton <<label>> dans le DAX -> valeur de la colonne
     # pour le KPI (lue dans l'Excel), au lieu d'un LOOKUPVALUE à l'exécution.

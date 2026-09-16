@@ -16,8 +16,9 @@ _propagate_backups/
 _wireframe_backups/
 *.bak
 
-# --- état propre à un rapport (jamais partagé) ---
-pbidouille_variations.json
+# --- bibliothèque de variations : contenu personnel, pas du code ---
+# (pose-la plutôt sur un lecteur partagé ; le chemin est retenu par l'app)
+catalogue_variations.json
 
 # --- hors périmètre : ce dépôt ne porte que l'APPLICATION ---
 # outils autonomes (lignes de commande), scripts Tabular Editor et recettes,
