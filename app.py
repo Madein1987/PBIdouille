@@ -11,13 +11,16 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-# bidouille\ (pour core, tabs) et bidouille\moteurs\ (pour les moteurs
-# d'écriture PBIP) sur le path, quel que soit le répertoire de lancement.
-_APP_DIR = Path(__file__).resolve().parent
+# app.py est au 1er niveau ; le reste du code vit dans bidouille\ :
+#   bidouille\          -> core, tabs
+#   bidouille\moteurs\  -> les moteurs d'écriture PBIP
+# Les deux sur le path, quel que soit le répertoire de lancement.
+_RACINE = Path(__file__).resolve().parent
+_APP_DIR = _RACINE / "bidouille"
 _MOTEURS = _APP_DIR / "moteurs"
-# dossier qui CONTIENT l'app : point de depart des boites de dialogue, et
-# endroit ou l'on cherche un projet a defaut d'en avoir memorise un
-_DOSSIER_PARENT = _APP_DIR.parent
+# point de départ des boîtes de dialogue, et endroit où l'on cherche un projet
+# à défaut d'en avoir mémorisé un
+_DOSSIER_PARENT = _RACINE
 for _p in (str(_APP_DIR), str(_MOTEURS)):
     if _p not in sys.path:
         sys.path.insert(0, _p)
