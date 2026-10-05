@@ -34,6 +34,9 @@ import re
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))   # moteurs\ voisins
+import xlsx_lecture as _xl                  # relâche toujours le classeur
+
 # ---------------------------------------------------------------------------
 PBIP_DIR     = Path(r"C:\OneDrive - PJ\Data Cooler\_Power BI\Fitbit")
 PROJECT      = "Fitbit for random devs"
@@ -81,11 +84,16 @@ def read_kpi_colors(xlsx=TD_XLSX, sheet=TD_SHEET, key_col=TD_KEY_COL,
                 }
         return out
 
+    # Le classeur est refermé AVANT qu'on en fasse quoi que ce soit : il n'y a
+    # plus de chemin — succès, colonne manquante, erreur — qui laisse le
+    # fichier tenu par le processus. C'est ce qui empêchait d'enregistrer
+    # TD_Indicateurs depuis Excel après avoir lancé les couleurs.
     try:
-        import openpyxl
-        wb = openpyxl.load_workbook(xlsx, read_only=True, data_only=True)
-        ws = wb[sheet] if sheet else wb.worksheets[0]
-        rows = list(ws.iter_rows(values_only=True))
+        rows = _xl.lire_lignes(xlsx, sheet)
+    except ImportError:
+        rows = None
+
+    if rows is not None:
         if not rows:
             return {}
         header = [str(h).strip().lower() if h is not None else "" for h in rows[0]]
@@ -98,8 +106,6 @@ def read_kpi_colors(xlsx=TD_XLSX, sheet=TD_SHEET, key_col=TD_KEY_COL,
             for r in rows[1:]:
                 yield {header[i]: r[i] for i in range(min(len(header), len(r)))}
         return build(gen)
-    except ImportError:
-        pass
 
     try:
         import pandas as pd

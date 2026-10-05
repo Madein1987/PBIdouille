@@ -11,6 +11,7 @@ TD_Indicateurs.xlsx
 *.xlsx
 
 # --- sauvegardes écrites par l'outil ---
+_backupsPBIdouille/
 _tmdl_backups/
 _propagate_backups/
 _wireframe_backups/
@@ -19,6 +20,12 @@ _wireframe_backups/
 # --- bibliothèque de variations : contenu personnel, pas du code ---
 # (pose-la plutôt sur un lecteur partagé ; le chemin est retenu par l'app)
 catalogue_variations.json
+
+# --- groupes de propagation : donnees des RAPPORTS, pas du code ---
+# propagation.json (partage par les rapports d'un dossier) et l'ancien
+# <rapport>.propagation.json, lu en repli
+propagation.json
+*.propagation.json
 
 # --- hors périmètre : ce dépôt ne porte que l'APPLICATION ---
 # outils autonomes (lignes de commande), scripts Tabular Editor et recettes,

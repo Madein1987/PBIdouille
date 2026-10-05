@@ -12,8 +12,10 @@ from __future__ import annotations
 import tempfile
 from pathlib import Path
 
-from qtpy.QtCore import Qt
-from qtpy.QtGui import QColor, QFont, QIcon, QPainter, QPen, QPixmap
+from qtpy.QtCore import QPointF, Qt
+from qtpy.QtGui import (QColor, QFont, QIcon, QPainter, QPainterPath, QPen,
+                        QPixmap)
+from qtpy.QtWidgets import QSplitter, QSplitterHandle
 
 # ---- palette Dark Teal Pro (mêmes hex que le thème Power BI) ---------------
 BG_WINDOW   = "#0F1629"   # fond de fenêtre (= fond de page du rapport)
@@ -27,9 +29,22 @@ TEXT        = "#E2E8F0"   # texte principal
 TEXT_DIM    = "#C8D4E0"   # texte secondaire
 TEXT_MUTED  = "#7F898A"   # texte désactivé / grisé
 RED         = "#E8604E"   # sémantique « bad »
+ORANGE      = "#E8873A"   # « il y a quelque chose à écrire » (bouton en attente)
 YELLOW      = "#D4AE28"   # sémantique « neutral »
 BLUE        = "#38BDF8"   # sémantique secondaire
 GREEN       = ACCENT      # sémantique « good » = l'accent
+# un trait de séparation (poignées, journal) : entre BORDER, trop pâle sur
+# les fonds sombres, et TEXT_MUTED, trop présent pour un simple séparateur
+TRAIT       = "#2E4560"
+
+# titres de groupe : leur police et leur taille (le texte courant est en
+# Segoe UI 9 pt). Bahnschrift — la DIN de Windows 10 et 11 — les distingue
+# du texte autrement que par la couleur. Nommée par son instance
+# « SemiBold » : ce nom-là marche aussi avec le moteur de polices GDI de
+# Qt 5 (poste du travail). Absente (Windows ancien) : Qt retombe sur la
+# police par défaut.
+TITRE_POLICE = "Bahnschrift SemiBold"
+TITRE_PT = 11
 
 # rétro-compatibilité (ancien accent rose de ChopChopRapport)
 HOT_PINK = ACCENT
@@ -56,29 +71,40 @@ def _write_indicator_icons() -> tuple:
     """Peint la coche et le tiret VERT NÉON en PNG dans le dossier temp et
     retourne leurs chemins (les stylesheets Qt exigent des fichiers). PNG
     plutôt que SVG : PyQt5 (poste du travail) n'a pas toujours le plugin SVG
-    et l'échec serait silencieux."""
+    et l'échec serait silencieux.
+
+    Trait fin (1,6 px), extrémités nettes et angle vif : l'ancienne coche —
+    2,2 px, bouts et angle ARRONDIS — faisait une tache ronde dans la case.
+    Elle est aussi plus petite, avec de l'air autour.
+
+    Chaque image existe aussi en « @2x » : Qt la choisit d'office sur un
+    écran à 150 % ou 200 %, où la version simple serait agrandie, donc floue
+    — et floue, une coche fine redevient ronde."""
     d = Path(tempfile.gettempdir())
     check_path = d / "bidouille_check.png"
     dash_path = d / "bidouille_dash.png"
 
-    pen = QPen(QColor(ACCENT))
-    pen.setWidthF(2.2)
-    pen.setCapStyle(Qt.RoundCap)
-    pen.setJoinStyle(Qt.RoundJoin)
-
     for path, kind in ((check_path, "check"), (dash_path, "dash")):
-        pm = QPixmap(15, 15)
-        pm.fill(Qt.transparent)
-        p = QPainter(pm)
-        p.setRenderHint(QPainter.Antialiasing)
-        p.setPen(pen)
-        if kind == "check":
-            p.drawLine(3, 8, 6, 11)
-            p.drawLine(6, 11, 12, 4)
-        else:
-            p.drawLine(4, 7, 11, 7)
-        p.end()
-        pm.save(str(path), "PNG")
+        for echelle, suffixe in ((1, ""), (2, "@2x")):
+            pm = QPixmap(15 * echelle, 15 * echelle)
+            pm.fill(Qt.transparent)
+            p = QPainter(pm)
+            p.setRenderHint(QPainter.Antialiasing)
+            p.scale(echelle, echelle)
+            pen = QPen(QColor(ACCENT))
+            pen.setWidthF(1.6)
+            pen.setCapStyle(Qt.FlatCap)
+            pen.setJoinStyle(Qt.MiterJoin)
+            p.setPen(pen)
+            if kind == "check":
+                trace = QPainterPath(QPointF(4.2, 7.6))
+                trace.lineTo(6.6, 10.0)
+                trace.lineTo(10.9, 5.0)
+                p.drawPath(trace)
+            else:
+                p.drawLine(QPointF(4.5, 7.5), QPointF(10.5, 7.5))
+            p.end()
+            pm.save(str(path.with_name(path.stem + suffixe + path.suffix)), "PNG")
 
     return check_path.as_posix(), dash_path.as_posix()
 
@@ -96,7 +122,7 @@ def _indicator_qss(scopes: str) -> str:
 {scopes} {{
     width: 15px; height: 15px;
     border: 1px solid {BORDER};
-    border-radius: 4px;
+    border-radius: 3px;
     background: {SURFACE_ALT};
 }}
 {variant(":hover")} {{ border-color: {ACCENT}; }}
@@ -109,6 +135,112 @@ def _indicator_qss(scopes: str) -> str:
     border-color: {ACCENT};
 }}
 """
+
+
+def bouton_en_attente(bouton, actif: bool, en_attente: str = "",
+                      au_repos: str = "") -> None:
+    """Allume un bouton en ORANGE tant qu'il reste quelque chose à écrire.
+
+    Remplace le voyant « ● modifications non sauvegardées » posé à côté :
+    l'état se lit sur le bouton qui le résout, donc l'œil n'a qu'un endroit à
+    regarder et le remède est là où est le symptôme.
+
+    Le QSS d'app est redonné en entier (fond, bordure, coins, marge) : une
+    feuille de style posée sur un widget REMPLACE celle de l'application pour
+    lui, et sans ça le bouton changerait de forme en s'allumant."""
+    bouton.setStyleSheet(f"""
+QPushButton {{
+    background: {ORANGE};
+    color: {BG_WINDOW};
+    border: 1px solid {ORANGE};
+    border-radius: 6px;
+    padding: 5px 14px;
+    font-weight: bold;
+}}
+QPushButton:hover {{ background: {TEXT}; border-color: {TEXT}; }}
+QPushButton:pressed {{ background: {ACCENT_DIM}; border-color: {ACCENT_DIM}; }}
+""" if actif else "")
+    if en_attente or au_repos:
+        bouton.setToolTip(en_attente if actif else au_repos)
+
+
+def police_code(widget, petit: bool = False) -> None:
+    """Marque `widget` comme du CODE : chasse fixe (Consolas), via le thème.
+
+    Pourquoi pas setFont() : le QSS d'app fixe `font-family` sur TOUS les
+    widgets, et une feuille de style l'emporte sur setFont() — l'éditeur
+    DAX s'affichait donc en Segoe UI depuis toujours : un retrait de 4
+    espaces y faisait 12 px, et l'aide-mémoire des jetons perdait ses
+    colonnes. Seule une règle plus PRÉCISE gagne : l'attribut code=… (cf.
+    neon_stylesheet). Le setFont reste pour un widget montré SANS le thème
+    (tests, fenêtre autonome).
+
+    À appeler AVANT le premier affichage : la feuille de style est appliquée
+    au moment où le widget se montre."""
+    widget.setProperty("code", "petit" if petit else "true")
+    widget.setFont(QFont("Consolas", 8 if petit else 9))
+
+
+def rangee_transparente(widget) -> None:
+    """Un conteneur de rangée (libellé + champ + ⓘ) sans fond : dans un
+    groupe, il laisse voir la surface du groupe au lieu d'y découper une
+    bande couleur fenêtre."""
+    widget.setProperty("fond", "aucun")
+
+
+class _Poignee(QSplitterHandle):
+    """Poignée d'un Separateur : un trait d'un pixel au milieu de sa bande,
+    en retrait des bords, vert atténué au survol (on voit qu'elle se saisit)."""
+
+    RETRAIT = 8     # px laissés libres aux deux bouts du trait
+
+    def __init__(self, orientation, parent):
+        super().__init__(orientation, parent)
+        self.setAttribute(Qt.WA_Hover, True)
+
+    def enterEvent(self, ev):
+        self.update()
+        super().enterEvent(ev)
+
+    def leaveEvent(self, ev):
+        self.update()
+        super().leaveEvent(ev)
+
+    def paintEvent(self, ev):
+        # pas de super() : le QSS « QSplitter::handle » peindrait la bande
+        # ENTIÈRE, c'est précisément ce qu'on ne veut plus
+        p = QPainter(self)
+        p.setPen(QPen(QColor(ACCENT_DIM if self.underMouse() else TRAIT), 1))
+        r, m = self.rect(), self.RETRAIT
+        if self.orientation() == Qt.Horizontal:
+            x = r.width() // 2
+            p.drawLine(x, r.top() + m, x, r.bottom() - m)
+        else:
+            y = r.height() // 2
+            p.drawLine(r.left() + m, y, r.right() - m, y)
+        p.end()
+
+
+class Separateur(QSplitter):
+    """QSplitter dont la poignée est un TRAIT FIN au milieu d'une bande d'air.
+
+    La poignée par défaut est une barre pleine de 4 px, collée aux volets : les
+    groupes butaient dessus. Ici la bande fait LARGEUR px — une prise facile à
+    attraper — et seul son milieu est dessiné : 6 px d'air de chaque côté.
+
+    Pas de QSS pour ça : pour dimensionner une poignée stylée, Qt lit la règle
+    « QSplitter::handle:vertical » même pour un splitter HORIZONTAL (constaté
+    en Qt 6), et ignore largeur et marges sinon. La poignée est donc dessinée
+    à la main — même rendu en Qt5 et en Qt6."""
+
+    LARGEUR = 13
+
+    def __init__(self, orientation, parent=None):
+        super().__init__(orientation, parent)
+        self.setHandleWidth(self.LARGEUR)
+
+    def createHandle(self):
+        return _Poignee(self.orientation(), self)
 
 
 def checkable_list_stylesheet() -> str:
@@ -136,18 +268,35 @@ QToolTip {{
     padding: 3px 6px;
 }}
 
-/* ---- groupes ------------------------------------------------------------ */
+/* ---- groupes ------------------------------------------------------------
+   Le titre se lit comme un TITRE : dans sa propre police (TITRE_POLICE), et
+   DANS le cadre — posé à cheval sur la bordure, le trait le barrait. La
+   marge du haut du cadre lui est réservée (padding-top), le contenu commence
+   dessous.
+
+   Qt ignore toute police posée sur « QGroupBox::title » : le titre prend
+   celle du GROUPE. Le groupe la porte donc, et ses enfants directs repartent
+   en poids normal (leur famille et leur taille, la règle QWidget les fixe
+   déjà widget par widget). Qt 6 ne transmet pas le poids aux enfants ; Qt 5
+   — celui du poste du travail — est connu pour le faire, d'où cette remise à
+   zéro, sans effet ici mais sans coût. */
 QGroupBox {{
     background: {SURFACE};
     border: 1px solid {BORDER};
     border-radius: 8px;
-    margin-top: 9px;
-    padding: 8px 6px 6px 6px;
+    margin-top: 0px;
+    padding: 24px 6px 6px 6px;
+    font-family: "{TITRE_POLICE}";
+    font-size: {TITRE_PT}pt;
+    font-weight: normal;
 }}
+QGroupBox > QWidget {{ font-weight: normal; }}
 QGroupBox::title {{
-    subcontrol-origin: margin;
-    left: 10px;
-    padding: 0 4px;
+    subcontrol-origin: padding;
+    subcontrol-position: top left;
+    left: 11px;
+    top: 7px;
+    padding: 0;
     color: {ACCENT};
     background: transparent;
 }}
@@ -195,6 +344,18 @@ QComboBox QAbstractItemView {{
     selection-color: {TEXT};
     outline: none;
 }}
+
+/* ---- code : chasse fixe ------------------------------------------------------
+   La règle QWidget ci-dessus fixe font-family sur TOUS les widgets, ce qui
+   écrase le moindre setFont(). Un widget marqué code=… (cf. police_code)
+   reprend la main : un attribut est plus précis qu'un type. */
+*[code="true"] {{ font-family: Consolas, "Courier New"; font-size: 9pt; }}
+*[code="petit"] {{ font-family: Consolas, "Courier New"; font-size: 8pt; }}
+
+/* ---- rangées de formulaire : sans fond propre ------------------------------
+   Un QWidget nu peint BG_WINDOW : posé dans un groupe (SURFACE), il y
+   dessinait une bande sombre derrière ses champs (cf. rangee_transparente). */
+*[fond="aucun"] {{ background: transparent; }}
 
 /* ---- éditeurs / journaux -------------------------------------------------*/
 QPlainTextEdit, QTextEdit {{

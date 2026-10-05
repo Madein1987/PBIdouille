@@ -2,10 +2,13 @@
 """Dialogue « Sauvegardes » : lister et RESTAURER les sauvegardes d'un projet.
 
 Tous les outils qui écrivent dans un projet (ChopChop, Propagation, Wireframe)
-copient d'abord les fichiers touchés dans un dossier horodaté. Ce dialogue les
-présente ensemble, la plus récente d'abord, et remet celle qu'on choisit en
-place — en sauvegardant d'abord l'état courant, pour qu'une restauration soit
-elle-même annulable.
+copient d'abord les fichiers touchés dans un dossier horodaté, sous le dossier
+parent `_backupsPBIdouille\\`. Ce dialogue les présente ensemble, la plus
+récente d'abord, et remet celle qu'on choisit en place — en sauvegardant
+d'abord l'état courant, pour qu'une restauration soit elle-même annulable.
+
+Chaque outil ne garde que ses `br.MAX_SESSIONS` sauvegardes les plus récentes :
+la liste ne gonfle pas, et il n'y a pas de ménage à faire à la main.
 
 Le détail de chaque sauvegarde (quel fichier venait d'où) se déplie sous sa
 ligne. Les vieilles sauvegardes, écrites avant le manifeste, sont marquées :
@@ -91,15 +94,18 @@ class BackupsDialog(QDialog):
         self.sessions = br.list_sessions(self.project_root)
         if not self.sessions:
             self.info.setText(
-                f"Aucune sauvegarde sous <b>{self.project_root}</b>. "
+                f"Aucune sauvegarde sous <b>{self.project_root}\\{br.PARENT}</b>. "
                 "Les outils en créent une à chaque écriture.")
             self._update_button()
             return
 
         self.info.setText(
-            f"<b>{len(self.sessions)} sauvegarde(s)</b> — la plus récente en "
-            "haut. Restaurer réécrit les fichiers listés ; l'état courant est "
-            "sauvegardé avant, donc l'opération reste annulable. "
+            f"<b>{len(self.sessions)} sauvegarde(s)</b> dans "
+            f"<b>{br.PARENT}\\</b> — la plus récente en haut. Restaurer "
+            "réécrit les fichiers listés ; l'état courant est sauvegardé "
+            "avant, donc l'opération reste annulable. Chaque outil ne garde "
+            f"que ses <b>{br.MAX_SESSIONS}</b> plus récentes : au-delà, la "
+            "plus vieille s'efface toute seule. "
             "⚠ Power BI Desktop doit être <b>fermé</b>.")
 
         muted = QBrush(QColor(_theme.TEXT_MUTED)) if _theme else QBrush(QColor(150, 150, 150))

@@ -21,7 +21,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from qtpy.QtCore import QPointF, QRectF, QSettings, Qt, QTimer
+from qtpy.QtCore import QPointF, QRectF, Qt, QTimer
 from qtpy.QtGui import QBrush, QColor, QFont, QKeySequence, QPainter, QPen
 from qtpy.QtWidgets import (
     QComboBox,
@@ -48,10 +48,14 @@ from qtpy.QtWidgets import (
 )
 
 from core import report_reader, template_import
-from core.project import Project
+from core.journal import Journal
+from core.project import Project, ecrire_reglage, lire_reglage, reglages
 from core.theme import (ACCENT, ACCENT_DIM, BG_DARKEST, BG_WINDOW, BORDER,
-                        SURFACE, TEXT, TEXT_DIM, TEXT_MUTED, YELLOW,
-                        checkable_list_stylesheet)
+                        SURFACE, TEXT, TEXT_DIM, TEXT_MUTED,
+                        bouton_en_attente, checkable_list_stylesheet,
+                        police_code)
+
+import backup_restore as br
 
 
 class WireItem(QGraphicsRectItem):
@@ -280,10 +284,13 @@ class WireframeView(QGraphicsView):
 
 
 class WireframeTab(QWidget):
-    def __init__(self):
+    def __init__(self, journal=None):
         super().__init__()
+        # le journal de l'app (colonne de droite) : le bandeau vert à côté de
+        # la scène dit le DERNIER geste, le journal les garde tous, horodatés
+        self.journal = journal or Journal()
         self.project = None
-        self.settings = QSettings("ChopChop", "BIdouille")
+        self.settings = reglages()      # magasin unique (cf. core/project.py)
         self._data: dict = {}          # id -> dict du visuel/groupe
         self._id_to_item: dict = {}    # id -> WireItem
         self._id_to_tree: dict = {}    # id -> QTreeWidgetItem
@@ -343,9 +350,9 @@ class WireframeTab(QWidget):
         hint.setWordWrap(True)
         hint.setStyleSheet(f"color:{TEXT_DIM};")
         save_bar.addWidget(hint, 1)
-        self.lbl_dirty = QLabel("")
-        self.lbl_dirty.setStyleSheet(f"color:{YELLOW};")
-        save_bar.addWidget(self.lbl_dirty)
+        # pas de voyant « ● n modifié(s) » à côté : le compte vit sur le
+        # bouton « Enregistrer », qui s'allume en orange tant qu'il reste
+        # quelque chose à écrire
         self.btn_cancel = QPushButton("⌫ Annuler (Ctrl+Z)")
         self.btn_cancel.setToolTip("Annule le dernier geste ou la dernière action "
                                    "(import, groupement, enregistrement…).")
@@ -379,7 +386,7 @@ class WireframeTab(QWidget):
         rv.addWidget(QLabel("Sélection :"))
         self.details = QPlainTextEdit()
         self.details.setReadOnly(True)
-        self.details.setFont(QFont("Consolas", 9))
+        police_code(self.details)   # chasse fixe, via le thème
         rv.addWidget(self.details, 1)
         btn_row = QHBoxLayout()
         self.btn_open = QPushButton("Ouvrir visual.json")
@@ -460,6 +467,17 @@ class WireframeTab(QWidget):
         self.project = project
         self._reload()
         self._tpl_load_for_project()
+
+    def reload(self):
+        """« ↻ Tout recharger » : relit le rapport en restant sur la page
+        courante. Les déplacements non enregistrés sont perdus — l'app demande
+        avant d'arriver ici (cf. app._reload_all)."""
+        if not self.project:
+            return
+        self._dirty = set()          # on repart du disque, pas de l'écran
+        self._undo = []              # la pile ne décrit plus l'état affiché
+        self._reload_keep_page()
+        self._update_dirty_ui()
 
     def _reload(self):
         self.cmb_pages.blockSignals(True)
@@ -840,7 +858,7 @@ class WireframeTab(QWidget):
         try:
             gid, backup_dir = report_reader.create_group(
                 self.project.report_dir, page["id"], ids, name,
-                self.project.folder / "_wireframe_backups")
+                br.backup_root(self.project.folder, "_wireframe_backups"))
         except (OSError, ValueError) as e:
             QMessageBox.critical(self, "Erreur de groupement", str(e))
             return
@@ -959,7 +977,7 @@ class WireframeTab(QWidget):
         try:
             n, backup_dir = report_reader.ungroup(
                 self.project.report_dir, page["id"], d["id"],
-                self.project.folder / "_wireframe_backups")
+                br.backup_root(self.project.folder, "_wireframe_backups"))
         except (OSError, ValueError) as e:
             QMessageBox.critical(self, "Erreur de dégroupement", str(e))
             return
@@ -1589,15 +1607,23 @@ class WireframeTab(QWidget):
 
     def _update_dirty_ui(self):
         n = len(self._dirty)
-        self.lbl_dirty.setText(f"● {n} élément(s) modifié(s)" if n else "")
+        self.btn_save.setText(f"💾 Enregistrer ({n})" if n else "💾 Enregistrer")
         self.btn_save.setEnabled(n > 0)
+        bouton_en_attente(
+            self.btn_save, n > 0,
+            en_attente=f"{n} élément(s) déplacé(s)/redimensionné(s) NON écrits "
+                       "— clique pour écrire les visual.json\n"
+                       "(backup automatique ; annulable par Ctrl+Z).",
+            au_repos="Écrit les positions modifiées dans les visual.json "
+                     "(backup automatique ; annulable par Ctrl+Z).")
         self.btn_cancel.setEnabled(bool(self._undo))
 
     def _status(self, msg):
         self.lbl_status.setText(msg)
+        self.journal.info(msg)
 
     def save_all(self):
-        """Point d'entrée du bouton « Tout enregistrer » de l'app."""
+        """Point d'entrée de « Enregistrer puis recharger » (app)."""
         self._save_positions()
 
     def _save_positions(self):
@@ -1615,7 +1641,7 @@ class WireframeTab(QWidget):
                                   round(d["w"], 6), round(d["h"], 6))
         try:
             n, backup_dir = report_reader.write_positions(
-                updates, self.project.folder / "_wireframe_backups")
+                updates, br.backup_root(self.project.folder, "_wireframe_backups"))
         except OSError as e:
             QMessageBox.critical(self, "Erreur d'écriture", str(e))
             return
@@ -1675,6 +1701,10 @@ class WireframeTab(QWidget):
             self._undo_geom(entry)
             self._status("↩ Dernier geste annulé.")
         else:
+            # une sauvegarde peut avoir disparu (ménage : on ne garde que les
+            # plus récentes par outil). Se taire laisserait croire que tout a
+            # été annulé — on dit lesquels n'ont pas pu l'être.
+            manquants = []
             try:
                 for p in entry["created"]:
                     if Path(p).parent.exists():
@@ -1682,6 +1712,7 @@ class WireframeTab(QWidget):
                 for p, bak in entry["restored"].items():
                     bak = Path(bak)
                     if not bak.exists():
+                        manquants.append(Path(p).parent.name)
                         continue
                     dst = Path(p)
                     dst.parent.mkdir(parents=True, exist_ok=True)
@@ -1691,7 +1722,16 @@ class WireframeTab(QWidget):
                 self._update_dirty_ui()
                 return
             self._reload_keep_page()
-            self._status(f"↩ {entry['label']} — annulé.")
+            if manquants:
+                QMessageBox.warning(
+                    self, "Annulation incomplète",
+                    f"{len(manquants)} élément(s) n'ont pas pu être remis en "
+                    "place : leur sauvegarde n'existe plus (le dossier ne "
+                    f"garde que les {br.MAX_SESSIONS} plus récentes).\n\n"
+                    + ", ".join(manquants))
+            self._status(f"↩ {entry['label']} — annulé."
+                         + (f"  ⚠ {len(manquants)} sans sauvegarde."
+                            if manquants else ""))
         self._update_dirty_ui()
 
     def _reload_keep_page(self):
@@ -1710,13 +1750,19 @@ class WireframeTab(QWidget):
 
     # ---- gabarits ----------------------------------------------------------------
 
+    CLE_TPL_GLOBAL = "template_pbip"      # le dernier choisi, tous projets
+
     def _tpl_key(self):
         return "template_pbip::" + str(self.project.pbip)
 
     def _tpl_load_for_project(self):
-        """Recharge le gabarit mémorisé pour CE projet (QSettings)."""
+        """Gabarit de CE projet, sinon le DERNIER choisi où que ce soit.
+
+        Un choix propre au projet reste prioritaire ; le repli global évite de
+        redésigner le même gabarit à chaque nouveau rapport, alors qu'on se
+        sert en général toujours du même."""
         pbip = self.settings.value(self._tpl_key(), "") if self.project else ""
-        self._tpl_set(pbip or "")
+        self._tpl_set(pbip or lire_reglage(self.CLE_TPL_GLOBAL, "") or "")
 
     def _tpl_choose(self):
         start = str(self._tpl_project.pbip) if self._tpl_project else (
@@ -1725,6 +1771,7 @@ class WireframeTab(QWidget):
             self, "Choisir le PBIP gabarit", start, "Projet Power BI (*.pbip)")
         if path:
             self.settings.setValue(self._tpl_key(), path)
+            ecrire_reglage(self.CLE_TPL_GLOBAL, path)   # et comme repli global
             self._tpl_set(path)
 
     def _tpl_set(self, pbip):
@@ -1798,7 +1845,7 @@ class WireframeTab(QWidget):
             new_root, written, manifest = template_import.import_model(
                 self._tpl_project.report_dir, model["page_id"], root_id,
                 self.project.report_dir, page["id"],
-                self.project.folder / "_wireframe_backups")
+                br.backup_root(self.project.folder, "_wireframe_backups"))
         except (OSError, ValueError) as e:
             QMessageBox.critical(self, "Erreur d'import", str(e))
             return

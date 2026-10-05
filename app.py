@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """PBIdouille — cockpit unique des outils Power BI du pipeline Fitbit.
 
-Lancement   : py bidouille\\app.py
+Lancement   : py app.py  (à la racine du dossier de l'app)
 Dépendances : qtpy + (PySide6 à la maison / PyQt5 au travail) ; openpyxl ou
               pandas pour les couleurs. Les scripts racine (propagate_cf,
               color_matrix_by_kpi) restent utilisables en CLI comme avant."""
@@ -25,6 +25,7 @@ for _p in (str(_APP_DIR), str(_MOTEURS)):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
+from qtpy.QtCore import Qt  # noqa: E402
 from qtpy.QtWidgets import (  # noqa: E402
     QApplication,
     QComboBox,
@@ -32,15 +33,19 @@ from qtpy.QtWidgets import (  # noqa: E402
     QHBoxLayout,
     QLabel,
     QMainWindow,
+    QMessageBox,
     QPushButton,
     QTabWidget,
     QVBoxLayout,
     QWidget,
 )
-from qtpy.QtCore import QSettings  # noqa: E402
 
-from core.project import Project, load_recents, push_recent  # noqa: E402
-from core.theme import apply_app_theme  # noqa: E402
+from core.journal import Journal  # noqa: E402
+from core.project import (Project, load_recents, push_recent,  # noqa: E402
+                          reglages)
+from core.theme import Separateur, apply_app_theme  # noqa: E402
+
+import backup_restore as br  # noqa: E402  (rangement des sauvegardes)
 from tabs.tab_report import ReportTab  # noqa: E402
 from tabs.tab_wireframe import WireframeTab  # noqa: E402
 from tabs.tab_config import ConfigTab  # noqa: E402
@@ -49,36 +54,101 @@ from tabs.tab_chopchop import ChopChopTab  # noqa: E402
 APP_NAME = "PBIdouille"          # PBI + bidouille ; réglages QSettings gardés sous « BIdouille »
 APP_EMOJI = "🔧"
 DEFAULT_PBIP = "Fitbit for random devs.pbip"
+# colonne du journal : largeur de départ et plancher (en dessous, une ligne de
+# log revient à la ligne tous les trois mots et ne se lit plus)
+JOURNAL_LARGEUR, JOURNAL_MINI = 440, 240
+# le choix « journal visible », PAR VUE : clé de réglage et défaut. Dans
+# l'éditeur de variations la colonne sert d'abord au DAX.
+CHOIX_JOURNAL = {"ailleurs": ("journal_visible", "1"),
+                 "variations": ("journal_visible_variations", "0")}
+
+
+def _chemin_court(chemin) -> str:
+    r"""…\dossier\fichier — de quoi reconnaître le projet sans que le libellé
+    impose la largeur de la fenêtre (le chemin complet est en infobulle)."""
+    p = Path(chemin)
+    return str(p) if len(str(p)) <= 48 else "…\\" + p.parent.name + "\\" + p.name
 
 
 class BidouilleWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.settings = QSettings("ChopChop", "BIdouille")
+        self.settings = reglages()      # magasin unique (cf. core/project.py)
         self.project = None
-        self.resize(1000, 800)
+        self.resize(1340, 800)
+
+        # Le journal est construit AVANT les onglets : chacun le reçoit et
+        # écrit dedans, aucun n'a plus sa propre bande de log en bas
+        # (cf. core/journal.py).
+        self.journal = Journal()
+        # un run qui démarre rouvre la colonne : sinon un outil écrirait dans
+        # les fichiers sans qu'on voie une ligne de ce qu'il fait
+        self.journal.demarre.connect(
+            lambda: self._afficher_journal(True, memoriser=False))
 
         central = QWidget()
         self.setCentralWidget(central)
-        v = QVBoxLayout(central)
+        # à gauche le travail, à droite le journal sur toute la hauteur ; la
+        # poignée reste déplaçable et la largeur est retenue d'une fois à
+        # l'autre
+        self.split = Separateur(Qt.Horizontal)   # un trait fin, de l'air autour
+        self.split.setChildrenCollapsible(False)
+        dehors = QHBoxLayout(central)
+        dehors.setContentsMargins(6, 6, 6, 6)
+        dehors.addWidget(self.split)
+
+        gauche = QWidget()
+        v = QVBoxLayout(gauche)
+        v.setContentsMargins(0, 0, 0, 0)
 
         # ---- barre projet (partagée par tous les onglets) ----
         bar = QHBoxLayout()
         self.project_label = QLabel("Aucun projet")
+        # le chemin complet faisait 984 px : c'est la barre, donc la FENÊTRE,
+        # qui ne pouvait plus rétrécir. Il passe en infobulle (cf. _set_project).
+        self.project_label.setToolTip("Aucun projet")
         self.cmb_recents = QComboBox()
-        self.cmb_recents.setMinimumWidth(230)
+        self.cmb_recents.setMinimumWidth(180)
         self.cmb_recents.activated.connect(self._pick_recent)
         btn_change = QPushButton("Changer de rapport…")
         btn_change.clicked.connect(self._choose_project)
-        btn_save_all = QPushButton("💾 Tout enregistrer")
-        btn_save_all.setToolTip("Écrit toutes les modifications en attente "
-                                "(positions du wireframe, config des mesures) — "
-                                "backups automatiques.")
-        btn_save_all.clicked.connect(self._save_all)
+        # pas de « Tout enregistrer » : il doublait les boutons des onglets
+        # (« Sauvegarder » des Mesures, « Enregistrer » du Wireframe), qui
+        # s'allument en ORANGE quand il reste quelque chose à écrire — un
+        # bouton qui ne s'allume jamais n'apprenait rien
+        # ⚙ Réglages : les réglages globaux du config, pour TOUS les onglets
+        # (l'Excel des indicateurs sert au Rapport, les dossiers au générateur…)
+        btn_reglages = QPushButton("⚙ Réglages")
+        btn_reglages.setToolTip(
+            "Les réglages globaux du measures_config.json de ce rapport :\n"
+            "Excel des indicateurs, génération, paramètres de champ, switch,\n"
+            "attributs, branches… — ce qui sert à plusieurs onglets.")
+        btn_reglages.clicked.connect(self._ouvrir_reglages)
+        btn_reload_all = QPushButton("↻ Tout recharger")
+        btn_reload_all.setToolTip(
+            "Relit TOUTES les sources sans fermer l'app :\n"
+            "  · le modèle (KPI, branches, paramètres de champ) ;\n"
+            "  · measures_config.json ;\n"
+            "  · TD_Indicateurs.xlsx (colonnes comprises) ;\n"
+            "  · le fichier de groupes de propagation ;\n"
+            "  · le rapport (pages et visuels du wireframe).\n\n"
+            "À utiliser après avoir généré des mesures, modifié l'Excel, ou\n"
+            "touché au modèle dans Desktop. Les modifications en attente sont\n"
+            "signalées avant de recharger.")
+        btn_reload_all.clicked.connect(self._reload_all)
+        # le journal occupe une colonne : de quoi la rendre au travail quand on
+        # n'en a pas besoin. Le libellé dit ce que le clic FERA — le thème ne
+        # style pas l'état « enfoncé » d'un bouton, donc une case cochée ne se
+        # verrait pas.
+        self.btn_journal = QPushButton("")
+        self.btn_journal.clicked.connect(
+            lambda: self._afficher_journal(self.journal.isHidden()))
         bar.addWidget(self.project_label, 1)
         bar.addWidget(self.cmb_recents)
         bar.addWidget(btn_change)
-        bar.addWidget(btn_save_all)
+        bar.addWidget(btn_reglages)
+        bar.addWidget(btn_reload_all)
+        bar.addWidget(self.btn_journal)
         v.addLayout(bar)
 
         # ---- barre config : measures_config.json utilisé (chemin explicite,
@@ -101,33 +171,201 @@ class BidouilleWindow(QMainWindow):
         v.addWidget(warn)
 
         # ---- onglets ----
+        # « Mesures » en tête : c'est par là que commence le travail (écrire
+        # les mesures), le reste s'appuie sur ce qu'il a produit
         self.tabs = QTabWidget()
-        self.tab_report = ReportTab()
-        self.tabs.addTab(self.tab_report, "Rapport")
-        self.tab_wireframe = WireframeTab()
-        self.tabs.addTab(self.tab_wireframe, "Wireframe")
-        self.tab_config = ConfigTab()          # « Mesures » : config + génération
+        self.tab_config = ConfigTab(self.journal)   # « Mesures » : config + génération
         self.tabs.addTab(self.tab_config, "Mesures")
-        self.tab_chopchop = ChopChopTab()
+        self.tab_report = ReportTab(self.journal)
+        self.tabs.addTab(self.tab_report, "Rapport")
+        self.tab_wireframe = WireframeTab(self.journal)
+        self.tabs.addTab(self.tab_wireframe, "Wireframe")
+        self.tab_chopchop = ChopChopTab(self.journal)
         self.tabs.addTab(self.tab_chopchop, "ChopChop 🪓")
         v.addWidget(self.tabs, 1)
+
+        self.split.addWidget(gauche)
+        self.split.addWidget(self.journal)
+        self.split.setStretchFactor(0, 1)   # tout l'agrandissement va au travail
+        self.split.setStretchFactor(1, 0)
+        self.journal.setMinimumWidth(JOURNAL_MINI)
+        self._largeur_posee = False         # cf. showEvent
+        # ce que l'usager a choisi au bouton, retenu PAR VUE : dans l'éditeur
+        # de variations la colonne sert au DAX (journal masqué par défaut),
+        # ailleurs au journal. Ouvrir le journal dans Variations l'y garde
+        # ouvert, sans rien changer ailleurs.
+        # une fois : une largeur retenue plus étroite que la nouvelle largeur
+        # par défaut est élargie — le journal était trop étroit à l'usage.
+        # Ensuite, la largeur que l'usager règle à la poignée est respectée.
+        if self.settings.value("journal_largeur_revue", "") != "440":
+            if self._reglage_int("journal_largeur", JOURNAL_LARGEUR) < JOURNAL_LARGEUR:
+                self.settings.setValue("journal_largeur", JOURNAL_LARGEUR)
+            self.settings.setValue("journal_largeur_revue", "440")
+        self._voulu = {
+            vue: self.settings.value(cle, defaut) not in ("0", 0, False)
+            for vue, (cle, defaut) in CHOIX_JOURNAL.items()}
+        self._afficher_journal(self._voulu["ailleurs"], memoriser=False)
+        self.tabs.currentChanged.connect(self._colonne_selon_la_vue)
+        # vue_changee plutôt que inner.currentChanged : un rechargement revient
+        # sur Variations SANS signal, et le journal doit suivre quand même
+        self.tab_config.vue_changee.connect(self._colonne_selon_la_vue)
 
         # une generation qui ecrit change le modele : les onglets qui le
         # lisent doivent revoir la liste des KPI, sans rechargement manuel
         self.tab_config.model_panel.modele_genere.connect(self._apres_generation)
+        # le lien de la fiche Excel (onglet Rapport) mène là où elle se règle
+        self.tab_report.ouvrir_reglages.connect(self._ouvrir_reglages)
 
-        self._tabs = [self.tab_report, self.tab_wireframe, self.tab_config,
+        self._tabs = [self.tab_config, self.tab_report, self.tab_wireframe,
                       self.tab_chopchop]
         self._reload_recents()
         self._load_initial_project()
+        self._colonne_selon_la_vue()
+
+    # ---- journal (colonne de droite) ------------------------------------------
+
+    def _reglage_int(self, cle, defaut):
+        """QSettings rend des chaînes avec PyQt5 et des int avec PySide6 :
+        on ne fait confiance à ni l'un ni l'autre."""
+        try:
+            return max(JOURNAL_MINI, int(self.settings.value(cle, defaut)))
+        except (TypeError, ValueError):
+            return defaut
+
+    def showEvent(self, event):
+        """La largeur du journal ne peut être posée qu'ICI : avant l'affichage,
+        le splitter ne connaît pas encore la sienne et Qt ramène les tailles
+        demandées à l'échelle de ce qu'il croit avoir — le journal naissait à
+        170 px au lieu de 340."""
+        super().showEvent(event)
+        if not self._largeur_posee:
+            self._largeur_posee = True
+            if not self.journal.isHidden():
+                self._poser_largeur_journal()
+
+    def _poser_largeur_journal(self):
+        largeur = self._reglage_int("journal_largeur", JOURNAL_LARGEUR)
+        total = self.split.width() or self.width()
+        self.split.setSizes([max(300, total - largeur), largeur])
+
+    def _afficher_journal(self, montrer: bool, memoriser: bool = True):
+        """Montre/masque la colonne de droite en gardant sa largeur : la
+        rouvrir la retrouve telle quelle.
+
+        `memoriser` : vrai pour le BOUTON (le choix de l'usager POUR LA VUE
+        COURANTE, retenu d'une session à l'autre), faux quand c'est un
+        changement de vue ou un run qui décide pour un moment."""
+        if not montrer and not self.journal.isHidden():
+            tailles = self.split.sizes()
+            if len(tailles) > 1 and tailles[1] > 0:
+                self.settings.setValue("journal_largeur", tailles[1])
+        self.journal.setVisible(montrer)
+        if montrer and self._largeur_posee:
+            self._poser_largeur_journal()
+        self.btn_journal.setText("🚀 Lancements ▸" if montrer
+                                 else "◂ 🚀 Lancements")
+        self.btn_journal.setToolTip(
+            ("Masquer la colonne des lancements et rendre sa largeur au "
+             "travail." if montrer else
+             "Montrer la colonne des lancements : le journal de ce qui a\n"
+             "tourné — et, dans l'onglet Mesures, le bouton de génération.")
+            + "\nRetenu séparément pour l'éditeur de variations et pour le"
+              "\nreste, comme la largeur de la colonne.")
+        if memoriser:
+            vue = self._vue()
+            self._voulu[vue] = montrer
+            self.settings.setValue(CHOIX_JOURNAL[vue][0],
+                                   "1" if montrer else "0")
+
+    def _vue(self) -> str:
+        """« variations » quand l'éditeur de variations est à l'écran (sa
+        colonne de droite porte le DAX), « ailleurs » sinon."""
+        prise = (self.tabs.currentWidget() is self.tab_config
+                 and self.tab_config.occupe_la_colonne())
+        return "variations" if prise else "ailleurs"
+
+    def _colonne_selon_la_vue(self, *_):
+        """Chaque vue retrouve SON choix : dans « Mesures → Variations » le
+        journal cède sa colonne au DAX et à l'aperçu — sauf si l'usager l'y a
+        rouvert ; ailleurs il est là, sauf si l'usager l'a fermé."""
+        self._afficher_journal(self._voulu[self._vue()], memoriser=False)
+
+    def closeEvent(self, event):
+        """Retient la largeur du journal telle qu'elle est à la fermeture."""
+        tailles = self.split.sizes()
+        if self.journal.isVisible() and len(tailles) > 1 and tailles[1] > 0:
+            self.settings.setValue("journal_largeur", tailles[1])
+        super().closeEvent(event)
+
+    def _ouvrir_reglages(self):
+        """⚙ Réglages — depuis la barre, ou le lien de la fiche Excel du
+        Rapport. Enregistrés, ils changent ce que le Rapport lit : sa fiche
+        et ses groupes se relisent."""
+        if self.tab_config.ouvrir_reglages():
+            self.tab_report._refresh_td_label()
 
     def _save_all(self):
-        """Bouton « 💾 Tout enregistrer » : chaque onglet qui a des
-        modifications en attente les écrit (backups automatiques)."""
+        """Chaque onglet qui a des modifications en attente les écrit
+        (backups automatiques) — pour « Enregistrer puis recharger ». Plus
+        de bouton pour ça : chaque onglet a le sien, qui s'allume."""
         for t in self._tabs:
             fn = getattr(t, "save_all", None)
             if fn:
                 fn()
+
+    def _en_attente(self) -> list:
+        """Ce qui n'est pas encore écrit, onglet par onglet. Recharger relit le
+        DISQUE : il faut donc le dire avant, pas après."""
+        quoi = []
+        if getattr(self.tab_config, "_dirty", False):
+            quoi.append("Mesures : le config a des modifications non "
+                        "enregistrées")
+        n = len(getattr(self.tab_wireframe, "_dirty", ()) or ())
+        if n:
+            quoi.append(f"Wireframe : {n} élément(s) déplacé(s) non écrit(s)")
+        return quoi
+
+    def _reload_all(self):
+        """« ↻ Tout recharger » : chaque onglet relit ses sources.
+
+        Le besoin : après une génération, une colonne ajoutée dans
+        TD_Indicateurs ou une retouche du modèle dans Desktop, l'outil
+        travaillait sur des données périmées et il fallait le relancer.
+
+        On ne rappelle PAS _set_project : ça repousserait le projet dans les
+        récents, relancerait le rangement des sauvegardes et remettrait les
+        listes de l'onglet Rapport à zéro. Chaque onglet sait relire ce qui lui
+        appartient en gardant les choix en cours (cf. ses `reload`)."""
+        if not self.project:
+            return
+        attente = self._en_attente()
+        if attente:
+            box = QMessageBox(self)
+            box.setWindowTitle("Modifications non enregistrées")
+            box.setText("Recharger relit les fichiers sur le disque, donc ce "
+                        "qui n'est pas écrit sera perdu :\n\n· "
+                        + "\n· ".join(attente))
+            b_save = box.addButton("Enregistrer puis recharger",
+                                   QMessageBox.AcceptRole)
+            b_jeter = box.addButton("Recharger quand même",
+                                    QMessageBox.DestructiveRole)
+            box.addButton("Annuler", QMessageBox.RejectRole)
+            box.setDefaultButton(b_save)
+            box.exec_() if hasattr(box, "exec_") else box.exec()
+            clic = box.clickedButton()
+            if clic is b_save:
+                self._save_all()
+            elif clic is not b_jeter:
+                return
+
+        for t in self._tabs:
+            fn = getattr(t, "reload", None)
+            if fn:
+                fn()
+        self._update_config_label()
+        self.journal.info(
+            "↻ Tout rechargé : modèle, config, Excel des indicateurs, groupes "
+            "et rapport relus depuis le disque.")
 
     # ---- projet ---------------------------------------------------------------
 
@@ -152,9 +390,21 @@ class BidouilleWindow(QMainWindow):
         if override and Path(override).exists():
             project.config_override = Path(override)
         self.project = project
+        # les sauvegardes d'avant le regroupement traînent à la racine du
+        # projet : on les range sous _backupsPBIdouille\ une bonne fois, pour
+        # qu'il n'y ait qu'un seul endroit où chercher (rien n'est fusionné de
+        # force, rien n'est supprimé — cf. backup_restore.migrate_legacy).
+        # Puis le ménage, pour que la règle vaille dès l'ouverture et pas
+        # seulement à la prochaine écriture.
+        br.migrate_legacy(project.folder)
+        br.prune_all(project.folder)
         push_recent(self.settings, pbip)
         self.settings.setValue("last_pbip", str(pbip))
-        self.project_label.setText("Projet : " + str(project.pbip))
+        # le NOM seulement (le chemin est en infobulle) : c'est la barre, donc
+        # la largeur minimale de la fenêtre, qui cède ainsi de la place au
+        # journal
+        self.project_label.setText("Projet : " + project.name)
+        self.project_label.setToolTip(str(project.pbip))
         self.setWindowTitle(APP_NAME + " — " + project.name)
         self._update_config_label()
         for t in self._tabs:
@@ -180,7 +430,8 @@ class BidouilleWindow(QMainWindow):
     def _update_config_label(self):
         p = self.project.config_json
         if p.exists():
-            self.config_label.setText("Config : " + str(p))
+            self.config_label.setText("Config : " + _chemin_court(p))
+            self.config_label.setToolTip(str(p))
             self.config_label.setStyleSheet("")
         else:
             self.config_label.setText(

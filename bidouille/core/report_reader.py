@@ -174,7 +174,7 @@ def write_positions(updates, backup_root) -> tuple:
     (x/y/width/height ; z/tabOrder préservés). Retourne (nb écrits, dossier backup).
     ⚠ Power BI Desktop doit être FERMÉ (il relit à l'ouverture)."""
     session = _br.BackupSession(backup_root, "Wireframe (positions)",
-                                Path(backup_root).parent)
+                                _br.project_of(backup_root))
     written = 0
     for path, (lx, ly, w, h) in updates.items():
         vj = Path(path)
@@ -255,7 +255,7 @@ def create_group(report_dir, page_id, member_ids, display_name, backup_root) -> 
 
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     session = _br.BackupSession(backup_root, "Wireframe (groupement)",
-                                Path(backup_root).parent)
+                                _br.project_of(backup_root))
     backup_dir = session.dir
     backup_dir.mkdir(parents=True, exist_ok=True)
     group_path = vis_dir / gid / "visual.json"
@@ -302,7 +302,7 @@ def ungroup(report_dir, page_id, group_id, backup_root) -> tuple:
     gparent = g.get("parentGroupName")
 
     session = _br.BackupSession(backup_root, "Wireframe (dégroupement)",
-                                Path(backup_root).parent)
+                                _br.project_of(backup_root))
     backup_dir = session.dir
     # le visual.json du groupe est SUPPRIMÉ plus bas -> action=supprimé pour
     # que la restauration le recrée

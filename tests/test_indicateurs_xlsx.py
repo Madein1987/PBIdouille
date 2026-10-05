@@ -49,7 +49,9 @@ def rmtree(p):
 print("1. resolution du bloc unique")
 d = gm.indicateurs_xlsx({})
 check("defauts", d == {"path": "TD_Indicateurs.xlsx", "keyColumn": "mesure",
-                       "fillColumn": "couleur_fill", "textColumn": "couleur_text"})
+                       "fillColumn": "couleur_fill", "textColumn": "couleur_text",
+                       # vide = ordre alphabetique (cf. test_ordre_kpi)
+                       "orderColumn": ""})
 d = gm.indicateurs_xlsx({"indicateursXlsx": {"path": "Refs.xlsx", "fillColumn": "bg"}})
 check("le bloc surcharge ce qu'il precise", d["path"] == "Refs.xlsx" and d["fillColumn"] == "bg")
 check("et laisse le reste au defaut", d["keyColumn"] == "mesure")

@@ -53,7 +53,6 @@ for f in ((PROJ + ".pbip"), "TD_Indicateurs.xlsx", "measures_config.json"):
     shutil.copy2(FIT / f, c / f)
 
 from PySide6.QtWidgets import QApplication                   # noqa: E402
-from PySide6.QtCore import Qt                                # noqa: E402
 from core.project import Project                             # noqa: E402
 import tabs.tab_report as tr                                 # noqa: E402
 
@@ -62,17 +61,15 @@ projet = Project(c / (PROJ + ".pbip"))
 onglet = tr.ReportTab()
 onglet.set_project(projet)
 
-depart = [onglet.cmb_template.itemText(i) for i in range(onglet.cmb_template.count())]
+depart = list(onglet._kpis)
 print("   KPI au chargement :", depart)
 check("des KPI sont charges", len(depart) >= 3)
 
-# --- on decoche une cible et on choisit un template, comme le ferait l'usager
-onglet.cmb_template.setCurrentText(depart[1])
-ecarte = depart[0]
-for i in range(onglet.lst_targets.count()):
-    if onglet.lst_targets.item(i).text() == ecarte:
-        onglet.lst_targets.item(i).setCheckState(Qt.Unchecked)
-check("une cible est decochee", ecarte not in onglet._checked(onglet.lst_targets))
+# --- une grille des sources, comme l'usager l'aurait posee ------------------
+import propagate_cf as pc                                    # noqa: E402
+pc.ecrire_regles(c / "propagation.json", {"version": 2, "base": depart[1]})
+onglet._refresh_sources_label()
+check("l'onglet resume la grille", depart[1] in onglet.lbl_sources.text())
 
 # --- un KPI apparait dans le modele (ce que fait une generation) -------------
 NOUVEAU = "Nouveau KPI"
@@ -90,32 +87,40 @@ fp.write_text(t, encoding="utf-8")
 import core.model_reader as mr                               # noqa: E402
 check("le modele contient bien le nouveau KPI",
       NOUVEAU in mr.kpis(projet))
-check("mais l'onglet ne le voit PAS encore (liste peuplee une seule fois)",
-      NOUVEAU not in [onglet.cmb_template.itemText(i)
-                      for i in range(onglet.cmb_template.count())])
+check("mais l'onglet ne le voit PAS encore (liste lue une seule fois)",
+      NOUVEAU not in onglet._kpis)
 
 # --- le rafraichissement que declenche la fin de generation -----------------
 onglet.refresh_model()
-apres = [onglet.cmb_template.itemText(i) for i in range(onglet.cmb_template.count())]
+apres = list(onglet._kpis)
 print("   KPI apres refresh :", apres)
-check("le nouveau KPI apparait dans le template", NOUVEAU in apres)
-check("… et dans la liste des cibles",
-      NOUVEAU in [onglet.lst_targets.item(i).text()
-                  for i in range(onglet.lst_targets.count())])
-check("il arrive COCHE (on veut propager vers lui)",
-      NOUVEAU in onglet._checked(onglet.lst_targets))
-check("le KPI template choisi est conserve",
-      onglet.cmb_template.currentText() == depart[1])
-check("la cible decochee le reste (les choix ne sont pas defaits)",
-      ecarte not in onglet._checked(onglet.lst_targets))
-check("le journal annonce la nouveaute",
-      NOUVEAU in onglet.log.toPlainText())
+check("le nouveau KPI est connu de l'onglet", NOUVEAU in apres)
+grille = pc.Sources.depuis_regles(
+    pc.lire_regles(c / "propagation.json"), apres, ["Réel"])
+check("… et, sans rien toucher, il suit la base de la grille",
+      grille.source(NOUVEAU, "Réel") == depart[1])
+check("la grille n'a pas ete reecrite pour autant",
+      pc.lire_regles(c / "propagation.json") == {"base": depart[1],
+                                                  "colonnes": {},
+                                                  "groupes": [],
+                                                  "exceptions": []})
+check("le journal annonce la nouveaute, et qu'elle suit la base",
+      NOUVEAU in onglet.journal.texte()
+      and "suivent la base" in onglet.journal.texte())
 
 # --- le cablage : ModelTab -> app -------------------------------------------
 print("   cablage generation -> rafraichissement")
 import tabs.tab_model as tm                                  # noqa: E402
 check("ModelTab expose le signal", hasattr(tm.ModelTab, "modele_genere"))
 import app as application                                    # noqa: E402
+# la fenetre charge le vrai projet, et l'ouvrir range/nettoie ses
+# sauvegardes : une suite de tests n'a pas a y toucher (cf. test_sauvegardes)
+application.br.migrate_legacy = lambda *a, **k: []
+import propagate_cf as _pcf_isole                          # noqa: E402
+# ouvrir un projet renomme son ancien <rapport>.propagation.json : sur le VRAI
+# dossier, ce serait a l'usager de le declencher, pas a une suite de tests
+_pcf_isole.migrer_groupes = lambda *a, **k: None
+application.br.prune_all = lambda *a, **k: []
 fen = application.BidouilleWindow()
 check("l'app a un gestionnaire", hasattr(fen, "_apres_generation"))
 recu = []

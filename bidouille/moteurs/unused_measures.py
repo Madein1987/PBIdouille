@@ -72,7 +72,7 @@ REPORT_DIR  = PBIP_DIR / f"{PROJECT}.Report"
 MODEL_DIR   = PBIP_DIR / f"{PROJECT}.SemanticModel"
 CSV_PATH    = PBIP_DIR / "unused_measures.csv"
 CSX_PATH    = PBIP_DIR / "delete_unused_measures.csx"
-BACKUP_ROOT = PBIP_DIR / "_tmdl_backups"
+BACKUP_ROOT = br.backup_root(PBIP_DIR, "_tmdl_backups")
 
 
 def set_project(pbip_path: Path) -> None:
@@ -86,7 +86,7 @@ def set_project(pbip_path: Path) -> None:
     MODEL_DIR   = PBIP_DIR / f"{PROJECT}.SemanticModel"
     CSV_PATH    = PBIP_DIR / "unused_measures.csv"
     CSX_PATH    = PBIP_DIR / "delete_unused_measures.csx"
-    BACKUP_ROOT = PBIP_DIR / "_tmdl_backups"
+    BACKUP_ROOT = br.backup_root(PBIP_DIR, "_tmdl_backups")
 
 # fichiers de definition\ qui ne portent NI DAX NI requête M : à ne pas
 # scanner comme du code (cf. parse_model)

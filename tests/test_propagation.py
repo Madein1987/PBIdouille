@@ -71,6 +71,36 @@ def kpis(c):
     return pc.kpis_from_parameter(c / (PROJ + ".SemanticModel"), "P_Indicateurs_parCalcul")
 
 
+def cloner_kpi(c, base_kpi, nouveau_kpi):
+    """Donne au KPI `nouveau_kpi` les MESURES de `base_kpi` dans le modele.
+
+    La propagation refuse (a raison) d'ecrire une reference vers une mesure qui
+    n'existe pas : un KPI cible sans mesures n'est donc pas un cas realiste.
+    Pour eprouver le KPI homonyme, il lui faut vraiment ses mesures — sinon le
+    test ne prouverait rien, toutes les entrees etant ecartees en silence.
+    """
+    tmdl = (c / (PROJ + ".SemanticModel") / "definition" / "tables"
+            / "_mesures.tmdl")
+    texte = tmdl.read_text(encoding="utf-8")
+    noms = {m.group(1) or m.group(2)
+            for m in pc.MEASURE_NAME_RE.finditer(texte)}
+    ajouts = []
+    for n in sorted(x for x in noms if x):
+        if n != base_kpi and not n.startswith(base_kpi + " "):
+            continue
+        neuf = nouveau_kpi + n[len(base_kpi):]
+        if neuf not in noms:
+            ajouts.append("\tmeasure '" + neuf.replace("'", "''") + "' = 0\n"
+                          "\t\tlineageTag: test-" + str(len(ajouts)) + "\n")
+    if not ajouts:
+        return 0
+    bloc = "\n".join(ajouts) + "\n"
+    coupe = texte.find("\tpartition ")        # avant la partition : TMDL valide
+    texte = (texte[:coupe] + bloc + texte[coupe:]) if coupe != -1 else texte + bloc
+    tmdl.write_text(texte, encoding="utf-8")
+    return len(ajouts)
+
+
 # ===================================================================== 1
 print("1. idempotence : une 2e propagation ne doit RIEN écrire")
 c = projet_copie("idem")
@@ -92,6 +122,8 @@ print("2. RÉGRESSION : un KPI dont le nom COMMENCE par celui du template")
 # d'entrées double à chaque passe et la propagation ne converge jamais.
 c = projet_copie("prefixe")
 R = c / (PROJ + ".Report")
+n_ajout = cloner_kpi(c, TPL, TPL + " Goal")   # le KPI homonyme a ses mesures
+check("le KPI homonyme a bien des mesures dans le modele", n_ajout > 0)
 cibles = kpis(c) + [TPL + " Goal"]
 suite = []
 for _ in range(4):
@@ -106,6 +138,7 @@ rmtree(c)
 print("3. le KPI homonyme reste une CIBLE normale")
 c = projet_copie("homonyme")
 R = c / (PROJ + ".Report")
+cloner_kpi(c, TPL, TPL + " Goal")
 cibles = kpis(c) + [TPL + " Goal"]
 pc.propagate(R, TPL, branches=["YTD"], targets=cibles, log=lambda *_: None)
 mds = set()

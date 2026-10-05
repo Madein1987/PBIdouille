@@ -47,6 +47,49 @@ class Project:
         return str(self.pbip)
 
 
+# --- réglages mémorisés -----------------------------------------------------
+# UN seul magasin pour toute l'app. Il y en avait deux (« ChopChop/BIdouille »
+# pour les projets récents, « PBIdouille/PBIdouille » pour la bibliothèque) :
+# deux endroits où chercher, et un réglage qui semblait se perdre.
+ORG_REGLAGES = "ChopChop"
+APP_REGLAGES = "BIdouille"      # nom interne d'origine : les clés déjà là restent lues
+_ANCIEN_MAGASIN = ("PBIdouille", "PBIdouille")
+
+
+def reglages():
+    """L'unique magasin de réglages (registre Windows via QSettings).
+
+    Volontairement HORS du dossier de l'app : un nouveau zip dézippé ailleurs
+    retrouve les réglages, alors qu'un fichier posé à côté de app.py serait
+    perdu à chaque mise à jour."""
+    from qtpy.QtCore import QSettings
+    return QSettings(ORG_REGLAGES, APP_REGLAGES)
+
+
+def lire_reglage(cle, defaut=""):
+    """Réglage GLOBAL (pas lié à un projet). Reprend au besoin la valeur
+    laissée dans l'ancien magasin, pour ne pas perdre ce qui y était."""
+    from qtpy.QtCore import QSettings
+    s = reglages()
+    valeur = s.value(cle, None)
+    if valeur in (None, ""):
+        ancien = QSettings(*_ANCIEN_MAGASIN).value(cle, None)
+        if ancien not in (None, ""):
+            s.setValue(cle, ancien)       # rapatrié une fois pour toutes
+            return ancien
+        return defaut
+    return valeur
+
+
+def ecrire_reglage(cle, valeur) -> None:
+    """Mémorise un réglage global. Une valeur VIDE est ignorée : sans ce
+    garde-fou, refermer une boîte de dialogue sans rien choisir effaçait le
+    chemin retenu — et le réglage avait l'air de se réinitialiser tout seul."""
+    if valeur in (None, ""):
+        return
+    reglages().setValue(cle, str(valeur))
+
+
 # --- projets récents (QSettings) -------------------------------------------
 RECENTS_KEY = "recent_pbips"
 MAX_RECENTS = 8

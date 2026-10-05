@@ -25,7 +25,9 @@ import secrets
 from datetime import datetime
 from pathlib import Path
 
-from core import report_reader
+from core import report_reader          # met aussi moteurs\ sur le sys.path
+
+import backup_restore as br             # noqa: E402  (ménage des sauvegardes)
 
 
 def list_models(template_report_dir) -> list:
@@ -152,4 +154,6 @@ def import_model(template_report_dir, template_page_id, root_id,
         "# undo   : supprimer les dossiers des fichiers listés ci-dessous",
     ] + written
     manifest.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    # même ménage que les autres écritures : ce manifeste ne doit pas s'empiler
+    br.prune(Path(backup_root), protect=[stamp_dir])
     return mapping[root_id], written, manifest

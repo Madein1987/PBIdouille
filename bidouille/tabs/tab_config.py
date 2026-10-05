@@ -1,11 +1,12 @@
 # -*- coding: utf-8 -*-
-"""Onglet « Config mesures » : édite measures_config.json en trois vues du
-MÊME config en mémoire :
-  - « Variations » : un formulaire par variation (nom, options, DAX en clair) —
-    le format JSON array-of-lines devient invisible ;
-  - « Réglages globaux » : settings, fieldParameter, switch et branches
-    (cases/champs plutôt que du JSON à la main) ;
-  - « JSON brut » : tout le fichier, pour les cas non couverts.
+"""Onglet « Mesures » : édite measures_config.json, trois vues du MÊME config
+en mémoire :
+  - « Variations » (sous-onglet) : un formulaire par variation (nom, options,
+    DAX en clair) — le format JSON array-of-lines devient invisible ;
+  - « JSON brut » (sous-onglet) : tout le fichier, pour les cas non couverts ;
+  - la fenêtre « ⚙ Réglages » (barre du haut) : settings, fieldParameter,
+    switch, branches… en cases et champs — ils servent aussi à l'onglet
+    Rapport, d'où leur fenêtre à eux (cf. ouvrir_reglages).
 
 Synchronisation : à chaque changement de sous-onglet, celui qu'on QUITTE est
 committé dans le config en mémoire, celui qu'on OUVRE est rechargé depuis lui
@@ -20,11 +21,13 @@ import re
 import shutil
 from pathlib import Path
 
-from qtpy.QtCore import Qt, Signal
-from qtpy.QtGui import QFont, QStandardItem, QStandardItemModel
+from qtpy.QtCore import QEvent, Qt, Signal
+from qtpy.QtGui import (QColor, QFont, QStandardItem, QStandardItemModel,
+                        QSyntaxHighlighter, QTextCharFormat, QTextCursor)
 from qtpy.QtWidgets import (
     QCheckBox,
     QComboBox,
+    QDialog,
     QFileDialog,
     QGridLayout,
     QGroupBox,
@@ -49,13 +52,23 @@ from qtpy.QtWidgets import (
 )
 
 from core import model_reader
-from core.theme import YELLOW, TEXT_DIM, checkable_list_stylesheet
+from core.journal import Journal
+from core.project import ecrire_reglage, lire_reglage
+from core.theme import (ACCENT, BLUE, RED, YELLOW, TEXT_DIM, TEXT_MUTED,
+                        Separateur, bouton_en_attente,
+                        checkable_list_stylesheet, police_code,
+                        rangee_transparente)
 from tabs.tab_model import ModelTab
 
 import generate_measures as gm   # scan_cibles : mêmes règles que la génération
 
-# index des sous-onglets de l'onglet « Mesures »
-IDX_VARIATIONS, IDX_GLOBAL, IDX_RAW, IDX_GENERATE = 0, 1, 2, 3
+# index des sous-onglets de l'onglet « Mesures » (la génération n'a plus
+# d'onglet : son panneau est posé en tête du journal)
+IDX_VARIATIONS, IDX_RAW = 0, 1
+
+# largeur d'une TABULATION dans l'éditeur DAX, en caractères (cf. DaxEdit)
+# — au lieu des 80 px de Qt, une dizaine de caractères
+INDENT_DAX = 4
 
 # placeholders compris par le générateur (generate_measures.py / csx) ; tout autre {jeton}
 # serré (sans espaces) est probablement une faute de frappe. « { ad } » avec
@@ -63,6 +76,7 @@ IDX_VARIATIONS, IDX_GLOBAL, IDX_RAW, IDX_GENERATE = 0, 1, 2, 3
 KNOWN_PLACEHOLDERS = {
     "base", "baseRef", "date", "variation", "deltaScale",
     "kpi", "kpiRef", "folder", "baseFolder", "baseFormat", "branch",
+    "variationRef",     # enveloppe de branche : la mesure Réel de la variation
 }
 
 # aide-mémoire affiché sous le DAX : ce que vaut chaque jeton, avec l'exemple
@@ -80,6 +94,90 @@ TOKENS_HELP = (
     "  {deltaScale} 100 si le format est un %, sinon 1"
 )
 PLACEHOLDER_RE = re.compile(r"\{([A-Za-z_][A-Za-z0-9_]*)\}")
+
+# l'aperçu des noms générés, en couleur : la racine (KPI ou cible) telle
+# quelle, et ce que chaque niveau lui AJOUTE — la branche, puis la variation.
+# C'est la partie qu'on vient vérifier : elle doit sauter aux yeux.
+COULEURS_APERCU = {"etiquette": TEXT_MUTED, "racine": TEXT_DIM,
+                   "branche": BLUE, "variation": ACCENT}
+JETON_NOM = re.compile(r"\{(base|kpi|variation|branch)\}")
+
+# jetons <<…>> INTÉGRÉS : ceux de la portée par KPI (kpiTables). Tirés du
+# moteur lui-même, pour ne pas diverger de ce qu'il sait remplacer.
+JETONS_PORTEE = frozenset(gm.kpi_table_tokens(["t"]))
+EACH_DEBUT = re.compile(r"<<each\s")
+
+
+def reperer_jetons(texte: str, accolades, chevrons, dans_each=False):
+    """Les jetons d'un texte DAX : ([(début, fin, genre, connu)], état).
+
+    genre : « accolade » ({base}), « chevron » (<<label>>, un attribut codé
+    en dur ou un jeton de portée), « each » (les bornes de <<each … >>).
+    `état` dit si le texte s'arrête DANS un <<each … >> — il peut courir
+    sur plusieurs lignes, et le surligneur travaille ligne par ligne.
+
+    Dans un <<each … >>, {table} est connu : c'est le jeton que le moteur
+    y remplace, table par table (cf. generate_measures.expand_each).
+    « { ad } » avec espaces reste un constructeur de table DAX : ignoré."""
+    spans, zones = [], []
+    pos, n = 0, len(texte)
+    if dans_each:                    # suite d'un <<each ouvert plus haut
+        f = texte.find(">>")
+        if f < 0:
+            zones.append((0, n))
+            pos = n
+        else:
+            zones.append((0, f))
+            spans.append((f, f + 2, "each", True))
+            pos, dans_each = f + 2, False
+    while pos < n:
+        d = texte.find("<<", pos)
+        if d < 0:
+            break
+        m = EACH_DEBUT.match(texte, d)
+        f = texte.find(">>", d + 2)
+        if m:
+            spans.append((d, m.end(), "each", True))
+            if f < 0:
+                zones.append((m.end(), n))
+                dans_each = True
+                break
+            zones.append((m.end(), f))
+            spans.append((f, f + 2, "each", True))
+        else:
+            if f < 0:
+                break                # « << » sans fermeture : pas un jeton
+            spans.append((d, f + 2, "chevron", texte[d + 2:f] in chevrons))
+        pos = f + 2
+    for m in PLACEHOLDER_RE.finditer(texte):
+        dedans = any(a <= m.start() < b for a, b in zones)
+        connu = m.group(1) in accolades or (dedans and m.group(1) == "table")
+        spans.append((m.start(), m.end(), "accolade", connu))
+    return spans, dans_each
+
+
+def segments_nom(motif: str, base: list, valeurs: dict, style: str) -> list:
+    """Développe un namePattern en segments [(texte, style)].
+
+    `{base}` devient les segments de `base` (déjà colorés par le niveau
+    d'en dessous) ; `{kpi}`, `{variation}`, `{branch}` prennent le texte ET
+    le style donnés dans `valeurs` ; le texte littéral du motif prend
+    `style` — c'est ce que CE niveau ajoute au nom. Concaténés, les
+    segments redonnent exactement le nom que produit la génération."""
+    out, pos = [], 0
+    for m in JETON_NOM.finditer(motif):
+        if m.start() > pos:
+            out.append((motif[pos:m.start()], style))
+        if m.group(1) == "base":
+            out.extend(base)
+        else:
+            texte, st = valeurs.get(m.group(1), ("", style))
+            if texte:
+                out.append((texte, st))
+        pos = m.end()
+    if pos < len(motif):
+        out.append((motif[pos:], style))
+    return out
 
 # gabarit d'une nouvelle variation
 NEW_VARIATION = {
@@ -166,16 +264,158 @@ class CheckCombo(QComboBox):
             self.lineEdit().setText(", ".join(coches) or "aucun !")
 
 
+class SurligneurJetons(QSyntaxHighlighter):
+    """Colore les jetons du DAX à la frappe : {connus} en bleu, <<connus>>
+    en vert, INCONNUS en rouge souligné — la faute de frappe se voit en
+    l'écrivant, plutôt qu'au journal de la génération (où la mesure est
+    sautée, ou fausse)."""
+
+    def __init__(self, document):
+        super().__init__(document)
+        self.accolades = frozenset(KNOWN_PLACEHOLDERS)
+        self.chevrons = frozenset(JETONS_PORTEE)
+        self._formats = {}
+        for cle, couleur in ((("accolade", True), BLUE),
+                             (("chevron", True), ACCENT),
+                             (("each", True), ACCENT)):
+            f = QTextCharFormat()
+            f.setForeground(QColor(couleur))
+            f.setFontWeight(QFont.Bold)
+            self._formats[cle] = f
+        inconnu = QTextCharFormat()
+        inconnu.setForeground(QColor(RED))
+        inconnu.setFontWeight(QFont.Bold)
+        inconnu.setUnderlineStyle(QTextCharFormat.SpellCheckUnderline)
+        inconnu.setUnderlineColor(QColor(RED))
+        for genre in ("accolade", "chevron", "each"):
+            self._formats[(genre, False)] = inconnu
+
+    def definir_chevrons(self, labels) -> None:
+        """Les <<labels>> connus : ceux de la portée + ceux déclarés dans
+        « Attributs codés en dur ». Ne recolore que s'ils ont changé."""
+        nouveaux = frozenset(JETONS_PORTEE) | frozenset(labels)
+        if nouveaux != self.chevrons:
+            self.chevrons = nouveaux
+            self.rehighlight()
+
+    def highlightBlock(self, texte):
+        spans, dans_each = reperer_jetons(
+            texte, self.accolades, self.chevrons,
+            self.previousBlockState() == 1)
+        for d, f, genre, connu in spans:
+            self.setFormat(d, f - d, self._formats[(genre, connu)])
+        self.setCurrentBlockState(1 if dans_each else 0)
+
+
+class DaxEdit(QPlainTextEdit):
+    """L'éditeur de code (DAX, JSON brut) : TAB pose une TABULATION, large
+    de INDENT_DAX caractères ; Maj+TAB la reprend ; Début va après le
+    retrait (cf. _debut_intelligent).
+
+    Qt donne 80 px à une tabulation — une dizaine de caractères, qui jettent
+    le DAX au milieu de la zone. Le cran est ramené à INDENT_DAX caractères
+    de la police AFFICHÉE (recalé quand le thème la pose).
+
+    Maj+TAB défait aussi un retrait en ESPACES, celui des variations écrites
+    avant (cf. « 7d avg ») : les deux formes cohabitent dans un config."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setTabChangesFocus(False)      # TAB indente, il ne quitte pas
+        police_code(self)                   # chasse fixe, via le thème
+        self._caler_tabulation()
+
+    def _caler_tabulation(self):
+        """Un cran de tabulation = INDENT_DAX espaces de la police AFFICHÉE."""
+        fm = self.fontMetrics()
+        blanc = " " * INDENT_DAX
+        largeur = (fm.horizontalAdvance(blanc)
+                   if hasattr(fm, "horizontalAdvance") else fm.width(blanc))
+        if hasattr(self, "setTabStopDistance"):        # Qt >= 5.10
+            self.setTabStopDistance(float(largeur))
+        else:                                          # PyQt5 plus ancien
+            self.setTabStopWidth(int(largeur))
+
+    def changeEvent(self, ev):
+        # la police définitive arrive avec la feuille de style, APRÈS le
+        # constructeur : le cran se recale sur elle
+        super().changeEvent(ev)
+        if ev.type() in (QEvent.FontChange, QEvent.StyleChange):
+            self._caler_tabulation()
+
+    def keyPressEvent(self, ev):
+        shift = bool(ev.modifiers() & Qt.ShiftModifier)
+        if ev.key() == Qt.Key_Tab and not shift:
+            self.insertPlainText("\t")
+            return
+        if ev.key() == Qt.Key_Backtab or (ev.key() == Qt.Key_Tab and shift):
+            self._desindenter()
+            return
+        if (ev.key() == Qt.Key_Home
+                and not ev.modifiers() & (Qt.ControlModifier | Qt.AltModifier)):
+            self._debut_intelligent(shift)
+            return
+        super().keyPressEvent(ev)
+
+    def _debut_intelligent(self, etendre: bool):
+        """Début (Maj+Début pour sélectionner) va au PREMIER caractère de la
+        ligne, après le retrait — pas à la colonne 0, qui embarquait le
+        retrait dans la sélection. Un second appui, déjà là, va à la colonne
+        0 : le retrait reste atteignable. C'est le comportement des éditeurs
+        de code.
+
+        La LIGNE est la ligne logique (le bloc) : une ligne longue qui revient
+        à l'écran reste une seule ligne de DAX."""
+        c = self.textCursor()
+        texte = c.block().text()
+        retrait = len(texte) - len(texte.lstrip(" \t"))
+        cible = 0 if c.positionInBlock() == retrait else retrait
+        mode = QTextCursor.KeepAnchor if etendre else QTextCursor.MoveAnchor
+        c.setPosition(c.block().position() + cible, mode)
+        self.setTextCursor(c)
+
+    def _desindenter(self):
+        """Maj+TAB : retire UN cran au DÉBUT de la ligne, où que soit le
+        curseur — une tabulation, ou jusqu'à INDENT_DAX espaces si la ligne
+        est indentée à l'ancienne. C'est le retrait qu'on veut défaire, pas
+        ce qui précède le curseur au milieu d'une expression."""
+        c = self.textCursor()
+        texte = c.block().text()
+        if texte.startswith("\t"):
+            n = 1
+        else:
+            n = min(INDENT_DAX, len(texte) - len(texte.lstrip(" ")))
+        if not n:
+            return
+        c.beginEditBlock()
+        c.movePosition(QTextCursor.StartOfBlock)
+        for _ in range(n):
+            c.deleteChar()
+        c.endEditBlock()
+
+
 class ConfigTab(QWidget):
-    def __init__(self):
+    # la vue affichée a changé — y compris SANS clic (un rechargement revient
+    # sur Variations signaux bloqués) : la fenêtre en déduit où va le journal
+    vue_changee = Signal()
+
+    def __init__(self, journal=None):
         super().__init__()
+        # le journal de l'app (colonne de droite), passé au panneau
+        # « Générer » qui est celui qui écrit dedans
+        self.journal = journal or Journal()
         self.project = None
         self._config: dict = {}
         self._current: str | None = None   # id de la variation affichée
         self._loading = False              # évite les signaux pendant le peuplement
         self._dirty = False
         self._branch_restrict: dict = {}   # branche -> set des variations qu'elle applique
+        self._branch_wrap: dict = {}       # branche -> DAX d'enveloppe ("" = substitution)
         self._branch_pick_current = None   # branche affichée dans l'éditeur de restriction
+        # en-têtes de TD_Indicateurs : lus une fois, gardés en mémoire, pour ne
+        # plus toucher au classeur hors action explicite (cf. _td_entetes)
+        self._td_entetes_cache: list = []
+        self._td_entetes_src = ""
 
         root = QVBoxLayout(self)
 
@@ -189,14 +429,24 @@ class ConfigTab(QWidget):
         self._inner_prev = IDX_VARIATIONS
         self.inner = QTabWidget()
         self.inner.addTab(self._build_variations_tab(), "Variations")
-        self.inner.addTab(self._build_global_tab(), "Réglages globaux")
         self.inner.addTab(self._build_raw_tab(), "JSON brut")
-        self.model_panel = ModelTab()          # génération embarquée (onglet Mesures)
-        self.inner.addTab(self.model_panel, "Générer")
+        # les réglages globaux ont LEUR fenêtre (⚙ Réglages, barre du haut) :
+        # l'onglet Rapport s'en sert aussi (Excel des indicateurs, dossier
+        # des cibles…), ils n'avaient rien à faire sous les Mesures
+        self._dlg_reglages = self._build_reglages_dialog()
+        # la génération n'a plus d'onglet : son panneau se pose EN TÊTE DU
+        # JOURNAL — le run qu'il lance s'affiche juste en dessous. Visible
+        # tant que l'onglet Mesures l'est (cf. showEvent / hideEvent).
+        self.model_panel = ModelTab(self.journal)
+        self.model_panel.sauver = self._save      # « Enregistrer puis générer »
+        self.model_panel.hide()
+        self.journal.poser_actions(self.model_panel)
         self.inner.currentChanged.connect(self._on_view_switch)
         root.addWidget(self.inner, 1)
 
         bottom = QHBoxLayout()
+        # ne porte plus l'état « non sauvegardé » (c'est le bouton qui
+        # s'allume) : sert à confirmer l'écriture, une fois faite
         self.lbl_dirty = QLabel("")
         self.lbl_dirty.setStyleSheet(f"color:{YELLOW};")
         bottom.addWidget(self.lbl_dirty, 1)
@@ -204,6 +454,10 @@ class ConfigTab(QWidget):
         self.btn_reload.clicked.connect(self._reload)
         self.btn_save = QPushButton("Sauvegarder (backup .bak)")
         self.btn_save.clicked.connect(self._save)
+        self._set_dirty(False)          # infobulle de repos posée par l'helper
+        # la bibliothèque ne dépend d'aucun projet : son chemin s'affiche dès
+        # l'ouverture, même si aucun rapport n'est encore chargé
+        self._refresh_biblio_label()
         bottom.addWidget(self.btn_reload)
         bottom.addWidget(self.btn_save)
         root.addLayout(bottom)
@@ -213,7 +467,7 @@ class ConfigTab(QWidget):
     def _build_variations_tab(self) -> QWidget:
         w = QWidget()
         lay = QHBoxLayout(w)
-        split = QSplitter(Qt.Horizontal)
+        split = Separateur(Qt.Horizontal)     # un trait fin, de l'air autour
         lay.addWidget(split)
 
         # -- gauche : liste + boutons --
@@ -245,11 +499,20 @@ class ConfigTab(QWidget):
             "bibliothèque pour servir ailleurs.\n\n"
             "Une variation qui sert de BRANCHE amène son entrée de branche.\n"
             "Importer une variation déjà présente la REMPLACE (on confirme).\n\n"
-            "Le chemin du fichier est retenu au niveau de l'application, pas\n"
-            "du projet : pose-le sur un lecteur partagé et toute l'équipe y\n"
-            "puise.")))
+            "Le chemin du fichier est retenu au niveau de l'APPLICATION, pas\n"
+            "du projet, et il n'est pas relatif au rapport courant : choisis-le\n"
+            "une fois et il est retrouvé à chaque lancement, quel que soit le\n"
+            "projet ouvert. Pose-le sur un lecteur partagé et toute l'équipe y\n"
+            "puise.\n\n"
+            "Le chemin retenu est affiché juste en dessous.")))
         biblio.addStretch()
         lv.addLayout(biblio)
+        # le chemin retenu, VISIBLE : c'est ce qui manquait pour comprendre
+        # qu'il n'y a rien à redonner d'un projet à l'autre
+        self.lbl_biblio = QLabel("")
+        self.lbl_biblio.setWordWrap(True)
+        self.lbl_biblio.setStyleSheet(f"color:{TEXT_DIM};")
+        lv.addWidget(self.lbl_biblio)
         row1 = QHBoxLayout()
         for label, slot in (("Ajouter", self._add), ("Dupliquer", self._duplicate)):
             b = QPushButton(label)
@@ -272,31 +535,57 @@ class ConfigTab(QWidget):
         lv.addLayout(row3)
         split.addWidget(left)
 
-        # -- droite : formulaire --
-        right = QWidget()
-        grid = QGridLayout(right)
-        r = 0
+        # -- milieu : ce que la variation EST (nom, format, dossier) et OÙ elle
+        #    s'applique. Le DAX a sa propre colonne à droite : c'est là qu'on
+        #    passe le plus de temps, il mérite la hauteur de la fenêtre plutôt
+        #    que le bas d'un formulaire (la vue n'a pas besoin du journal, qui
+        #    lui cède sa place — cf. app._colonne_selon_la_vue).
+        milieu = QWidget()
+        mv = QVBoxLayout(milieu)
+        mv.setContentsMargins(0, 0, 0, 0)
 
-        def add_row(label, widget, tip=None, help_text=None):
-            nonlocal r
-            lbl = QLabel(label)
-            tip = tip or help_text
-            if tip:
-                lbl.setToolTip(tip)
-                widget.setToolTip(tip)
-            grid.addWidget(lbl, r, 0)
-            if help_text:            # ⓘ collé au champ : aucune ligne en plus
-                box = QHBoxLayout()
-                box.setContentsMargins(0, 0, 0, 0)
-                box.addWidget(widget, 1)
-                box.addWidget(self._help(label.rstrip(" :"), help_text))
-                holder = QWidget()
-                holder.setLayout(box)
-                grid.addWidget(holder, r, 1)
-            else:
-                grid.addWidget(widget, r, 1)
-            r += 1
+        def formulaire(titre):
+            """Groupe « libellé | champ ». Rend (groupe, ajouter, pleine) :
+            `ajouter` pose une ligne libellée, `pleine` un widget ou une
+            rangée sur les deux colonnes."""
+            gb = QGroupBox(titre)
+            g = QGridLayout(gb)
+            g.setColumnStretch(1, 1)
+            rang = [0]
 
+            def ajouter(label, widget, tip=None, help_text=None,
+                        titre_aide=None):
+                lbl = QLabel(label)
+                tip = tip or help_text
+                if tip:
+                    lbl.setToolTip(tip)
+                    widget.setToolTip(tip)
+                g.addWidget(lbl, rang[0], 0)
+                if help_text:        # ⓘ collé au champ : aucune ligne en plus
+                    box = QHBoxLayout()
+                    box.setContentsMargins(0, 0, 0, 0)
+                    box.addWidget(widget, 1)
+                    box.addWidget(self._help(titre_aide or label.rstrip(" :"),
+                                             help_text))
+                    holder = QWidget()
+                    rangee_transparente(holder)
+                    holder.setLayout(box)
+                    g.addWidget(holder, rang[0], 1)
+                else:
+                    g.addWidget(widget, rang[0], 1)
+                rang[0] += 1
+
+            def pleine(quoi):
+                if isinstance(quoi, QWidget):
+                    g.addWidget(quoi, rang[0], 0, 1, 2)
+                else:
+                    g.addLayout(quoi, rang[0], 0, 1, 2)
+                rang[0] += 1
+
+            return gb, ajouter, pleine
+
+        # ---- la mesure générée ----
+        gb_mesure, add_row, pleine = formulaire("Mesure générée")
         self.ed_name = QLineEdit()
         add_row("namePattern :", self.ed_name,
                 "Nom de la mesure générée.\n{base} = mesure de base (branche incluse), "
@@ -314,7 +603,7 @@ class ConfigTab(QWidget):
             "text = AUCUN format — pour une mesure texte (ex. les hex des CF).\n"
             "Sinon : un format explicite ; {baseFormat} = section positive de la base.\n\n"
             "Littéraux : une espace est une espace. Espace, + - $ ( ) s'affichent\n"
-            "d'eux-mêmes ; seules les lettres demandent un backslash (pts donne \n\np\n\nt\n\ns)."))
+            "d'eux-mêmes ; seules les lettres demandent un backslash (pts donne \\p\\t\\s)."))
         self.ed_folder = QLineEdit()
         self.ed_folder.setPlaceholderText("vide = displayFolderPattern des settings")
         add_row("displayFolder :", self.ed_folder,
@@ -322,8 +611,9 @@ class ConfigTab(QWidget):
                 "Vide = le displayFolderPattern des settings. Placeholders : "
                 "{folder} {baseFolder} {variation} {kpi} {branch}.")
         self.cmb_folder_var = QComboBox()   # non éditable : ids existants
-        add_row("folderVariation (dossier hôte) :", self.cmb_folder_var,
-                "Range les mesures générées dans le DOSSIER d'une AUTRE variation.\n"
+        add_row("folderVariation :", self.cmb_folder_var,
+                "Dossier HÔTE : range les mesures générées dans le DOSSIER d'une\n"
+                "AUTRE variation.\n"
                 "Ex. « CF Δ 30d » vit dans le dossier de « Δ 30d » (la couleur à côté\n"
                 "de la mesure qu'elle met en forme). Vide = son propre dossier.")
         self.cmb_datacat = QComboBox()
@@ -336,11 +626,12 @@ class ConfigTab(QWidget):
         self.chk_infp = QCheckBox("dans les paramètres de champ (inFieldParameter)")
         self.chk_infp.setToolTip("Coché : la mesure générée entre dans les tables\n"
                                  "paramètre de champ (P_Indicateurs_*).")
-        grid.addWidget(self.chk_infp, r, 1)
-        r += 1
+        pleine(self.chk_infp)
+        mv.addWidget(gb_mesure)
 
-        # portée : cette variation est-elle déclinée pour les KPI, les cibles ?
-        scope = QHBoxLayout()
+        # ---- la portée : cette variation est-elle déclinée pour les KPI, les
+        #      cibles, et sur quelles bases ? ----
+        gb_portee, add_row, pleine = formulaire("Portée")
         self.chk_kpi = QCheckBox("générer pour les KPI")
         self.chk_kpi.setToolTip("Décline cette variation sur les mesures de BASE (KPI).\n"
                                 "Défaut : coché.")
@@ -363,13 +654,36 @@ class ConfigTab(QWidget):
         self.cmb_kinds = CheckCombo()
         self.cmb_kinds.setMinimumWidth(190)
         self.cmb_kinds.changed.connect(self._on_edit)
-        scope.addWidget(QLabel("Portée :"))
-        scope.addWidget(self.chk_kpi)
-        scope.addWidget(self.chk_cible)
-        scope.addSpacing(14)
-        scope.addWidget(QLabel("types de base :"))
-        scope.addWidget(self.cmb_kinds)
-        scope.addWidget(self._help("Types de base acceptés", (
+        self.chk_wrap = QCheckBox("enveloppable en branche")
+        self.chk_wrap.setToolTip(
+            "En branche, cette variation est ENVELOPPÉE au lieu d'être" + chr(10) +
+            " ré-émise :" + chr(10) +
+            "   Weight YTD PY = CALCULATE([Weight PY], DATESYTD(…))" + chr(10) +
+            "au lieu de" + chr(10) +
+            "   Weight YTD PY = CALCULATE([Weight YTD], SAMEPERIODLASTYEAR(…))"
+            + chr(10) + chr(10) +
+            "À cocher quand le DAX ne fait que DÉCALER le contexte" + chr(10) +
+            "(SAMEPERIODLASTYEAR, DATESYTD) : le résultat est identique, le" + chr(10) +
+            "DAX généré devient trivial, et un correctif ici se répercute" + chr(10) +
+            "sans régénérer." + chr(10) + chr(10) +
+            "⚠ À NE PAS cocher si le DAX ÉPINGLE une fenêtre sur la borne" + chr(10) +
+            "du contexte (MAX, DATEADD, DATESINPERIOD) : « 7d avg »" + chr(10) +
+            "enveloppé redeviendrait le 7d avg ordinaire, et « Δ 7d »" + chr(10) +
+            "changerait de sens." + chr(10) + chr(10) +
+            "Sans effet si la branche ne déclare pas d'enveloppe" + chr(10) +
+            "(⚙ Réglages → Branches → « Enveloppe »). Défaut : décoché.")
+        pour = QHBoxLayout()
+        pour.addWidget(self.chk_kpi)
+        pour.addSpacing(12)
+        pour.addWidget(self.chk_cible)
+        pour.addStretch()
+        pleine(pour)
+        pleine(self.chk_wrap)
+
+        kinds = QHBoxLayout()
+        kinds.setContentsMargins(0, 0, 0, 0)
+        kinds.addWidget(self.cmb_kinds)
+        kinds.addWidget(self._help("Types de base acceptés", (
             "Limite la variation aux bases d'un certain TYPE. « tous » = aucun\n"
             "filtre. Une base écartée ne reçoit PAS la mesure : elle n'est pas\n"
             "créée du tout, plutôt que créée puis fausse.\n\n"
@@ -377,31 +691,31 @@ class ConfigTab(QWidget):
             "   0.0 %       donne  pourcentage\n"
             "   #,0.00 $    donne  devise\n"
             "   #,0 ou vide donne  nombre\n\n"
-            "DÉCLARÉS dans TD_Indicateurs (colonne « type » — Réglages\n"
-            "globaux) : ratio, durée, indice, ou ce que tu veux. Un format ne\n"
+            "DÉCLARÉS dans TD_Indicateurs (colonne « type » — ⚙\n"
+            "Réglages) : ratio, durée, indice, ou ce que tu veux. Un format ne\n"
             "peut PAS les deviner — un ratio décimal (0,85) s'écrit comme un\n"
             "nombre. La déclaration prime toujours sur la déduction.\n\n"
             "Exemple : un « % du total » n'a de sens ni sur un pourcentage ni\n"
             "sur un ratio — coche nombre et devise seulement.\n\n"
             "Le journal résume ce qui a été écarté, et l'aperçu suit le filtre.")))
-        scope.addStretch()
-        grid.addLayout(scope, r, 0, 1, 2)
-        r += 1
+        kinds.addStretch()
+        holder_k = QWidget()
+        rangee_transparente(holder_k)
+        holder_k.setLayout(kinds)
+        add_row("types de base :", holder_k)
 
-        # exclure large / rattraper nommément : deux champs, UNE ligne
+        # exclure large / rattraper nommément : un champ chacun, l'aide sur
+        # le second (elle explique les deux, et leur priorité)
         self.ed_exclude = QLineEdit()
         self.ed_exclude.setPlaceholderText("ex. : ratio, /, average")
         self.ed_exclude.textChanged.connect(self._on_edit)
         self.ed_include = QLineEdit()
         self.ed_include.setPlaceholderText("ex. : Average Steps")
         self.ed_include.textChanged.connect(self._on_edit)
-        filt = QHBoxLayout()
-        filt.setContentsMargins(0, 0, 0, 0)
-        filt.addWidget(QLabel("nom contient — exclure :"))
-        filt.addWidget(self.ed_exclude, 1)
-        filt.addWidget(QLabel("mais garder :"))
-        filt.addWidget(self.ed_include, 1)
-        filt.addWidget(self._help("Filtres par nom", (
+        add_row("exclure si le nom contient :", self.ed_exclude,
+                "Fragments séparés par des virgules — cf. ⓘ ci-dessous.")
+        add_row("mais garder :", self.ed_include, titre_aide="Filtres par nom",
+                help_text=(
             "Fragments séparés par des virgules. Une base écartée ne reçoit\n"
             "PAS la mesure : elle n'est pas créée du tout.\n\n"
             "EXCLURE — sert à ce que le formatString ne dit pas : un ratio en\n"
@@ -416,51 +730,72 @@ class ConfigTab(QWidget):
             "Insensible à la casse ET aux accents (« duree » attrape « Durée »).\n"
             "Le nom du KPI est testé en plus de celui de la base, donc exclure\n"
             "« Weight » écarte aussi « Weight cible ». Les branches héritent.\n\n"
-            "L'aperçu ci-dessous suit ces filtres.")))
-        holder_f = QWidget()
-        holder_f.setLayout(filt)
-        grid.addWidget(holder_f, r, 0, 1, 2)
-        r += 1
-        grid.addWidget(QLabel("DAX (en clair — sérialisé en lignes JSON à la sauvegarde) :"), r, 0, 1, 2)
-        r += 1
-        self.ed_dax = QPlainTextEdit()
-        self.ed_dax.setFont(QFont("Consolas", 9))
-        self.ed_dax.setTabChangesFocus(False)
-        grid.addWidget(self.ed_dax, r, 0, 1, 2)
-        grid.setRowStretch(r, 3)
-        r += 1
+            "L'aperçu (colonne de droite) suit ces filtres."))
+        mv.addWidget(gb_portee)
+        mv.addStretch(1)
+        split.addWidget(milieu)
+
+        # -- droite : le DAX, et ce qu'il va produire. Une poignée entre les
+        #    deux : on agrandit l'aperçu quand on vérifie les noms, le DAX
+        #    quand on l'écrit.
+        droite = Separateur(Qt.Vertical)
+        droite.setChildrenCollapsible(False)
+
+        gb_dax = QGroupBox("DAX")
+        gb_dax.setToolTip("En clair — sérialisé en lignes JSON à la sauvegarde.\n"
+                          "TAB = une tabulation (4 caractères de large) · Maj+TAB\n"
+                          "la reprend · Début va au premier caractère de la\n"
+                          "ligne (2e appui : colonne 0).\n\n"
+                          "Jetons : {connus} en bleu · <<attributs>> en vert ·\n"
+                          "INCONNUS en rouge souligné. Un <<attribut>> se déclare\n"
+                          "dans ⚙ Réglages → Attributs codés en dur.")
+        dv = QVBoxLayout(gb_dax)
+        self.ed_dax = DaxEdit()
+        self.surligneur = SurligneurJetons(self.ed_dax.document())
+        dv.addWidget(self.ed_dax, 1)
 
         self.lbl_lint = QLabel("")
         self.lbl_lint.setWordWrap(True)
         self.lbl_lint.setStyleSheet(f"color:{YELLOW};")
-        grid.addWidget(self.lbl_lint, r, 0, 1, 2)
-        r += 1
+        dv.addWidget(self.lbl_lint)
 
         # aide-mémoire des jetons : REPLIÉ par défaut (il sert à l'écriture du
         # DAX, pas en permanence) — c'est là qu'est expliqué le piège
         # {kpi} / {kpiRef} de l'écart réel−cible en branche
         lbl_tokens = QLabel(TOKENS_HELP)
-        lbl_tokens.setFont(QFont("Consolas", 8))
+        police_code(lbl_tokens, petit=True)   # ses colonnes s'alignent
         lbl_tokens.setStyleSheet(f"color:{TEXT_DIM};")
         lbl_tokens.setTextInteractionFlags(Qt.TextSelectableByMouse)
-        grid.addWidget(self._collapsible("Jetons disponibles", lbl_tokens),
-                       r, 0, 1, 2)
-        r += 1
-        grid.addWidget(lbl_tokens, r, 0, 1, 2)
-        r += 1
+        dv.addWidget(self._collapsible("Jetons disponibles", lbl_tokens))
+        dv.addWidget(lbl_tokens)
+        droite.addWidget(gb_dax)
 
-        grid.addWidget(QLabel("Aperçu des noms générés (bases × branches, selon la PORTÉE cochée) :"), r, 0, 1, 2)
-        r += 1
+        gb_apercu = QGroupBox("Aperçu des noms générés")
+        gb_apercu.setToolTip("Bases × branches, selon la PORTÉE cochée.")
+        av = QVBoxLayout(gb_apercu)
+        legende = QLabel(
+            f"<span style='color:{COULEURS_APERCU['racine']}'>KPI ou cible</span>"
+            f"  <span style='color:{COULEURS_APERCU['branche']}'>+ branche</span>"
+            f"  <span style='color:{COULEURS_APERCU['variation']}'>"
+            f"+ variation</span>")
+        legende.setToolTip("Chaque nom est coloré selon ce qui l'a produit :\n"
+                           "la racine telle quelle, puis ce que la branche et\n"
+                           "la variation lui AJOUTENT (le texte de leur\n"
+                           "namePattern).")
+        av.addWidget(legende)
         self.ed_preview = QPlainTextEdit()
         self.ed_preview.setReadOnly(True)
-        self.ed_preview.setFont(QFont("Consolas", 9))
-        self.ed_preview.setMaximumHeight(110)
+        police_code(self.ed_preview)
         self.ed_preview.setStyleSheet(f"color:{TEXT_DIM};")
-        grid.addWidget(self.ed_preview, r, 0, 1, 2)
+        av.addWidget(self.ed_preview)
+        droite.addWidget(gb_apercu)
+        droite.setStretchFactor(0, 3)
+        droite.setStretchFactor(1, 2)
 
-        split.addWidget(right)
-        split.setStretchFactor(0, 1)
+        split.addWidget(droite)
+        split.setStretchFactor(0, 2)
         split.setStretchFactor(1, 3)
+        split.setStretchFactor(2, 4)
 
         # tout changement du formulaire marque « modifié » + relint + aperçu
         for sig in (self.ed_name.textChanged, self.ed_desc.textChanged,
@@ -471,14 +806,15 @@ class ConfigTab(QWidget):
             sig.connect(self._on_edit)
         self.chk_infp.stateChanged.connect(self._on_edit)
         self.chk_kpi.stateChanged.connect(self._on_edit)
+        self.chk_wrap.stateChanged.connect(self._on_edit)
         self.chk_cible.stateChanged.connect(self._on_edit)
         return w
 
     def _build_raw_tab(self) -> QWidget:
         w = QWidget()
         lay = QVBoxLayout(w)
-        self.ed_raw = QPlainTextEdit()
-        self.ed_raw.setFont(QFont("Consolas", 9))
+        # du code aussi : mêmes gestes que dans le DAX (TAB, Maj+TAB, Début)
+        self.ed_raw = DaxEdit()
         self.ed_raw.textChanged.connect(self._on_edit)
         lay.addWidget(self.ed_raw, 1)
         bar = QHBoxLayout()
@@ -489,7 +825,7 @@ class ConfigTab(QWidget):
         lay.addLayout(bar)
         return w
 
-    # ---- sous-onglet « Réglages globaux » ---------------------------------------
+    # ---- fenêtre « ⚙ Réglages » (réglages globaux) ----------------------------
 
     def _help(self, titre, texte) -> QToolButton:
         """Petit « ⓘ » : survol = infobulle, clic = fenêtre. L'explication
@@ -522,20 +858,42 @@ class ConfigTab(QWidget):
         btn.toggled.connect(toggle)
         return btn
 
-    def _form_group(self, title: str, rows) -> QGroupBox:
-        """Groupe formulaire : rows = [(libellé|None, widget, tip|None)].
-        libellé None = le widget occupe les deux colonnes (cases à cocher)."""
+    def _resume(self, texte) -> QLabel:
+        """Une phrase, en tête d'un groupe : À QUOI il sert. Le détail de
+        chaque réglage est derrière son ⓘ."""
+        lbl = QLabel(texte)
+        lbl.setWordWrap(True)
+        lbl.setStyleSheet(f"color:{TEXT_DIM};")
+        return lbl
+
+    def _form_group(self, title: str, rows, resume: str = "") -> QGroupBox:
+        """Groupe formulaire : rows = [(libellé|None, widget, aide|None)].
+
+        libellé None = le widget occupe les deux colonnes (cases à cocher).
+        `aide` devient un ⓘ au bout de la ligne — survol = infobulle, clic =
+        fenêtre — et l'infobulle du libellé et du champ : l'explication est
+        là où l'on regarde, sans occuper l'écran. `resume` dit en une phrase à
+        quoi sert le groupe."""
         gb = QGroupBox(title)
         grid = QGridLayout(gb)
-        for i, (label, widget, tip) in enumerate(rows):
+        r = 0
+        if resume:
+            grid.addWidget(self._resume(resume), r, 0, 1, 3)
+            r += 1
+        for label, widget, aide in rows:
             if label is None:
-                grid.addWidget(widget, i, 0, 1, 2)
+                grid.addWidget(widget, r, 0, 1, 2)
             else:
                 lbl = QLabel(label)
-                if tip:
-                    lbl.setToolTip(tip)
-                grid.addWidget(lbl, i, 0)
-                grid.addWidget(widget, i, 1)
+                if aide:
+                    lbl.setToolTip(aide)
+                grid.addWidget(lbl, r, 0)
+                grid.addWidget(widget, r, 1)
+            if aide:
+                widget.setToolTip(aide)
+                titre = (label or widget.text()).split(" — ")[0].rstrip(" :")
+                grid.addWidget(self._help(titre, aide), r, 2)
+            r += 1
         grid.setColumnStretch(1, 1)
         return gb
 
@@ -562,7 +920,7 @@ class ConfigTab(QWidget):
         def multiline(tip=None):
             t = QPlainTextEdit()
             t.setMaximumHeight(66)
-            t.setFont(QFont("Consolas", 9))
+            police_code(t)
             if tip:
                 t.setToolTip(tip)
             t.textChanged.connect(self._mark_dirty)
@@ -577,7 +935,7 @@ class ConfigTab(QWidget):
         self.g_branchFolderPattern = line("Dossier racine d'une branche (ex. {baseFolder}\\__{branch}).")
         self.g_overwrite = check("overwriteExisting — réécrit les mesures générées existantes")
         self.g_removeOrphans = check("removeOrphans — supprime les mesures générées absentes du config")
-        self.g_dryRun = check("dryRun — aperçu (l'onglet Modèle a aussi sa propre case)")
+        self.g_dryRun = check("dryRun — aperçu, en ligne de commande seulement")
 
         # symboles des formats « delta » : les 3 sur UNE ligne, le pourquoi
         # derrière le ⓘ du groupe plutôt qu'en paragraphe permanent
@@ -586,7 +944,7 @@ class ConfigTab(QWidget):
         self.g_delta_zero = line()
         self.g_delta_fallback = line()
         self.lbl_delta_preview = QLabel("")
-        self.lbl_delta_preview.setFont(QFont("Consolas", 8))
+        police_code(self.lbl_delta_preview, petit=True)
         self.lbl_delta_preview.setStyleSheet(f"color:{TEXT_DIM};")
         for w in (self.g_delta_pos, self.g_delta_neg, self.g_delta_zero,
                   self.g_delta_fallback):
@@ -594,6 +952,10 @@ class ConfigTab(QWidget):
         # -- Excel des indicateurs : LA définition, utilisée partout --
         gb_td = QGroupBox("Excel des indicateurs (TD_Indicateurs)")
         tdv = QVBoxLayout(gb_td)
+        tdv.addWidget(self._resume(
+            "Le classeur qui décrit tes KPI, une ligne par mesure de base — "
+            "défini ici une fois, utilisé par tout l'outil (attributs, portée, "
+            "couleurs des matrices, ordre des KPI)."))
         ligne1 = QHBoxLayout()
         self.g_td_path = QLineEdit()
         self.g_td_path.setPlaceholderText(
@@ -604,8 +966,16 @@ class ConfigTab(QWidget):
         b_td.clicked.connect(self._td_browse)
         b_td_rel = QPushButton("↻")
         b_td_rel.setMaximumWidth(32)
-        b_td_rel.setToolTip("Recharger la liste des colonnes depuis l'Excel.")
-        b_td_rel.clicked.connect(self._td_reload_columns)
+        b_td_rel.setToolTip(
+            "Relire les colonnes depuis l'Excel.\n"
+            "Les en-têtes sont lus une fois et gardés en mémoire : l'outil ne\n"
+            "rouvre pas le classeur pendant que tu travailles dedans. Clique\n"
+            "ici après avoir AJOUTÉ une colonne dans Excel.\n"
+            "(Les générations et les couleurs, elles, relisent toujours le\n"
+            "disque : rien à rafraîchir pour qu'elles voient tes changements.)")
+        # clicked(bool) passerait « False » comme premier argument : le lambda
+        # garantit que le bouton FORCE bien la relecture
+        b_td_rel.clicked.connect(lambda: self._td_reload_columns(force=True))
         ligne1.addWidget(QLabel("Fichier :"))
         ligne1.addWidget(self.g_td_path, 1)
         ligne1.addWidget(b_td)
@@ -633,22 +1003,88 @@ class ConfigTab(QWidget):
         ligne2.addWidget(self.g_td_text)
         ligne2.addStretch()
         tdv.addLayout(ligne2)
+        ligne3 = QHBoxLayout()
+        ligne3.addWidget(QLabel("Ordre des KPI :"))
+        self.g_td_order = self._td_combo("")
+        self.g_td_order.setToolTip(
+            "Colonne qui fixe l'ordre des KPI dans les tables paramètre.\n"
+            "Vide = ordre alphabétique (celui de Power BI).")
+        ligne3.addWidget(self.g_td_order)
+        ligne3.addWidget(self._help("Ordre des KPI", (
+            "Par défaut, les KPI sortent dans l'ordre ALPHABÉTIQUE — celui que\n"
+            "Power BI applique de lui-même. Cette colonne prend la main :\n"
+            "sa valeur devient la colonne Ordre des tables paramètre, et donc\n"
+            "l'ordre du slicer (sortByColumn).\n\n"
+            "Mets-y des nombres (10, 20, 30… : on peut intercaler sans tout\n"
+            "renuméroter). Ils sont comparés comme des NOMBRES, donc 10 vient\n"
+            "bien après 9. Une valeur texte est acceptée et se range après les\n"
+            "nombres, alphabétiquement.\n\n"
+            "Un KPI absent de la colonne (ou à cellule vide) part à la FIN,\n"
+            "pas en tête — et le journal de génération le nomme.\n\n"
+            "L'ordre vit dans l'Excel, avec le rapport : ce config-ci reste\n"
+            "transportable puisqu'il ne retient que le nom de la colonne.")))
+        ligne3.addStretch()
+        tdv.addLayout(ligne3)
         outer.addWidget(gb_td)
 
         outer.addWidget(self._form_group("Génération (settings)", [
-            ("sourceTable :", self.g_sourceTable, None),
-            ("sourceFolder :", self.g_sourceFolder, None),
-            ("dateColumn :", self.g_dateColumn, None),
-            ("targetTable :", self.g_targetTable, None),
-            ("displayFolderPattern :", self.g_folderPattern, None),
-            ("branchFolderPattern :", self.g_branchFolderPattern, None),
-            (None, self.g_overwrite, None),
-            (None, self.g_removeOrphans, None),
-            (None, self.g_dryRun, None),
-        ]))
+            ("sourceTable :", self.g_sourceTable,
+             "Table où le générateur cherche les mesures de BASE — tes KPI.\n\n"
+             "Défaut : _mesures."),
+            ("sourceFolder :", self.g_sourceFolder,
+             "Dossier d'affichage (displayFolder) qui contient les KPI à\n"
+             "décliner. Seules ses mesures deviennent des bases : le reste de\n"
+             "la table est ignoré.\n\n"
+             "Ex. _indicateurs\n"
+             "Vide = TOUTES les mesures de sourceTable."),
+            ("dateColumn :", self.g_dateColumn,
+             "La colonne de dates qui remplace le jeton {date} dans le DAX\n"
+             "des variations.\n\n"
+             "Ex. 'dim_Date'[Date]\n"
+             "   SAMEPERIODLASTYEAR({date}) devient\n"
+             "   SAMEPERIODLASTYEAR('dim_Date'[Date])"),
+            ("targetTable :", self.g_targetTable,
+             "Table où CRÉER les mesures générées.\n\n"
+             "Vide = la table de chaque mesure de base (le cas courant)."),
+            ("displayFolderPattern :", self.g_folderPattern,
+             "Dossier d'affichage des mesures générées.\n\n"
+             "Jetons : {baseFolder} dossier de la base · {base} · {variation}\n"
+             "· {kpi} · {branch}\n\n"
+             "Ex. {baseFolder}\\_{variation}\n"
+             "   « Weight 7d avg » va dans _indicateurs\\_7d avg\n\n"
+             "Une variation peut imposer le sien (champ displayFolder de\n"
+             "l'éditeur de variations)."),
+            ("branchFolderPattern :", self.g_branchFolderPattern,
+             "Dossier de la mesure de BRANCHE elle-même (« Weight YTD »).\n\n"
+             "Ex. {baseFolder}\\__{branch}\n"
+             "   « Weight YTD » va dans _indicateurs\\__YTD"),
+            (None, self.g_overwrite,
+             "Coché (défaut) : une mesure DÉJÀ générée est mise à jour quand le\n"
+             "config change (DAX, format, dossier…).\n"
+             "Décoché : elle est laissée telle quelle ; seules les NOUVELLES\n"
+             "sont créées.\n\n"
+             "Une mesure écrite à la main n'est JAMAIS touchée, même si elle\n"
+             "porte le même nom : le générateur ne modifie que ce qu'il a\n"
+             "lui-même généré."),
+            (None, self.g_removeOrphans,
+             "Supprime du modèle les mesures générées qui ne correspondent plus\n"
+             "au config : variation retirée, KPI disparu, branche supprimée…\n\n"
+             "C'est l'état de DÉPART de la case « Supprimer les orphelines »\n"
+             "du panneau de génération (colonne 🚀 Lancements) — c'est elle\n"
+             "qui décide, au moment de générer."),
+            (None, self.g_dryRun,
+             "Pour la ligne de commande seulement (py generate_measures.py) :\n"
+             "calcule tout, n'écrit rien.\n\n"
+             "Dans l'app, c'est la case « Aperçu (dry-run) » du panneau de\n"
+             "génération qui décide : ce réglage-ci y est sans effet."),
+        ], resume="Où le générateur trouve tes KPI, où il range ce qu'il crée, "
+                  "et ce qu'il a le droit de modifier."))
 
         gb_d = QGroupBox("Formats « delta »")
         dv = QVBoxLayout(gb_d)
+        dv.addWidget(self._resume(
+            "Le signe des variations au format « delta » (+ / −, ▲ / ▼…), et "
+            "leur format de secours quand la mesure de base n'en a pas."))
         drow = QHBoxLayout()
         drow.addWidget(QLabel("symboles :"))
         for lbl, w in (("positif", self.g_delta_pos), ("négatif", self.g_delta_neg),
@@ -699,21 +1135,86 @@ class ConfigTab(QWidget):
         self.g_lkp_key = line("Colonne clé = nom de la mesure (ex. mesure).")
         self.g_lkp_label = line("Colonne du libellé affiché (ex. libelle_indicateur).")
         outer.addWidget(self._form_group("Paramètres de champ (fieldParameter)", [
-            (None, self.g_fp_enabled, None),
-            ("tableNames :", self.g_fp_tableNames, None),
-            ("tableNamesByKpi :", self.g_fp_tableNamesByKpi, None),
-            (None, self.g_fp_byKpiUsesLabel, None),
-            ("tableNamesKpiBase :", self.g_fp_tableNamesKpiBase, None),
-            ("kpiColumn :", self.g_fp_kpiColumn, None),
-            ("calcColumn :", self.g_fp_calcColumn, None),
-            ("branchColumn :", self.g_fp_branchColumn, None),
-            ("baseLabel :", self.g_fp_baseLabel, None),
-            ("noBranchLabel :", self.g_fp_noBranchLabel, None),
-            (None, self.g_fp_includeBase, None),
-            ("lookup — table :", self.g_lkp_table, None),
-            ("lookup — keyColumn :", self.g_lkp_key, None),
-            ("lookup — labelColumn :", self.g_lkp_label, None),
-        ]))
+            (None, self.g_fp_enabled,
+             "Coché : les tables listées ici sont créées ou mises à jour à\n"
+             "chaque génération.\n"
+             "Décoché : le générateur n'y touche plus — elles restent dans le\n"
+             "modèle telles quelles."),
+            ("tableNames :", self.g_fp_tableNames,
+             "Tables « PAR CALCUL » : on y choisit un CALCUL — Réel, PY, 7d avg,\n"
+             "YTD… Chaque rangée affiche le nom du calcul.\n\n"
+             "Usage : UN KPI × plusieurs calculs. Le KPI vient d'ailleurs (un\n"
+             "segment sur TD_KPI, relié à la colonne Indicateur) ; la table met\n"
+             "les calculs en colonnes d'une matrice, en séries d'un graphique.\n\n"
+             "Une table par ligne. Plusieurs noms = copies IDENTIQUES, pour deux\n"
+             "sélections indépendantes sur une même page :\n"
+             "   P_Indicateurs_parCalcul\n"
+             "   P_Indicateurs_parCalcul_2"),
+            ("tableNamesByKpi :", self.g_fp_tableNamesByKpi,
+             "Tables « PAR KPI » : on y choisit un KPI. Chaque rangée affiche\n"
+             "le KPI — son libellé, ou le nom de sa mesure (case suivante).\n\n"
+             "Usage : UN calcul × plusieurs KPI. Le calcul vient d'un segment\n"
+             "sur la colonne Calcul, en sélection simple : « PY » montre le PY\n"
+             "de chaque KPI.\n\n"
+             "Une table par ligne."),
+            (None, self.g_fp_byKpiUsesLabel,
+             "Dans les tables « par KPI », afficher le LIBELLÉ du KPI\n"
+             "(« Poids ») plutôt que le nom de sa mesure (« Weight »).\n\n"
+             "Le libellé vient de la table de correspondance (« lookup », en\n"
+             "bas de ce groupe). Si elle manque au modèle, on retombe sur le\n"
+             "nom de la mesure — et le journal le dit."),
+            ("tableNamesKpiBase :", self.g_fp_tableNamesKpiBase,
+             "Tables « MIXTES » : KPI et calculs dans une même liste. La rangée\n"
+             "de base affiche le libellé du KPI (« Poids »), les variations le\n"
+             "nom du calcul (« 7d avg »).\n\n"
+             "Usage : un segment UNIQUE où l'on choisit à la fois le KPI et ses\n"
+             "calculs. Le libellé vient de la table de correspondance\n"
+             "(« lookup »).\n\n"
+             "Une table par ligne."),
+            ("kpiColumn :", self.g_fp_kpiColumn,
+             "Nom de la colonne (cachée) qui porte le KPI dans chaque table\n"
+             "paramètre : le nom de sa mesure de base. C'est la CLÉ — relie-la à\n"
+             "TD_KPI pour filtrer par KPI :\n"
+             "   TD_KPI[mesure] → P_Indicateurs_…[Indicateur]\n\n"
+             "Défaut : Indicateur."),
+            ("calcColumn :", self.g_fp_calcColumn,
+             "Nom de la colonne qui porte le CALCUL (Réel, PY, 7d avg…) —\n"
+             "celle que filtre un segment « calcul ».\n\n"
+             "Défaut : Calcul."),
+            ("branchColumn :", self.g_fp_branchColumn,
+             "Nom de la colonne qui porte la BRANCHE (Réel, YTD…) — pour\n"
+             "filtrer une branche, ou mettre Réel et YTD côte à côte.\n\n"
+             "Défaut : Branche."),
+            ("baseLabel :", self.g_fp_baseLabel,
+             "Libellé, dans la colonne Calcul, de la rangée de la mesure de\n"
+             "BASE — le KPI lui-même, sans variation (cf. includeBase).\n\n"
+             "Ex. Réel → le segment Calcul propose Réel, PY, 7d avg…\n"
+             "Vide = Base."),
+            ("noBranchLabel :", self.g_fp_noBranchLabel,
+             "Valeur de la colonne Branche pour tout ce qui n'est PAS dans une\n"
+             "branche.\n\n"
+             "Ex. Réel → un segment Branche propose Réel et YTD.\n"
+             "Vide = Base."),
+            (None, self.g_fp_includeBase,
+             "Coché : la mesure de base (le KPI tel quel) est une rangée de\n"
+             "chaque table, sous le libellé baseLabel.\n"
+             "Décoché : seules les variations y figurent."),
+            ("lookup — table :", self.g_lkp_table,
+             "Table de CORRESPONDANCE KPI → libellé, pour les tables « par KPI »\n"
+             "(case libellé) et « mixtes ». Le libellé y est lu par\n"
+             "LOOKUPVALUE, dans le DAX des tables paramètre.\n\n"
+             "Ex. TD_Indicateurs"),
+            ("lookup — keyColumn :", self.g_lkp_key,
+             "Colonne de cette table qui contient le NOM DE LA MESURE du KPI —\n"
+             "la clé de recherche.\n\n"
+             "Ex. mesure"),
+            ("lookup — labelColumn :", self.g_lkp_label,
+             "Colonne de cette table qui contient le LIBELLÉ affiché.\n\n"
+             "Ex. libelle_indicateur → « Poids » pour Weight"),
+        ], resume="Les tables de paramètres de champ écrites à chaque "
+                  "génération : elles listent tes mesures pour qu'un segment "
+                  "choisisse ce qu'un visuel affiche. Trois familles, selon ce "
+                  "qu'on y choisit — un CALCUL, un KPI, ou les deux mélangés."))
 
         # -- mesures cibles (dossier dédié : bases supplémentaires) --
         gb_c = QGroupBox("Mesures cibles (dossier dédié)")
@@ -751,7 +1252,13 @@ class ConfigTab(QWidget):
         # -- portée par KPI --
         # une ligne : colonne + déduction. Le mode d'emploi est derrière le ⓘ.
         gb_t = QGroupBox("Portée par KPI")
-        tv = QHBoxLayout(gb_t)
+        tv_groupe = QVBoxLayout(gb_t)
+        tv_groupe.addWidget(self._resume(
+            "Les tables propres à chaque KPI, pour les variations qui "
+            "retirent ou gardent des filtres (part du total, moyenne toutes "
+            "catégories…)."))
+        tv = QHBoxLayout()
+        tv_groupe.addLayout(tv)
         self.g_kpitables_col = QLineEdit()
         self.g_kpitables_col.setPlaceholderText("vide = aucune portée déclarée")
         self.g_kpitables_col.textChanged.connect(self._mark_dirty)
@@ -798,13 +1305,29 @@ class ConfigTab(QWidget):
         self.g_sw_format = line("Format statique du switch (ex. #,0.0).")
         self.g_sw_dynamicFormat = check("dynamicFormat — le format suit le KPI sélectionné (à valider)")
         outer.addWidget(self._form_group("Mesure Switch (switch)", [
-            (None, self.g_sw_enabled, None),
-            ("name :", self.g_sw_name, None),
-            ("selector :", self.g_sw_selector, None),
-            ("displayFolder :", self.g_sw_folder, None),
-            ("formatString :", self.g_sw_format, None),
-            (None, self.g_sw_dynamicFormat, None),
-        ]))
+            (None, self.g_sw_enabled,
+             "Coché : la mesure switch et ses variations sont générées. Elles\n"
+             "n'entrent jamais dans les paramètres de champ."),
+            ("name :", self.g_sw_name,
+             "Nom de la mesure switch.\n\nEx. Switch KPI"),
+            ("selector :", self.g_sw_selector,
+             "La colonne dont la valeur SÉLECTIONNÉE désigne le KPI :\n"
+             "   SWITCH(SELECTEDVALUE(<selector>), …)\n\n"
+             "Il faut UNE seule valeur sélectionnée — segment en sélection\n"
+             "simple — sinon la mesure est vide.\n\n"
+             "Ex. 'TD_KPI'[mesure]"),
+            ("displayFolder :", self.g_sw_folder,
+             "Dossier de la mesure switch et de ses variations.\n\nEx. _switch"),
+            ("formatString :", self.g_sw_format,
+             "Format FIXE de la mesure switch (format dynamique décoché).\n\n"
+             "Ex. #,0.0"),
+            (None, self.g_sw_dynamicFormat,
+             "Le format suit le KPI sélectionné (expression de format\n"
+             "dynamique) : un % reste un %, une durée une durée.\n"
+             "Statique et dynamique s'excluent. À valider au premier usage."),
+        ], resume="UNE mesure qui bascule entre tous les KPI selon celui qui est "
+                  "sélectionné, avec toutes ses variations — pour un visuel qui "
+                  "change de KPI sans paramètre de champ."))
 
         # -- attributs codés en dur (au lieu de LOOKUPVALUE) --
         gb_hc = QGroupBox("Attributs codés en dur (au lieu de LOOKUPVALUE)")
@@ -863,6 +1386,33 @@ class ConfigTab(QWidget):
         note2.setWordWrap(True)
         note2.setStyleSheet(f"color:{TEXT_DIM};")
         vb.addWidget(note2)
+        enrobe = QHBoxLayout()
+        enrobe.addWidget(QLabel("Enveloppe :"))
+        self.g_branch_wrap = QLineEdit()
+        self.g_branch_wrap.setPlaceholderText(
+            "vide = substitution (comportement d'origine) — "
+            "ex. CALCULATE({variationRef}, DATESYTD({date}))")
+        self.g_branch_wrap.textChanged.connect(self._on_branch_wrap_changed)
+        enrobe.addWidget(self.g_branch_wrap, 1)
+        enrobe.addWidget(self._help("Enveloppe de branche", (
+            "Deux façons de dériver une variation en branche.\n\n"
+            "SUBSTITUTION (défaut, champ vide) : le DAX de la variation est\n"
+            "ré-émis avec la mesure de branche à l'intérieur —\n"
+            "   Weight YTD PY = CALCULATE([Weight YTD], SAMEPERIODLASTYEAR(…))\n\n"
+            "ENVELOPPE : la mesure de branche enveloppe la variation RÉEL —\n"
+            "   Weight YTD PY = CALCULATE([Weight PY], DATESYTD(…))\n"
+            "Toutes les mesures de la branche se ressemblent alors, donc un\n"
+            "écart se débogue forcément dans la variation Réel. Et un correctif\n"
+            "apporté à celle-ci se répercute SANS régénérer.\n\n"
+            "⚠ Ce n'est pas toujours équivalent. L'enveloppe convient aux\n"
+            "variations qui DÉCALENT le contexte (SAMEPERIODLASTYEAR) ; elle\n"
+            "change le sens de celles qui ÉPINGLENT une fenêtre sur la borne\n"
+            "du contexte (MAX({date}), DATEADD) — « 7d avg » enveloppé\n"
+            "redeviendrait le 7d avg ordinaire.\n\n"
+            "D'où l'activation variation par variation : coche « enveloppable »\n"
+            "dans l'éditeur, sur celles dont le DAX s'y prête.\n\n"
+            "Jeton : {variationRef} = la mesure Réel de la variation.")))
+        vb.addLayout(enrobe)
         self.g_branch_restrict = QListWidget()
         self.g_branch_restrict.setStyleSheet(checkable_list_stylesheet())
         self.g_branch_restrict.setMaximumHeight(120)
@@ -873,6 +1423,86 @@ class ConfigTab(QWidget):
         outer.addStretch()
         scroll.setWidget(content)
         return scroll
+
+    def _build_reglages_dialog(self) -> QDialog:
+        """La fenêtre ⚙ Réglages : les réglages globaux du config, et deux
+        boutons. Construite une fois ; chaque ouverture la recharge."""
+        dlg = QDialog(self)
+        dlg.setWindowTitle("⚙ Réglages globaux du config")
+        dlg.resize(980, 820)
+        v = QVBoxLayout(dlg)
+        v.addWidget(self._build_global_tab(), 1)
+        bas = QHBoxLayout()
+        self.lbl_reglages_fichier = QLabel("")
+        self.lbl_reglages_fichier.setStyleSheet(f"color:{TEXT_DIM};")
+        bas.addWidget(self.lbl_reglages_fichier, 1)
+        b_annuler = QPushButton("Annuler")
+        b_annuler.setToolTip("Referme sans rien garder de ce qui a été touché ici.")
+        b_annuler.clicked.connect(dlg.reject)
+        self.btn_reglages_ok = QPushButton("Enregistrer")
+        self.btn_reglages_ok.setToolTip(
+            "Écrit le measures_config.json (backup .bak) — avec TOUT ce qui\n"
+            "est en attente dans le config, variations comprises.")
+        self.btn_reglages_ok.setDefault(True)
+        self.btn_reglages_ok.clicked.connect(dlg.accept)
+        bas.addWidget(b_annuler)
+        bas.addWidget(self.btn_reglages_ok)
+        v.addLayout(bas)
+        return dlg
+
+    def ouvrir_reglages(self) -> bool:
+        """⚙ Réglages : les réglages globaux, dans leur fenêtre.
+
+        Ouvrir d'abord la vue en cours dans le config (un JSON brut invalide
+        arrête tout, comme pour changer de vue). « Enregistrer » écrit le
+        config, comme « Sauvegarder » ; « Annuler » oublie ce qui a été touché
+        dans la fenêtre — y compris l'orange qu'il avait allumé.
+        Rend True si le config a été écrit."""
+        if not self.project or not self.project.config_json.exists():
+            QMessageBox.information(
+                self, "Réglages",
+                "Aucun measures_config.json chargé pour ce rapport — choisis-le\n"
+                "d'abord avec « Config… » dans la barre du haut.")
+            return False
+        if not self._committer_vue():
+            return False
+        sale_avant = self._dirty
+        self._load_global()
+        self.lbl_reglages_fichier.setText(str(self.project.config_json))
+        dlg = self._dlg_reglages
+        ok = (dlg.exec_() if hasattr(dlg, "exec_") else dlg.exec()) == QDialog.Accepted
+        if not ok:
+            self._set_dirty(sale_avant)
+            return False
+        self._commit_global()
+        self._rafraichir_vue()      # la vue ouverte redit le config à jour
+        return self._save()
+
+    def _committer_vue(self) -> bool:
+        """Verse la vue ouverte dans le config en mémoire. False si le JSON
+        brut ne se lit pas (on n'irait pas plus loin sur un config faux)."""
+        if self.inner.currentIndex() == IDX_RAW:
+            try:
+                self._config = json.loads(self.ed_raw.toPlainText())
+            except ValueError as e:
+                QMessageBox.warning(self, "JSON invalide",
+                                    f"{e}\n\nCorrige le JSON brut d'abord.")
+                return False
+        else:
+            self._commit_form()
+        return True
+
+    def _rafraichir_vue(self) -> None:
+        """Remet la vue ouverte d'accord avec le config en mémoire — sans quoi
+        « Sauvegarder » depuis le JSON brut réécrirait l'ANCIEN texte par-dessus
+        des réglages tout juste changés."""
+        if self.inner.currentIndex() == IDX_RAW:
+            self.ed_raw.blockSignals(True)
+            self.ed_raw.setPlainText(
+                json.dumps(self._config, indent=2, ensure_ascii=False))
+            self.ed_raw.blockSignals(False)
+        else:
+            self._populate_list(select=self._current)
 
     def _load_global(self):
         """Peuple les widgets globaux depuis le config (à l'ouverture de l'onglet)."""
@@ -927,6 +1557,7 @@ class ConfigTab(QWidget):
         self.g_td_key.setCurrentText(td["keyColumn"])
         self.g_td_fill.setCurrentText(td["fillColumn"])
         self.g_td_text.setCurrentText(td["textColumn"])
+        self.g_td_order.setCurrentText(td.get("orderColumn", "") or "")
         self._td_reload_columns()
         self.g_hc_table.setRowCount(0)
         for label, col in (hc.get("tokens") or {}).items():
@@ -968,6 +1599,9 @@ class ConfigTab(QWidget):
 
         # état des restrictions : branche -> set des variations appliquées
         self._branch_restrict = {}
+        self._branch_wrap = {
+            b: str((bval or {}).get("wrap") or "")
+            for b, bval in branches.items() if isinstance(bval, dict)}
         for b, bval in branches.items():
             applicable = set(self._applicable_vars(b))
             if isinstance(bval, dict) and isinstance(bval.get("variations"), list):
@@ -1028,6 +1662,9 @@ class ConfigTab(QWidget):
             it.setCheckState(Qt.Checked if v in included else Qt.Unchecked)
             self.g_branch_restrict.addItem(it)
         self.g_branch_restrict.blockSignals(False)
+        self.g_branch_wrap.blockSignals(True)
+        self.g_branch_wrap.setText(self._branch_wrap.get(branch_id, ""))
+        self.g_branch_wrap.blockSignals(False)
         idx = self.g_branch_pick.findText(branch_id)
         if idx >= 0 and self.g_branch_pick.currentIndex() != idx:
             self.g_branch_pick.blockSignals(True)
@@ -1044,6 +1681,14 @@ class ConfigTab(QWidget):
             for i in range(self.g_branch_restrict.count())
             if self.g_branch_restrict.item(i).checkState() == Qt.Checked
         }
+        self._branch_wrap[b] = self.g_branch_wrap.text().strip()
+
+    def _on_branch_wrap_changed(self, *_):
+        if self._loading:
+            return
+        if self._branch_pick_current:
+            self._branch_wrap[self._branch_pick_current] =                 self.g_branch_wrap.text().strip()
+        self._mark_dirty()
 
     def _on_branch_pick(self, index):
         if self._loading or index < 0:
@@ -1079,7 +1724,8 @@ class ConfigTab(QWidget):
         td = {"path": self.g_td_path.text().strip(),
               "keyColumn": self.g_td_key.currentText().strip(),
               "fillColumn": self.g_td_fill.currentText().strip(),
-              "textColumn": self.g_td_text.currentText().strip()}
+              "textColumn": self.g_td_text.currentText().strip(),
+              "orderColumn": self.g_td_order.currentText().strip()}
         if self.project:                    # re-relativiser si possible
             try:
                 td["path"] = str(Path(td["path"]).relative_to(self.project.folder))
@@ -1232,6 +1878,11 @@ class ConfigTab(QWidget):
             value = dict(old.get(b) or {}) if isinstance(old.get(b), dict) else {}
             applicable = self._applicable_vars(b)    # ordre du config
             included = self._branch_restrict.get(b, set(applicable))
+            enveloppe = (self._branch_wrap.get(b) or "").strip()
+            if enveloppe:
+                value["wrap"] = enveloppe
+            else:
+                value.pop("wrap", None)          # vide = substitution, clé retirée
             if set(included) >= set(applicable):     # toutes appliquées -> pas de restriction
                 value.pop("variations", None)
             else:
@@ -1257,7 +1908,7 @@ class ConfigTab(QWidget):
         return p
 
     def _hc_columns(self) -> list:
-        return model_reader.excel_headers(self._hc_xlsx_path())
+        return self._td_entetes()          # même cache, même classeur
 
     def _hc_make_combo(self, current):
         c = QComboBox()
@@ -1320,7 +1971,9 @@ class ConfigTab(QWidget):
 
     def set_project(self, project):
         self.project = project
-        self.model_panel.set_project(project)   # sous-onglet « Générer »
+        self.model_panel.set_project(project)   # panneau de génération
+        # la bibliothèque ne suit PAS le projet : on ré-affiche le même chemin
+        self._refresh_biblio_label()
         path = project.config_json
         if not path.exists():
             self._config = {}
@@ -1361,24 +2014,60 @@ class ConfigTab(QWidget):
         self.inner.blockSignals(False)
         self._inner_prev = IDX_VARIATIONS
         self._set_dirty(False)
+        self.vue_changee.emit()          # le changement était silencieux
 
     def _reload(self):
         if self.project:
             self._load_from_disk()
 
+    def reload(self):
+        """« ↻ Tout recharger » : relit TOUTES les sources de cet onglet.
+
+        Le cache des en-têtes de TD_Indicateurs est d'abord invalidé — c'est
+        précisément ce qu'on vient changer quand on ajoute une colonne dans
+        l'Excel. Les modifications non enregistrées sont perdues : l'app
+        demande avant d'arriver ici (cf. app._reload_all)."""
+        if not self.project:
+            return
+        self._td_entetes_src = ""          # force la relecture de l'Excel
+        self._load_from_disk()
+        self._td_reload_columns(force=True)
+        self._refresh_biblio_label()
+        self.model_panel.set_project(self.project)   # son récap, à jour
+
     # ---- liste des variations -----------------------------------------------
 
+    CLE_BIBLIO = "biblio_path"
+
     def _chemin_biblio(self) -> str:
-        """Fichier de bibliothèque, mémorisé au niveau de l'application (pas du
-        projet) : c'est justement ce qu'on veut partager entre rapports."""
-        from qtpy.QtCore import QSettings
-        s = QSettings("PBIdouille", "PBIdouille")
+        """Fichier de bibliothèque, mémorisé pour TOUTE L'APPLICATION — pas par
+        projet, et pas relatif au projet courant : c'est justement le fichier
+        qu'on partage entre rapports, et il ne bouge pas quand on change de
+        rapport. Une fois choisi, il est retrouvé à chaque lancement.
+
+        À défaut, celui posé à côté de app.py (le paquet en fournit un)."""
         defaut = str(Path(__file__).resolve().parents[2] / gm.BIBLIO_DEFAUT)
-        return s.value("biblio_path", defaut) or defaut
+        return str(lire_reglage(self.CLE_BIBLIO, defaut) or defaut)
 
     def _memoriser_biblio(self, chemin):
-        from qtpy.QtCore import QSettings
-        QSettings("PBIdouille", "PBIdouille").setValue("biblio_path", chemin)
+        """Un chemin VIDE n'écrase rien (cf. ecrire_reglage) : refermer le
+        dialogue sans rien choisir ne doit pas défaire le réglage."""
+        ecrire_reglage(self.CLE_BIBLIO, chemin)
+        self._refresh_biblio_label()
+
+    def _refresh_biblio_label(self):
+        """Affiche le fichier retenu, et dit qu'il l'est. Sans ça, rien ne
+        montrait que le chemin survit au changement de projet — on pouvait
+        croire qu'il fallait le redonner chaque fois."""
+        chemin = self._chemin_biblio()
+        existe = Path(chemin).exists() if chemin else False
+        self.lbl_biblio.setText(
+            ("Bibliothèque : " if existe else "⚠ Bibliothèque introuvable : ")
+            + chemin
+            + ("  (mémorisée pour tous les projets)" if existe
+               else "  — clique « Bibliothèque… » pour en choisir une"))
+        self.lbl_biblio.setStyleSheet(
+            f"color:{TEXT_DIM};" if existe else f"color:{YELLOW};")
 
     def _ouvrir_biblio(self):
         """Pioche des variations dans la bibliothèque globale, ou y publie les
@@ -1447,6 +2136,7 @@ class ConfigTab(QWidget):
             self.cmb_datacat.setCurrentText("")
             self.chk_infp.setChecked(False)
             self.chk_kpi.setChecked(True)
+            self.chk_wrap.setChecked(False)
             self.chk_cible.setChecked(False)
             self.ed_dax.setPlainText("")
         else:
@@ -1459,6 +2149,7 @@ class ConfigTab(QWidget):
             self.chk_infp.setChecked(bool(v.get("inFieldParameter", False)))
             self.chk_kpi.setChecked(bool(v.get("appliesToKpi", True)))
             self.chk_cible.setChecked(bool(v.get("appliesToCibles", False)))
+            self.chk_wrap.setChecked(bool(v.get("wrapInBranch", False)))
             self._refresh_kind_items(v.get("appliesToFormats") or None)
             self.ed_exclude.setText(
                 ", ".join(v.get("excludeNameContains") or []))
@@ -1490,6 +2181,10 @@ class ConfigTab(QWidget):
         v["inFieldParameter"] = self.chk_infp.isChecked()
         # portée : on n'écrit que le NON-défaut (appliesToKpi défaut True,
         # appliesToCibles défaut False) — garde les configs existantes propres
+        if self.chk_wrap.isChecked():
+            v["wrapInBranch"] = True
+        else:
+            v.pop("wrapInBranch", None)
         if self.chk_kpi.isChecked():
             v.pop("appliesToKpi", None)
         else:
@@ -1595,18 +2290,38 @@ class ConfigTab(QWidget):
 
     # ---- lint + aperçu ----------------------------------------------------------
 
+    def _chevrons_connus(self) -> set:
+        """Les <<labels>> déclarés dans « Attributs codés en dur » (config
+        en mémoire — une déclaration fraîche compte sans enregistrer)."""
+        hc = self._config.get("hardcodedAttributes") or {}
+        return set((hc.get("tokens") or {}) if isinstance(hc, dict) else ())
+
     def _refresh_lint_preview(self):
         texts = [self.ed_name.text(), self.ed_folder.text(),
                  self.ed_desc.text(), self.ed_dax.toPlainText()]
-        unknown = sorted({
-            m for t in texts for m in PLACEHOLDER_RE.findall(t)
-            if m not in KNOWN_PLACEHOLDERS
-        })
+        # le MÊME repérage que la coloration : ce qui est rouge dans
+        # l'éditeur est exactement ce que cette ligne signale
+        chevrons = set(JETONS_PORTEE) | self._chevrons_connus()
+        self.surligneur.definir_chevrons(self._chevrons_connus())
+        inconnus_acc, inconnus_chev = set(), set()
+        for t in texts:
+            for d, f, genre, connu in reperer_jetons(
+                    t, KNOWN_PLACEHOLDERS, chevrons)[0]:
+                if not connu and genre == "accolade":
+                    inconnus_acc.add(t[d:f])
+                elif not connu and genre == "chevron":
+                    inconnus_chev.add(t[d:f])
         avertissements = []
-        if unknown:
+        if inconnus_acc:
             avertissements.append(
-                "⚠ Placeholder(s) inconnu(s) : " + ", ".join("{%s}" % u for u in unknown)
+                "⚠ Placeholder(s) inconnu(s) : " + ", ".join(sorted(inconnus_acc))
                 + " — connus : " + ", ".join(sorted(KNOWN_PLACEHOLDERS)))
+        if inconnus_chev:
+            avertissements.append(
+                "⚠ Attribut(s) inconnu(s) : " + ", ".join(sorted(inconnus_chev))
+                + " — à déclarer dans ⚙ Réglages → Attributs codés en "
+                  "dur (connus : " + (", ".join("<<%s>>" % c for c in sorted(chevrons))
+                                     or "aucun") + ").")
         # Double backslash dans un format : presque toujours une correction de
         # trop. Le JSON brut AFFICHE « \\ » là où le format n'en contient qu'un
         # (échappement JSON) ; en retaper deux ici donne un backslash LITTÉRAL
@@ -1653,7 +2368,7 @@ class ConfigTab(QWidget):
                       or gm.name_included(tpl_ex, c, k)]
             if not cibles:
                 notes.append("(aucune cible trouvée — vérifie le dossier des "
-                             "cibles dans « Réglages globaux »)")
+                             "cibles dans ⚙ Réglages)")
         if not roots:
             self.ed_preview.setPlainText(
                 "Portée vide : coche « générer pour les KPI » et/ou « générer "
@@ -1662,25 +2377,54 @@ class ConfigTab(QWidget):
             return
 
         variations = self._config.get("variations") or {}
-        branches = list((self._config.get("branches") or {}).keys())
-        lines = []
+        cfg_branches = self._config.get("branches") or {}
+
+        def branche_applique(b) -> bool:
+            # la MÊME règle que la génération (branch_variation_ids) : une
+            # branche ne s'applique jamais à elle-même (« Weight YTD YTD »
+            # s'affichait ici sans jamais être généré), et une branche
+            # restreinte n'applique que les variations qu'elle liste
+            if vid.lower() == b.lower():
+                return False
+            bdef = cfg_branches.get(b)
+            if isinstance(bdef, dict) and bdef.get("variations"):
+                return vid in [str(x) for x in bdef["variations"]]
+            return True
+
+        branches = [b for b in cfg_branches if branche_applique(b)]
+        lignes = []
         for b in [""] + branches:
             for root, kpi, scope in roots:
+                base = [(root, "racine")]
                 if b:
                     # nom de la base EN BRANCHE : via le namePattern réel de la
                     # branche (« {base} YTD »…), pas un suffixe supposé
                     bpat = ((variations.get(b) or {}).get("namePattern")
                             or ("{base} " + b))
-                    base = (bpat.replace("{base}", root).replace("{kpi}", kpi)
-                                .replace("{variation}", b).replace("{branch}", b))
-                else:
-                    base = root
-                name = (pattern.replace("{base}", base)
-                               .replace("{kpi}", kpi)
-                               .replace("{variation}", vid)
-                               .replace("{branch}", b))
-                lines.append(f"[{'Réel' if not b else b} · {scope}] " + name)
-        self.ed_preview.setPlainText("\n".join(lines + notes))
+                    base = segments_nom(bpat, base, {
+                        "kpi": (kpi, "racine"), "variation": (b, "branche"),
+                        "branch": (b, "branche")}, "branche")
+                nom = segments_nom(pattern, base, {
+                    "kpi": (kpi, "racine"), "variation": (vid, "variation"),
+                    "branch": (b, "branche")}, "variation")
+                lignes.append([(f"[{'Réel' if not b else b} · {scope}] ",
+                                "etiquette")] + nom)
+        self._ecrire_apercu(lignes + [[(n, "etiquette")] for n in notes])
+
+    def _ecrire_apercu(self, lignes: list) -> None:
+        """Une ligne par nom, chaque segment dans sa couleur (cf.
+        COULEURS_APERCU)."""
+        self.ed_preview.clear()
+        c = QTextCursor(self.ed_preview.document())
+        formats = {}
+        for i, segments in enumerate(lignes):
+            if i:
+                c.insertBlock()
+            for texte, style in segments:
+                if style not in formats:
+                    formats[style] = QTextCharFormat()
+                    formats[style].setForeground(QColor(COULEURS_APERCU[style]))
+                c.insertText(texte, formats[style])
 
     def _refresh_delta_preview(self):
         """Aperçu sur UNE ligne : ce que « delta » donnera à l'écran pour les
@@ -1762,16 +2506,38 @@ class ConfigTab(QWidget):
         self.g_td_path.setText(str(p))
         self._td_reload_columns()
 
-    def _td_reload_columns(self):
-        """Peuple les 3 combos avec les en-têtes du classeur."""
-        entetes = model_reader.excel_headers(self._td_path_resolu())
+    def _td_entetes(self, force=False) -> list:
+        """En-têtes du classeur, LUS UNE FOIS puis gardés en mémoire.
+
+        Le classeur n'est plus touché que lors d'une action explicite : au
+        premier besoin, quand le chemin change, et sur « ↻ ». Rouvrir
+        « ⚙ Réglages » ou passer d'un onglet à l'autre ne l'ouvre plus —
+        on peut donc travailler dans Excel avec l'outil ouvert à côté.
+
+        Les EXÉCUTIONS (génération, couleurs), elles, relisent toujours le
+        disque : ce qu'on vient d'enregistrer dans Excel est pris en compte,
+        sans rien avoir à rafraîchir ici."""
+        chemin = str(self._td_path_resolu())
+        if force or chemin != self._td_entetes_src:
+            lus = model_reader.excel_headers(chemin)
+            if lus:                      # fichier illisible : on garde l'ancien
+                self._td_entetes_cache = lus
+                self._td_entetes_src = chemin
+        return self._td_entetes_cache
+
+    def _td_reload_columns(self, force=False):
+        """Peuple les combos avec les en-têtes du classeur (cf. _td_entetes)."""
+        entetes = self._td_entetes(force=force)
         if not entetes:
             return
-        for combo in (self.g_td_key, self.g_td_fill, self.g_td_text):
+        for combo in (self.g_td_key, self.g_td_fill, self.g_td_text,
+                      self.g_td_order):
             courant = combo.currentText()
             combo.blockSignals(True)
             combo.clear()
-            combo.addItems(entetes)
+            # l'ordre est FACULTATIF : sans entrée vide, on ne pourrait plus
+            # revenir au tri alphabétique une fois une colonne choisie
+            combo.addItems(([""] if combo is self.g_td_order else []) + entetes)
             combo.setCurrentText(courant)
             combo.blockSignals(False)
 
@@ -1816,13 +2582,28 @@ class ConfigTab(QWidget):
 
     # ---- synchronisation des deux vues ------------------------------------------
 
+    def showEvent(self, event):
+        # l'onglet Mesures est à l'écran : son bouton « Générer » aussi, en
+        # tête du journal
+        super().showEvent(event)
+        self.model_panel.show()
+
+    def hideEvent(self, event):
+        # ailleurs, générer n'a pas de sens : le journal reste un journal
+        super().hideEvent(event)
+        self.model_panel.hide()
+
+    def occupe_la_colonne(self) -> bool:
+        """La vue courante a-t-elle sa propre colonne de droite ? Oui pour
+        « Variations » (DAX + aperçu) : la fenêtre y masque le journal —
+        sauf si l'usager l'y a voulu (bouton « 🚀 Lancements »)."""
+        return self.inner.currentIndex() == IDX_VARIATIONS
+
     def _on_view_switch(self, index: int):
         # 1) committer / valider l'onglet que l'on QUITTE
         prev = self._inner_prev
         if prev == IDX_VARIATIONS:
             self._commit_form()
-        elif prev == IDX_GLOBAL:
-            self._commit_global()
         elif prev == IDX_RAW:
             try:
                 self._config = json.loads(self.ed_raw.toPlainText())
@@ -1837,16 +2618,12 @@ class ConfigTab(QWidget):
         # 2) charger l'onglet que l'on OUVRE (depuis le config en mémoire)
         if index == IDX_VARIATIONS:
             self._populate_list(select=self._current)
-        elif index == IDX_GLOBAL:
-            self._load_global()
         elif index == IDX_RAW:
             self.ed_raw.blockSignals(True)
             self.ed_raw.setPlainText(json.dumps(self._config, indent=2, ensure_ascii=False))
             self.ed_raw.blockSignals(False)
-        elif index == IDX_GENERATE:
-            # le générateur lit le fichier sur le disque : prévenir si non sauvé
-            self.model_panel.set_unsaved(self._dirty)
         self._inner_prev = index
+        self.vue_changee.emit()
 
     def _validate_raw(self):
         try:
@@ -1865,17 +2642,31 @@ class ConfigTab(QWidget):
         self._refresh_lint_preview()
 
     def _set_dirty(self, dirty: bool):
+        """L'état « non sauvegardé » s'affiche EN ALLUMANT le bouton, plutôt
+        que dans un voyant posé à côté : un seul endroit à regarder, et il se
+        trouve être celui sur lequel cliquer."""
         self._dirty = dirty
-        self.lbl_dirty.setText("● modifications non sauvegardées" if dirty else "")
+        # le générateur lit le FICHIER : son panneau le signale en continu
+        self.model_panel.set_unsaved(dirty)
+        if dirty:
+            # un « ✔ écrit » resté affiché ne serait plus vrai
+            self.lbl_dirty.setText("")
+        bouton_en_attente(
+            self.btn_save, dirty,
+            en_attente="Modifications NON sauvegardées — écrit le "
+                       "measures_config.json (backup .bak).",
+            au_repos="Écrit le measures_config.json (backup .bak).")
 
     def save_all(self):
-        """Bouton « 💾 Tout enregistrer » de l'app : écrit si nécessaire."""
+        """« Enregistrer puis recharger » de l'app : écrit si nécessaire."""
         if self._dirty:
             self._save()
 
-    def _save(self, *_):
+    def _save(self, *_) -> bool:
+        """Écrit le config ; rend True si c'est fait (le panneau de
+        génération s'en sert pour « Enregistrer puis générer »)."""
         if not self.project:
-            return
+            return False
         path = self.project.config_json
         idx = self.inner.currentIndex()
         if idx == IDX_RAW:                   # vue JSON brut : parser d'abord
@@ -1883,12 +2674,9 @@ class ConfigTab(QWidget):
                 self._config = json.loads(self.ed_raw.toPlainText())
             except ValueError as e:
                 QMessageBox.critical(self, "JSON invalide", f"Rien écrit : {e}")
-                return
-        elif idx == IDX_GLOBAL:
-            self._commit_global()
+                return False
         elif idx == IDX_VARIATIONS:
             self._commit_form()
-        # IDX_GENERATE : rien à committer (le config est déjà à jour)
 
         try:
             if path.exists():
@@ -1897,10 +2685,11 @@ class ConfigTab(QWidget):
                             encoding="utf-8")
         except OSError as e:
             QMessageBox.critical(self, "Erreur d'écriture", str(e))
-            return
+            return False
         self._set_dirty(False)
-        self.model_panel.set_project(self.project)   # récap « Générer » à jour depuis le disque
-        self.model_panel.set_unsaved(False)
+        self.model_panel.set_project(self.project)   # son récap, relu du disque
         # pas de popup : confirmation dans le bandeau d'état
         self.lbl_dirty.setText(f"✔ {path.name} écrit (backup .bak) — "
-                               "sous-onglet « Générer » pour créer les mesures")
+                               "« Générer les mesures » en tête du journal")
+        self.journal.info(f"✔ {path.name} écrit (backup .bak)")
+        return True

@@ -10,11 +10,16 @@ toutes les variations qu'on réutilise d'un rapport à l'autre.
 
 Rien à cocher ni à retenir projet par projet : une fois importée, la variation
 appartient au rapport.
+
+L'ORDRE de la bibliothèque est celui de son fichier : c'est celui dans
+lequel on la parcourt, et dans lequel on importe. ↑ / ↓ / A → Z le
+changent et l'écrivent aussitôt (comme « Publier »).
 """
 
 from __future__ import annotations
 
 import json
+import unicodedata
 from pathlib import Path
 
 from qtpy.QtCore import Qt
@@ -37,6 +42,13 @@ try:
     from core.theme import TEXT_DIM
 except ImportError:                                  # copie isolée
     TEXT_DIM = "#9aa0a6"
+
+
+def cle_alpha(nom: str) -> str:
+    """Clé de tri A → Z : sans majuscules ni accents (« écart » se range
+    avec les « e »). Un Δ n'a pas d'équivalent latin : il reste après."""
+    return "".join(c for c in unicodedata.normalize("NFD", str(nom))
+                   if unicodedata.category(c) != "Mn").casefold()
 
 
 class CatalogueDialog(QDialog):
@@ -80,6 +92,28 @@ class CatalogueDialog(QDialog):
         self.lst_biblio = QListWidget()
         self.lst_biblio.setSelectionMode(QListWidget.ExtendedSelection)
         gauche.addWidget(self.lst_biblio, 1)
+        ordre = QHBoxLayout()
+        self.b_monter = QPushButton("↑ Monter")
+        self.b_monter.setToolTip("Monte la sélection d'un cran (un bloc sélectionné\n"
+                                 "se déplace d'un seul tenant). L'ordre est écrit\n"
+                                 "dans le fichier de bibliothèque.")
+        self.b_monter.clicked.connect(lambda: self._deplacer(-1))
+        self.b_descendre = QPushButton("↓ Descendre")
+        self.b_descendre.setToolTip("Descend la sélection d'un cran. L'ordre est\n"
+                                    "écrit dans le fichier de bibliothèque.")
+        self.b_descendre.clicked.connect(lambda: self._deplacer(1))
+        self.b_trier = QPushButton("Trier A → Z")
+        self.b_trier.setToolTip("Trie toute la bibliothèque par nom, sans tenir\n"
+                                "compte des majuscules ni des accents.\n"
+                                "Remplace l'ordre actuel (on confirme).")
+        self.b_trier.clicked.connect(self._trier)
+        # les trois ensemble, sous la liste qu'ils ordonnent : tout au bout de
+        # la rangée, le tri passait inaperçu
+        ordre.addWidget(self.b_monter)
+        ordre.addWidget(self.b_descendre)
+        ordre.addWidget(self.b_trier)
+        ordre.addStretch()
+        gauche.addLayout(ordre)
         self.lbl_biblio = QLabel("")
         self.lbl_biblio.setStyleSheet(f"color:{TEXT_DIM};")
         gauche.addWidget(self.lbl_biblio)
@@ -143,7 +177,9 @@ class CatalogueDialog(QDialog):
 
         self.lst_rapport.clear()
         dans_biblio = set(self.biblio["variations"])
-        for vid in au_rapport:
+        # l'ordre du CONFIG (celui des calculs dans le paramètre de champ) —
+        # cette liste parcourait un set, donc un ordre quelconque
+        for vid in (self.config.get("variations") or {}):
             it = QListWidgetItem(vid + ("" if vid in dans_biblio
                                         else "   (pas encore publiée)"))
             it.setData(Qt.UserRole, vid)
@@ -157,10 +193,70 @@ class CatalogueDialog(QDialog):
             self.lbl_biblio.setText(f"{n} variation(s)")
         self.lbl_rapport.setText(f"{len(au_rapport)} variation(s)")
         self.b_importer.setEnabled(n > 0)
+        for b in (self.b_monter, self.b_descendre, self.b_trier):
+            b.setEnabled(n > 1 and bool(self.chemin()))
 
     @staticmethod
     def _choisis(liste) -> list:
-        return [i.data(Qt.UserRole) for i in liste.selectedItems()]
+        # dans l'ordre de la LISTE, pas celui des clics : on importe donc
+        # dans l'ordre de la bibliothèque
+        return [i.data(Qt.UserRole)
+                for i in sorted(liste.selectedItems(), key=liste.row)]
+
+    # ---- ordre de la bibliothèque -----------------------------------------
+
+    def _deplacer(self, sens: int):
+        """Monte (-1) ou descend (+1) la sélection d'un cran. Un bloc
+        sélectionné se déplace d'un seul tenant et s'arrête au bord ; une
+        sélection éparse avance chaque morceau d'un cran."""
+        ordre = list(self.biblio["variations"])
+        choisis = set(self._choisis(self.lst_biblio))
+        if not choisis:
+            return
+        indices = (range(1, len(ordre)) if sens < 0
+                   else range(len(ordre) - 2, -1, -1))
+        for i in indices:
+            j = i + sens
+            if ordre[i] in choisis and ordre[j] not in choisis:
+                ordre[i], ordre[j] = ordre[j], ordre[i]
+        self._ordonner(ordre, choisis)
+
+    def _trier(self):
+        ordre = sorted(self.biblio["variations"], key=cle_alpha)
+        if ordre == list(self.biblio["variations"]):
+            return
+        if QMessageBox.question(
+            self, "Trier la bibliothèque",
+            "Trier toutes les variations de A à Z ?\n\n"
+            "L'ordre actuel sera remplacé — pour tout le monde, si la "
+            "bibliothèque est partagée.",
+            QMessageBox.Yes | QMessageBox.Cancel, QMessageBox.Cancel,
+        ) != QMessageBox.Yes:
+            return
+        self._ordonner(ordre, set(self._choisis(self.lst_biblio)))
+
+    def _ordonner(self, ordre: list, choisis=()):
+        """Écrit la bibliothèque dans `ordre`, puis la RELIT : ce qui
+        s'affiche est ce qui est sur le disque. La sélection est gardée."""
+        variations = self.biblio["variations"]
+        if ordre == list(variations):
+            return
+        self.biblio["variations"] = {vid: variations[vid] for vid in ordre}
+        try:
+            gm.write_biblio(self.chemin(), self.biblio["variations"],
+                            self.biblio.get("branches"))
+        except OSError as e:
+            QMessageBox.warning(self, "Bibliothèque",
+                                f"Ordre NON enregistré : {e}")
+        self.reload()
+        premier = None
+        for i in range(self.lst_biblio.count()):
+            it = self.lst_biblio.item(i)
+            if it.data(Qt.UserRole) in choisis:
+                it.setSelected(True)
+                premier = premier or it
+        if premier is not None:
+            self.lst_biblio.scrollToItem(premier)
 
     # ---- actions -------------------------------------------------------------
 

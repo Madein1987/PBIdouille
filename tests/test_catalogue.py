@@ -176,6 +176,90 @@ check("importer depuis le dialogue ajoute au config",
       "sparkline" in onglet._config["variations"])
 check("le dialogue signale la modification", dlg.modifie is True)
 
+print("6. l'ORDRE de la bibliotheque : il se change, et s'ecrit dans le fichier")
+
+
+def ordre_liste():
+    return [dlg.lst_biblio.item(i).data(_Qt.UserRole)
+            for i in range(dlg.lst_biblio.count())]
+
+
+def ordre_fichier():
+    return list(json.loads(BIBLIO.read_text(encoding="utf-8"))["variations"])
+
+
+def choisir(*ids):
+    dlg.lst_biblio.clearSelection()
+    for i in range(dlg.lst_biblio.count()):
+        if dlg.lst_biblio.item(i).data(_Qt.UserRole) in ids:
+            dlg.lst_biblio.item(i).setSelected(True)
+
+
+depart = ordre_liste()
+check("il y a de quoi ordonner", len(depart) >= 4)
+check("la liste suit l'ordre du FICHIER", depart == ordre_fichier())
+
+choisir(depart[2])
+dlg._deplacer(-1)
+check("↑ monte la selection d'un cran",
+      ordre_liste()[1] == depart[2] and ordre_liste()[2] == depart[1])
+check("… et c'est ECRIT dans le fichier", ordre_fichier() == ordre_liste())
+check("… la selection suit l'element deplace",
+      dlg._choisis(dlg.lst_biblio) == [depart[2]])
+
+choisir(depart[2], depart[1])          # un bloc (dans le desordre des clics)
+dlg._deplacer(-1)
+check("un bloc monte d'un seul tenant, dans son ordre",
+      ordre_liste()[:3] == [depart[2], depart[1], depart[0]])
+dlg._deplacer(-1)
+check("… et arrive au bord, il s'arrete — sans se retourner",
+      ordre_liste()[:3] == [depart[2], depart[1], depart[0]])
+choisir(depart[2], depart[1])
+dlg._deplacer(1)
+check("↓ redescend le bloc, toujours ensemble",
+      ordre_liste()[1:3] == [depart[2], depart[1]]
+      and ordre_fichier() == ordre_liste())
+
+print("   A -> Z")
+from qtpy.QtWidgets import QHBoxLayout as _QHB                    # noqa: E402
+ordre_boutons = [lay for lay in dlg.findChildren(_QHB)
+                 if lay.indexOf(dlg.b_trier) >= 0]
+check("le tri s'appelle « Trier A → Z » et suit ↑ ↓ (plus au bout de la rangee)",
+      dlg.b_trier.text() == "Trier A → Z" and ordre_boutons
+      and ordre_boutons[0].indexOf(dlg.b_trier)
+      == ordre_boutons[0].indexOf(dlg.b_descendre) + 1)
+import unicodedata                                            # noqa: E402
+cle = dc.cle_alpha
+check("la cle de tri ignore majuscules et accents",
+      cle("Écart") == cle("ecart") and sorted(["b", "Écart", "a"], key=cle)
+      == ["a", "b", "Écart"])
+avant = ordre_liste()
+check("(elle n'etait PAS deja triee — sinon ce qui suit ne prouve rien)",
+      avant != sorted(avant, key=cle))
+dc.QMessageBox.question = staticmethod(lambda *a, **k: dc.QMessageBox.Cancel)
+dlg._trier()
+check("A -> Z annule : rien ne bouge", ordre_liste() == avant == ordre_fichier())
+dc.QMessageBox.question = staticmethod(lambda *a, **k: dc.QMessageBox.Yes)
+dlg._trier()
+check("A -> Z confirme : la bibliotheque est triee, sur le disque aussi",
+      ordre_liste() == sorted(avant, key=cle) == ordre_fichier())
+
+print("   on importe dans l'ordre de la bibliotheque")
+liste = ordre_liste()
+dlg.lst_biblio.clearSelection()
+dlg.lst_biblio.item(3).setSelected(True)     # clic sur le 4e…
+dlg.lst_biblio.item(1).setSelected(True)     # … puis sur le 2e
+check("la selection se lit dans l'ordre de la LISTE, pas des clics",
+      dlg._choisis(dlg.lst_biblio) == [liste[1], liste[3]])
+
+print("   la liste du rapport suit l'ordre du config")
+check("(assez de variations pour qu'un ordre de set tombe faux)",
+      len(onglet._config["variations"]) >= 5)
+check("… et pas celui d'un set (quelconque)",
+      [dlg.lst_rapport.item(i).data(_Qt.UserRole)
+       for i in range(dlg.lst_rapport.count())]
+      == list(onglet._config["variations"]))
+
 dlg.deleteLater()
 onglet.deleteLater()
 app.processEvents()

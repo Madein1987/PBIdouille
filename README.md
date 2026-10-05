@@ -70,11 +70,11 @@ reste et sont **idempotents** : relancer met à jour, jamais de doublon.
 sans TE ni Desktop ouvert : il écrit directement les fichiers TMDL.
 
 ```
-py generate_measures.py        (ou l'onglet « Mesures » → « Générer » de PBIdouille)
+py generate_measures.py        (ou « Générer les mesures », en tête du journal de PBIdouille)
 ```
 
 ⚠ Desktop FERMÉ pour l'écriture réelle ; backup automatique sous
-`_tmdl_backups\` ; rouvrir le `.pbip` ensuite. `settings.dryRun` (ou la case
+`_backupsPBIdouille\_tmdl_backups\` ; rouvrir le `.pbip` ensuite. `settings.dryRun` (ou la case
 « Aperçu ») pour tout lister sans rien écrire. Validé par « golden master » :
 il reproduit à l'identique les mesures et les tables paramètre produites par
 le csx (idempotent : relancer sans changement = 0 écriture). Les lineageTags
@@ -111,9 +111,11 @@ n'existe pas (poste du travail), une boîte de dialogue s'ouvre.
    base ». Les mesures générées (annotation `MeasureVariation`) sont exclues —
    pas de variations de variations accidentelles. Elles sont triées **comme
    Power BI trie** (`sort_key_pbi`, réplique du comparateur culturel `.OrderBy`
-   du csx). C'est cet ordre qui devient la colonne **Ordre** des paramètres de
-   champ : dès qu'il diverge, l'ordre du paramètre ne colle plus à l'ordre
-   alphabétique affiché par le rapport.
+   du csx). C'est l'ordre d'écriture dans le TMDL, et **le repli** de la
+   colonne **Ordre** des paramètres de champ quand aucune colonne d'ordre
+   n'est configurée (`indicateursXlsx.orderColumn`, plus bas) : dès qu'il
+   diverge, l'ordre du paramètre ne colle plus à l'ordre alphabétique affiché
+   par le rapport.
 
    Un tri ordinal Python diverge de **trois** façons — majuscules toutes
    devant (`Weight` avant `avg`), accentués rejetés après le Z (`Écart` après
@@ -125,7 +127,7 @@ n'existe pas (poste du travail), une boîte de dialogue s'ouvre.
    niveau : `Nombre d'unités` se range entre `Nombre de jours` et `Nombre dz`,
    exactement comme dans le rapport. À radical égal, la variante ponctuée
    passe après (`Nombre dunites` < `Nombre d'unites`). ⚠ L'apostrophe
-   TYPOGRAPHIQUE `’` (U+2019), elle, est significative pour .NET — elle n'est
+   TYPOGRAPHIQUE `'` (U+2019), elle, est significative pour .NET — elle n'est
    volontairement pas dans l'ensemble.
 2. **Variations** (1re passe) : une mesure par (base × template).
 3. **Switch** : une mesure `SWITCH(SELECTEDVALUE(selector), "KPI", [KPI], ...)`
@@ -200,9 +202,9 @@ ne correspond à **aucun** KPI est ignorée. Le dossier doit être **différent*
 de `sourceFolder` ; un dossier **imbriqué** (`_indicateurs\_cibles`) matche la
 config `_cibles` par son **nom de feuille**.
 
-Ça se configure dans l'**onglet Mesures → Réglages globaux → « Mesures cibles
+Ça se configure dans la fenêtre **⚙ Réglages → « Mesures cibles
 (dossier dédié) »** (tableau Dossier / Calcul, boutons Ajouter/Retirer) — pas
-besoin d'éditer le JSON à la main. Le journal du « Générer » indique combien de
+besoin d'éditer le JSON à la main. Le journal de la génération indique combien de
 cibles racine ont été déclinées (ou, si 0, liste les dossiers présents pour
 diagnostiquer).
 
@@ -295,7 +297,7 @@ de la branche), `{folder}`.
 
 Power BI **n'ajoute jamais de signe tout seul** : dans un format multi-sections,
 même le `-` du négatif doit être écrit, sinon la valeur s'affiche nue. D'où les
-trois sections. Les symboles se règlent dans **Mesures → Réglages globaux** (un
+trois sections. Les symboles se règlent dans **⚙ Réglages** (un
 aperçu montre le rendu en direct) :
 
 ```json
@@ -342,6 +344,31 @@ L'éditeur avertit si tu tapes des guillemets ou un `\` devant une espace. Le
 format de la mesure de **base** n'est jamais réécrit : il reste tel que Power
 BI l'a produit.
 
+##### Le format lu est la VALEUR, pas la ligne TMDL
+
+TMDL entoure de guillemets toute valeur de propriété qui en contient
+elle-même, en **doublant** ceux du dedans. Un format « secondes » saisi dans
+Desktop comme `#,0 "s"` arrive donc sur le disque entouré de guillemets, avec
+ceux du dedans doublés — trois guillemets en fin de ligne.
+
+Lire la ligne telle quelle prenait ce **quoting de TMDL** pour une partie du
+format, et les deltas en sortaient doublement abîmés :
+
+| | avant | après |
+|---|---|---|
+| `#,0 "s"` | `+\#\,\0 \s` — un backslash devant **chaque** caractère, le format ne formate plus rien | `+#,0 \s;-#,0 \s;#,0 \s` |
+| `+#,0 "s";-#,0 "s";…` | `++\#\,\0 \s\;…` — le `+` de la base n'étant plus en tête, le signe du delta s'ajoutait **par-dessus** | `+#,0 \s;…` idem |
+
+Une même cause pour les deux : la valeur entière passait pour un littéral, et
+`positive_section` ne voyait plus le signe déjà présent (le guillemet était en
+tête). `unquote_tmdl_value` / `quote_tmdl_value` encadrent désormais lecture et
+écriture, et sont exactement inverses. Le quoting n'est ajouté à l'écriture que
+s'il est **nécessaire** (valeur commençant par un guillemet) : les formats
+`pts` déjà présents dans les modèles restent identiques au caractère.
+
+Le backslash restant devant le `s` est, lui, **indispensable** : une lettre nue
+dans un format se lit comme un code (`s` = secondes).
+
 ⚠ **Le JSON double les backslashes à l'affichage.** Le même format apparaît
 `0.0\ %` en TMDL et dans le champ de l'UI, mais `0.0\\ %` dans l'onglet JSON
 brut — c'est l'échappement JSON, il n'en stocke qu'un. En retaper deux dans le
@@ -385,6 +412,17 @@ Trois comportements :
 - la copie est **profonde** : retoucher la variation dans le rapport n'altère
   pas la bibliothèque, et réciproquement.
 
+**L'ordre** de la bibliothèque est celui de son fichier : c'est celui dans
+lequel on la parcourt, et **dans lequel on importe** (une sélection multiple
+arrive dans l'ordre de la liste, pas des clics). Sous la liste :
+**↑ Monter / ↓ Descendre** déplacent la sélection d'un cran — un bloc
+sélectionné bouge d'un seul tenant et s'arrête au bord — et **Trier A → Z** trie
+tout par nom, sans tenir compte des majuscules ni des accents (après
+confirmation : l'ordre actuel est remplacé pour toute l'équipe si le fichier
+est partagé). Chaque changement est **écrit aussitôt** dans le fichier, comme
+« Publier », puis relu : ce qui s'affiche est ce qui est sur le disque. La
+liste « Dans ce rapport » suit l'ordre du config.
+
 Le chemin du fichier est retenu au niveau de **l'application**, pas du projet :
 pose-le sur un lecteur partagé et toute l'équipe y puise. Fichier absent ou
 illisible = bibliothèque vide, jamais une erreur ; « Publier » le crée.
@@ -402,6 +440,47 @@ branche). Dossiers : la mesure YTD vit à la racine `__YTD`, ses variations
 autour (`__YTD\_7d avg`...). Dans les paramètres, les rangées de branche
 gardent les MÊMES libellés/index — c'est la colonne `Branche` qui distingue,
 et la mesure de branche devient la rangée « Réel » de sa branche.
+
+#### Substitution ou ENVELOPPE
+
+Deux façons de dériver une variation en branche.
+
+**Substitution** (défaut) : le DAX de la variation est ré-émis avec la mesure de
+branche à l'intérieur — `variation(branche(base))`.
+
+```dax
+Weight YTD PY = CALCULATE([Weight YTD], SAMEPERIODLASTYEAR('dim_Date'[Date]))
+```
+
+**Enveloppe** : la branche entoure la variation Réel — `branche(variation(base))`.
+
+```json
+"branches": { "YTD": { "wrap": "CALCULATE({variationRef}, DATESYTD({date}))" } }
+```
+```dax
+Weight YTD PY = CALCULATE([Weight PY], DATESYTD('dim_Date'[Date]))
+```
+
+Jeton `{variationRef}` = la mesure **Réel** de la variation. Deux gains :
+toutes les mesures de la branche se ressemblent, donc un écart se débogue
+forcément dans la variation Réel ; et un correctif apporté à celle-ci se
+répercute **sans régénérer**, puisque la mesure est référencée et non recopiée.
+
+> ⚠ **Ce n'est pas toujours équivalent**, d'où l'activation variation par
+> variation (`wrapInBranch`, case « enveloppable en branche » dans l'éditeur) :
+>
+> | le DAX de la variation… | enveloppe |
+> |---|---|
+> | **décale** le contexte (`SAMEPERIODLASTYEAR`) | équivalent — `PY`, `YoY %`, `MTD` |
+> | **épingle** une fenêtre sur la borne du contexte (`MAX({date})`, `DATEADD`, `DATESINPERIOD`) | **change le sens** — `7d avg` enveloppé redevient le 7d avg ordinaire, `Δ 7d` compare deux plages décalées |
+>
+> C'est le DAX de la variation qui décide, donc le drapeau vit sur elle ; la
+> branche ne fournit que le patron.
+
+Le patron sans variation cochée, ou une variation cochée sans patron : rien ne
+change, on reste en substitution. Noms, paramètres de champ, annotations,
+formats et propagation sont **inchangés** dans les deux cas — seul le DAX généré
+diffère, donc l'essai se fait et se défait par une régénération.
 
 ### switch
 
@@ -450,7 +529,7 @@ Trois familles de tables, qui diffèrent par ce qu'on y **affiche** :
 `byKpiUsesLabel` : dans une table « par KPI », c'est le KPI qu'on sélectionne —
 autant y lire `Poids` que `Weight`. Coché (défaut), l'affichage vient de
 `kpiLabelLookup.labelColumn` via un `LOOKUPVALUE` ; décoché, c'est la colonne
-clé (le nom de la mesure). Case dans **Mesures → Réglages globaux**.
+clé (le nom de la mesure). Case dans **⚙ Réglages**.
 
 Si la table de `kpiLabelLookup` est **absente du modèle**, le `LOOKUPVALUE`
 rendrait la table paramètre invalide : la génération retombe alors sur le nom
@@ -574,7 +653,7 @@ config le rendrait faux dès sa réutilisation ; dans TD_Indicateurs, l'attribut
 vit avec le rapport et le config reste générique. (Même principe que
 `kpiLabelLookup` et `hardcodedAttributes`.)
 
-Une seule ligne dans **Mesures → Réglages globaux → Portée par KPI** : le nom
+Une seule ligne dans **⚙ Réglages → Portée par KPI** : le nom
 de la colonne (le détail est derrière le ⓘ). Excel absent ou colonne inconnue ?
 Avertissement au journal, génération poursuivie — jamais d'arrêt brutal.
 
@@ -681,14 +760,42 @@ réglages qui pouvaient diverger sans prévenir. Une seule définition désormai
   "path": "TD_Indicateurs.xlsx",
   "keyColumn": "mesure",
   "fillColumn": "couleur_fill",
-  "textColumn": "couleur_text"
+  "textColumn": "couleur_text",
+  "orderColumn": "ordre"        // facultatif — vide = ordre alphabétique
 }
 ```
 
-Se règle dans **Mesures → Réglages globaux → Excel des indicateurs** (avec un
+Se règle dans **⚙ Réglages → Excel des indicateurs** (avec un
 sélecteur de fichier et les colonnes proposées d'après les en-têtes réels).
 Tout ce qui est au défaut n'est pas écrit — le config reste propre, et le bloc
 disparaît entièrement si rien ne change.
+
+#### Travailler dans l'Excel avec l'outil ouvert
+
+Le contrat : **l'outil ne tient jamais le classeur**, sauf le temps d'une
+action qu'on a lancée. On peut donc éditer dans Excel, enregistrer, puis
+lancer une génération — sans jamais être mis dehors.
+
+Trois règles, dans `moteurs/xlsx_lecture.py` et la couche UI :
+
+| | |
+|---|---|
+| **lecture sur instantané** | le classeur est copié dans le temporaire, et c'est la copie qu'openpyxl analyse. On ne touche à l'original que le temps d'une copie d'octets, pas de toute l'analyse XML — et une lecture réussit même si Excel tient le fichier |
+| **en-têtes en mémoire** | lus une fois au démarrage pour peupler les menus de colonnes ; se promener dans l'outil ne rouvre plus rien. Le bouton **↻** force la relecture (après avoir ajouté une colonne), et changer de chemin la déclenche tout seul |
+| **exécutions toujours fraîches** | génération, couleurs, jetons `<<…>>`, ordre des KPI : chacune relit le disque. Ce qu'on vient d'enregistrer dans Excel est pris en compte sans rien rafraîchir |
+
+> **Ce qui clochait.** openpyxl en mode `read_only` ne charge rien en mémoire :
+> il garde le `.xlsx` **ouvert** et y lit à la demande. Un `close()` oublié
+> (c'était le cas de l'option couleurs) laissait le fichier tenu par le
+> processus, et Excel ne pouvait plus l'enregistrer — il écrit un temporaire
+> puis le **substitue** au fichier, ce qu'un handle ouvert fait échouer. Le
+> symptôme était **intermittent** : les objets openpyxl se référencent en
+> cycle, donc seul un passage du ramasse-miettes libérait le fichier, quand il
+> passait. Toute lecture passe désormais par un `finally`.
+
+Seule exception, assumée : **« Couleurs des KPI » écrit** dans le classeur.
+Cette écriture-là doit forcément prendre le fichier ; si Excel l'a ouvert, le
+dialogue le dit (« ferme-le et réessaie ») au lieu d'échouer en silence.
 
 Un chemin **relatif** est résolu depuis le dossier du `.pbip` ; le sélecteur
 re-relativise automatiquement un fichier choisi dans le projet, pour que le
@@ -701,6 +808,26 @@ Qui s'en sert :
 | jetons `<<label>>` figés dans le DAX | `keyColumn` + celles de `hardcodedAttributes.tokens` |
 | portée par KPI (`<<each …>>`) | `keyColumn` + celle de `kpiTables.column` |
 | **couleurs des matrices** (onglet Rapport) | `keyColumn`, `fillColumn`, `textColumn` |
+| **ordre des KPI** dans les tables paramètre | `keyColumn`, `orderColumn` |
+
+#### orderColumn — choisir l'ordre des KPI
+
+Par défaut les KPI sortent dans l'ordre **alphabétique** (`sort_key_pbi`,
+section 6). `orderColumn` nomme une colonne de l'Excel qui prend la main : sa
+valeur devient la colonne **Ordre** des tables paramètre, et donc l'ordre du
+slicer (`sortByColumn`).
+
+| | |
+|---|---|
+| valeurs numériques | comparées comme des **nombres** — `10` vient après `9`, pas entre `1` et `2`. Numérote par 10 pour pouvoir intercaler |
+| valeur texte | acceptée, rangée **après** les nombres, alphabétiquement |
+| KPI absent de la colonne, ou cellule vide | rangé **à la fin** (pas en tête : la place la plus visible ne doit pas revenir à la seule ligne dont personne n'a décidé) — et nommé dans le journal |
+| deux ex æquo | départagés alphabétiquement, donc de façon **stable** : re-générer ne rebrasse pas la table |
+| colonne introuvable | avertissement, repli sur l'alphabétique — jamais une génération qui échoue |
+
+L'ordre vit dans l'Excel, **avec le rapport** : le config ne retient que le nom
+de la colonne, donc il reste transportable. UI : **⚙ Réglages
+→ Excel des indicateurs → « Ordre des KPI »** (vide = alphabétique).
 
 L'onglet Rapport n'a plus de champs propres : il **affiche** ce que le config
 dit (et signale en clair si le fichier est introuvable), relu à chaque usage —
@@ -728,7 +855,7 @@ colonne (ligne `mesure == X` dans l'Excel). Valeur **brute** : un entier donne
 `1`/`-1` (pour du texte, quote toi-même : `"<<label>>"`). Un KPI absent de
 l'Excel (ex. `Switch KPI`) → la mesure n'est **pas générée** (avertissement),
 pour ne jamais écrire du DAX cassé. Re-générer après avoir modifié l'Excel met
-les valeurs à jour. UI : onglet **Mesures → Réglages globaux → « Attributs
+les valeurs à jour. UI : **⚙ Réglages → « Attributs
 codés en dur »** (colonne au menu déroulant, label à côté).
 
 ---
@@ -788,6 +915,8 @@ YoY %"`). Quand le slicer change de KPI, le CF disparaît.
 
 **Solution** : tu configures le CF UNE fois sur le KPI template dans Desktop ;
 le script clone l'entrée pour chaque KPI (selector + mesure CF adaptés).
+Plusieurs familles de KPI, des exceptions : c'est la **grille des sources**,
+plus bas.
 
 Ça couvre aussi les **étiquettes de référence** (carte) : valeur, **titre custom**
 et détail. Subtilité : sur une carte à paramètre, chaque KPI est un *point de
@@ -874,6 +1003,320 @@ traverse jamais les KPI (on n'apparie qu'à l'intérieur du KPI source).
 `detect_branch` applique la même règle : une dérivée hérite de la branche de sa
 racine.
 
+#### Mesures communes à plusieurs branches
+
+Le plus long préfixe a sa limite : il suppose que la mesure dérivée **a** une
+variante par branche. Un titre, un libellé, une unité — une mesure unique
+partagée par le Réel et le YTD — n'en a pas. Elle se voyait quand même coller
+le suffixe (`Total Steps titre` → `Total Steps YTD titre`), donc une référence
+morte : le visuel perdait l'attribut.
+
+La règle est désormais simple : **la propagation n'écrit jamais une référence
+vers une mesure absente du modèle.** Elle lit les noms réellement présents
+(`measures_of_model`) et descend une cascade d'intentions :
+
+| | on essaie | cas visé |
+|---|---|---|
+| 1 | la variante de la branche visée — `Weight YTD` | la mesure a bien ses branches |
+| 2 | le même KPI **sans** branche — `Weight titre` | un titre par KPI, commun à ses deux branches |
+| 3 | la mesure d'origine, inchangée | un titre commun à tout le rapport |
+
+Les candidats viennent de **deux** sources, et les deux sont tentées : le
+paramètre de champ d'abord (fiable, aucun parsing), puis le nom. Ne s'arrêter
+qu'aux premiers était un piège : un paramètre sans ligne « Réel » pour le KPI
+visé (il n'a que sa ligne YTD) coupait la cascade avant le repli par le nom, et
+le titre du KPI **template** restait sur les faces YTD de tous les autres.
+
+Rien à déclarer dans le config : l'existence dans le modèle **est** la
+déclaration. Le journal liste en fin de course les mesures gardées telles
+quelles — si l'une d'elles devrait avoir une variante, c'est qu'elle manque au
+modèle, et il suffit de la générer puis de relancer.
+
+Modèle introuvable → la vérification se désactive d'elle-même (ancien
+comportement) plutôt que de tout bloquer.
+
+### La grille des sources : une base, des groupes, un gabarit par variation
+
+De quel KPI chaque KPI copie-t-il le formatage de chaque variation ? Une
+**grille** KPI × variation répond, case par case, et plusieurs **gabarits**
+s'y partagent le travail :
+
+- le **gabarit de base** sert à **tout le monde** : on le formate en entier
+  dans Desktop, et ce qu'aucune règle plus précise ne décide vient de lui ;
+- un **groupe** est une famille de KPI qui se propagent **entre eux** : son
+  gabarit — un de ses membres — donne aux autres. Un KPI n'est que dans un
+  groupe ; le gabarit de base, dans aucun ;
+- la ligne **« Tous les KPI »** donne un **gabarit par variation**, pour tout
+  le monde, **groupes compris** : le PY se formate une fois, sur un KPI, et
+  vaut partout — c'était tout l'enjeu, chaque gabarit de groupe devait
+  sinon porter le PY lui aussi ;
+- une ligne de **groupe** peut aussi avoir un gabarit par variation (le YoY %
+  de la famille Sommeil vient de Weight) ;
+- une **case** peut avoir sa propre règle : copier un autre KPI, ou rester
+  **« à la main »** — rien ne lui est copié, elle garde ce qui est formaté
+  sur elle.
+
+**Priorité** — pour une case, la première règle qui répond l'emporte :
+
+| | règle | où la poser |
+|---|---|---|
+| 1 | la case elle-même (ce KPI, cette variation) | une case de KPI |
+| 2 | son groupe, pour cette variation | la ligne du groupe |
+| 3 | tous les KPI, pour cette variation | la ligne « Tous les KPI » |
+| 4 | ce KPI, toutes ses variations | le fichier seulement |
+| 5 | le gabarit de son groupe | menu Groupes |
+| 6 | le gabarit de base | en haut de la fenêtre |
+
+Une règle **pour une variation** passe donc avant une règle « toutes
+variations », et à niveau égal, le plus étroit gagne (KPI > groupe > tous).
+
+Dans Desktop, on formate la base **en entier**, chaque gabarit de groupe pour
+ce qui fait sa famille, et un gabarit par variation pour ce qui vaut partout.
+Contrepartie, voulue : ce qu'un KPI porte hors de ce que ses règles lui
+laissent est remplacé à la prochaine propagation — c'est ce qui fait tenir le
+tout. La sauvegarde de l'action défait tout.
+
+Les colonnes sont les **variations**, lues dans les **noms des mesures** qui
+existent — qu'elles soient dans le paramètre de champ ou non (sparkline,
+couleurs CF…) : le Réel, les variations du KPI dans l'ordre du config, puis
+chaque **cible** et ses variations, puis le reste. Une variation vit sur
+**toutes ses branches** — la case « PY » couvre `Weight PY` et `Weight YTD PY`
+—, donc une branche (YTD) n'est pas une colonne à elle : la colonne « Réel »
+couvre `Weight` et `Weight YTD`.
+
+**Sur une carte, une entrée appartient à la variation qu'elle MONTRE.**
+D'ordinaire, le selector d'une entrée dit sa variation : la série
+`Weight YTD PY` d'un graphique, la colonne `Weight PY` d'une matrice. Mais sur
+une carte, toutes les entrées visent la mesure du KPI (`_mesures.Weight`) — la
+variation est dedans : une **étiquette de référence** montre `Weight PY` en
+valeur, son titre et son détail s'y rattachent par le même `selector.id`, et
+l'**image** de la carte est `Weight sparkline`. Elles vont donc dans les
+colonnes PY et sparkline ; seuls les réglages de la carte entière (sans id)
+restent au Réel. Avant, tout tombait au Réel : sur une page de cartes, un
+gabarit par variation n'avait rien à donner, et seul le gabarit de base
+propageait.
+
+Une **cible** est une base à part entière, déclinée comme un KPI : ses
+variations ont leurs colonnes, au nom que le générateur leur donne au
+paramètre de champ — `Weight cible` est dans « Cible », `Weight cible écart`
+et `Weight cible YTD écart` dans « Cible écart ». Une cible se reconnaît à son
+dossier dédié (`kpiMeasureFolders`), ou au paramètre de champ seul (un Calcul
+qui n'est ni le Réel ni une variation). Un KPI qui a une cible a donc ses
+variations de cible, même absentes du paramètre ; un KPI sans cible y lit
+« pas de mesure ». Et quand une case copie un KPI qui n'a PAS la mesure — la
+base, souvent, qui n'a pas de cible —, la case est en retrait et le verdict
+le dit : rien ne lui serait copié, donne la colonne à un KPI qui a une cible
+(ligne « Tous les KPI »).
+Pour ranger une mesure dans sa colonne : le paramètre de champ d'abord (son
+Calcul), sinon le suffixe d'une variation du config (le plus long d'abord :
+`CF YoY %` n'est pas du `YoY %`), une cible (dossier dédié), et à défaut le
+Réel du KPI. Une règle vaut dans **tous les visuels** (plus tard : par
+visuel, pour les gros rapports — un champ de plus dans le fichier, sans rien
+changer au reste).
+
+```json
+{ "version": 2,
+  "base": "Average Steps",
+  "colonnes": { "PY": "Average Steps" },
+  "groupes": [
+    { "nom": "Sommeil",
+      "kpis": ["Average Sleep Duration", "Sleep Score"],
+      "base": "Average Sleep Duration",
+      "colonnes": { "YoY %": "Weight" } } ],
+  "exceptions": [
+    { "source": "Weight", "kpis": ["Body Fat %"], "variations": ["YoY %"] },
+    { "source": "(manuel)", "kpis": ["Total Steps"], "variations": ["Réel"] } ] }
+```
+
+`"(manuel)"` = « à la main ». Une exception sans `"variations"` vaut pour
+toutes (niveau 4). Le gabarit d'un groupe en est membre d'office.
+
+**Une source est toujours sa propre source** pour ce qu'elle donne : Weight,
+qui donne son YoY % à la famille Sommeil, le garde — c'est implicite, inutile
+de l'écrire. C'est la seule contrainte, et elle tient tout : une **copie de
+copie** (Body Fat % copie Weight, qui copie lui-même la base) ferait dépendre
+le résultat de l'ordre des passes. Elle est **refusée**, coupable nommé, et
+rien n'est écrit. Refusés aussi : une source inconnue, une case à deux
+sources, un KPI dans deux groupes, le gabarit de base dans un groupe. Un KPI
+absent du modèle est signalé et ignoré.
+
+**Les pertes sont annoncées avant d'écrire.** Une case qui copie un KPI qui
+n'a **rien** pour cette variation, dans un visuel que ce KPI pilote, perd son
+formatage — le miroir : ce que la source ne porte plus est retiré. C'est voulu
+quand on retire un réglage d'un gabarit ; sur une case qu'on croyait couverte,
+c'est une perte. La grille la marque d'un **coin orange**, le journal la
+chiffre avant la première passe. Cas typique : une cible que la base n'a pas →
+donne-la à tous les KPI depuis un KPI qui l'a.
+
+#### La fenêtre « Grille des sources… »
+
+Onglet **Rapport** → **Grille des sources…**. En haut, le gabarit de base ;
+puis une ligne **« Tous les KPI »**, chaque groupe (sa ligne, puis ses KPI),
+et les KPI **sans groupe**. Tout est dit **en mots** — pas de symbole à
+décoder :
+
+| dans une case de KPI | |
+|---|---|
+| `Gabarit` | formaté à la main dans Desktop, et copié par d'autres (l'infobulle dit qui) |
+| `À la main` | formaté à la main, rien n'y est copié |
+| le nom d'un KPI | la case copie ce KPI — **en gras** si la règle est posée sur la case, en clair si elle hérite (d'un groupe, de « Tous les KPI », d'un gabarit) |
+| `pas de mesure` | ce KPI n'a pas cette variation : rien à y écrire |
+| `non propagé` | aucune règle ne s'y applique (pas de gabarit de base) |
+| un coin orange | du formatage serait retiré (l'infobulle dit pourquoi) |
+
+La couleur d'une case est celle de sa source — franche quand la règle est
+posée là, pâlie quand elle hérite — et une légende nomme le KPI derrière
+chaque couleur. Les lignes « Tous les KPI » et de groupe ne montrent que les
+règles posées à leur niveau (vide = aucune). Les en-têtes nomment le gabarit
+de base et les gabarits de groupe. L'ordre de priorité est rappelé en haut.
+
+On sélectionne des cases (clic-glisser, ou un en-tête de ligne ou de colonne),
+puis **Copier depuis [KPI] → Appliquer**, **À la main** ou **Retirer la
+règle** (la case suit de nouveau la règle plus large) — aussi au clic droit.
+Le bouton **Groupes** : nouveau groupe avec les KPI sélectionnés (son gabarit
+est le premier, à changer ensuite), ajouter ou retirer des KPI, choisir le
+gabarit d'un groupe (un membre, « à la main » pour chacun, ou aucun : ses KPI
+suivent la base), renommer, supprimer.
+
+La fenêtre **ne sait pas fabriquer** une grille incohérente :
+
+- copier un KPI en fait le gabarit de cette variation ;
+- repeindre un gabarit emmène ceux qui le copiaient — ceux-là seulement : un
+  groupe qui suivait son propre gabarit ne bouge pas ;
+- un KPI qui copie ailleurs **par ta règle** et que d'autres copient : ceux-là
+  copient directement la même source, ta règle tient ;
+- le **dernier** copieur parti, un gabarit redevient une case ordinaire ;
+- **ce que tu poses reste posé**, même égal à ce qui serait hérité — un PY
+  « pour tous » posé avant tout groupe tient quand un groupe apparaît.
+
+Chaque action qui en entraîne d'autres le dit sous la grille. **Enregistrer**
+écrit `propagation.json` ; fermer avec des changements demande confirmation.
+
+L'onglet résume la grille (« Gabarit de base : Average Steps · 1 groupe ·
+1 gabarit par variation »), dit quel fichier il lit, et **refuse de propager
+sans grille** : choisir le gabarit à la place de l'usager réécrirait un
+rapport entier depuis un KPI arbitraire. Un KPI tout neuf suit la base, sans
+rien toucher.
+
+#### L'ancien format
+
+Un `propagation.json` d'avant (`{"groupes": [...]}` avec un gabarit par
+groupe) marche **tel quel** : le groupe sans liste de KPI devient la base,
+chaque autre groupe reste un **groupe** avec son gabarit, dans le même ordre
+de passes — le résultat est **identique au caractère** à celui de l'ancien
+moteur (vérifié sur quatre configurations, dont celle du rapport Fitbit). Un
+KPI dans aucun groupe, sans groupe par défaut, reste non propagé.
+Enregistrer la grille réécrit le fichier au format actuel.
+
+**Un fichier par dossier**, à côté des `.pbip` : `propagation.json`. Toutes les
+versions d'un rapport — noms un peu différents, même dossier — lisent la
+**même** grille : les réglages de propagation ne changent pas d'une version
+à l'autre. Pas dans `measures_config.json`, qui voyage d'un rapport à
+l'autre : des noms de KPI n'y auraient pas leur place.
+
+Contrepartie : deux rapports vraiment DIFFÉRENTS dans un même dossier
+partageraient aussi leur grille. Un KPI absent d'un modèle y est ignoré
+(avertissement), une source absente arrête la propagation en la nommant —
+jamais une écriture fausse.
+
+Avant, le fichier portait le nom du rapport (`<rapport>.propagation.json`).
+Il reste **lu en repli** tant qu'il n'y a pas de `propagation.json` ; s'il est
+**seul** dans le dossier, il est **renommé** en `propagation.json` à
+l'ouverture du projet (le journal le dit). S'il y en a plusieurs, on ne
+devine pas lequel partager : chaque rapport lit le sien jusqu'au premier
+enregistrement de la grille, qui écrit `propagation.json`.
+
+#### Ce qui rend le découpage sûr
+
+`process_visual` travaille par **cases** : chaque passe — une par source —
+reçoit les siennes, `(KPI, variation)`, et un classeur qui range chaque entrée
+dans sa case. Trois ensembles, à ne pas confondre :
+
+- **le périmètre d'écriture** : les cases de la passe. Le miroir ne retire
+  **que** là — sans quoi la passe de la base emporterait le formatage des
+  exceptions, dans le même visuel ;
+- **ce que la source donne** : ses entrées dans SES cases. Weight, source du
+  YoY % d'un groupe, ne donne pas son Réel : c'est la passe de la base qui
+  s'en charge ;
+- **le découpage des noms** (`_managed` = *tous* les KPI du rapport) : sert
+  uniquement à savoir quel KPI une mesure vise. Restreint à une passe, un KPI
+  voisin dont le nom commence par celui de la source (`Total Steps Goal` face
+  à `Total Steps`) serait pris pour une déclinaison de la source.
+
+**« Piloté », par les cases.** Le miroir ne touche qu'aux visuels que la
+source pilote, et on en juge sur les entrées qu'elle porte **dans ses propres
+cases** — celles qu'aucune autre passe n'écrit. Juger sur toutes ses entrées
+ferait dépendre le résultat de l'ordre : la base pose des entrées sur Weight
+dans un visuel où Weight n'avait rien, et la passe de Weight, venue après,
+s'y croirait pilotée. Deux ordres de passes donnent le même rapport, au
+caractère (testé).
+
+**Une seule sauvegarde couvre l'action entière**, pas une par source : sinon
+trois sources mangeraient trois des dix sauvegardes conservées. Au passage,
+`BackupSession` ne copie plus deux fois le même fichier — une session décrit
+l'état d'**avant** l'opération, donc c'est la première copie qui vaut. Sans ce
+garde-fou, un visuel touché par deux passes y déposait l'état *intermédiaire*,
+et « annuler » ne rendait que le milieu de l'opération.
+
+#### Un KPI qui n'a pas l'attribut ne reçoit rien
+
+Tous les KPI n'ont pas tout. Quatre indicateurs, deux seulement avec une
+**cible** : les entrées de cible partaient quand même sur les deux autres, où
+elles pointaient la mesure du KPI **template**. Les valeurs restaient justes,
+mais Power BI affichait un avertissement sur le visuel.
+
+C'est le **paramètre de champ** qui tranche, et il faut deux règles distinctes :
+
+| le KPI visé… | conclusion |
+|---|---|
+| a une ligne pour ce **Calcul** (`Cible`) | il a l'attribut → on propage |
+| est dans le paramètre mais **sans** ligne pour ce calcul | il ne l'a pas → **rien ne lui est écrit** |
+| n'est pas du tout dans le paramètre | le paramètre n'en dit rien → on propage (cible explicite hors paramètre) |
+| mesure sans racine connue (un titre commun) | ne dépend pas du KPI → on propage |
+
+La distinction qui compte : « ce KPI n'a pas de cible » ≠ « cette mesure ne
+dépend pas du KPI ». La première fait sauter l'entrée, la seconde la laisse
+passer inchangée (section précédente).
+
+##### Le dossier des cibles, quand le paramètre ne suffit pas
+
+Le paramètre de champ ne connaît pas toujours les cibles — on ne les offre pas
+forcément au slicer. Sans ligne, `racine_fp` rattache `Weight cible` à la mesure
+de **base** : le Calcul devient « Réel », que tous les KPI possèdent, donc la
+règle ci-dessus ne l'écarte pas. La cascade retombe alors sur « garde la mesure
+d'origine » — et la cible du **gabarit** atterrissait sur les KPI qui n'en ont
+pas.
+
+D'où une **seconde règle, indépendante** : le `displayFolder`. Les cibles vivent
+dans un dossier dédié, déjà déclaré dans `kpiMeasureFolders` (Mesures →
+⚙ Réglages → « Mesures cibles »). Une mesure de ce dossier est **propre à
+son KPI**, donc si le KPI visé n'a pas la sienne, rien ne lui est écrit. Le
+dossier est reconnu par sa **feuille** : `_indicateurs\cible` répond à `cible`.
+
+Les mesures dérivées suivent : `Weight cible ecartCF`, générée hors du dossier,
+remonte à sa racine `Weight cible` (`racine_cible`). Une mesure partagée, la
+base et ses branches ne sont jamais concernées — c'est l'autre moitié du besoin.
+
+Aucun dossier déclaré, ou modèle illisible → la règle se désactive d'elle-même.
+
+Le test porte sur **toute l'entrée**, pas seulement son `selector` : le cas
+courant est une règle posée sur la mesure de **base** dont la couleur vient de
+la cible (`Weight cible ecartCF`, enfouie dans les `properties`). Le selector
+se traduisait très bien — c'est la couleur qui ne pouvait pas. Le journal liste
+les KPI écartés et la mesure qui leur manque.
+
+Là encore, un simple nouveau passage retire les entrées déjà écrites pour ces
+KPI : elles ne sont plus attendues, donc le miroir les emporte.
+
+**Les reliques sont nettoyées.** Un rapport propagé avant cette règle porte des
+entrées mortes (`Total Steps YTD titre`). Le miroir les retirait déjà des KPI
+cibles, mais pas du KPI **template**, dont les entrées sont maîtresses et
+jamais réécrites. Une entrée qui vise une mesure inexistante ne décrit
+pourtant rien : elle est maintenant retirée là aussi, en le disant au journal.
+Garde-fou — on n'enlève que si le nom est préfixé par la **table des mesures**,
+car un selector peut viser une **colonne**, et les colonnes ne sont pas dans
+`known`. Un simple nouveau passage suffit donc à assainir le rapport.
+
 Dernier repli (racine elle-même absente du paramètre) : l'ancien remplacement
 par le nom. Résultat identique à l'ancien code sur les mesures de KPI — vérifié
 octet pour octet sur le rapport réel, et le nombre d'entrées d'un `dry_run` est
@@ -923,7 +1366,7 @@ n'en a pas). Pour des couleurs différentes par KPI dans un graphique, ne pas
 compter sur la propagation — le template y est uniforme par construction.
 
 Sécurité : chaque visuel modifié est copié dans
-`_propagate_backups\<horodatage>\<page>_<visuel>.json` **avant** écriture —
+`_backupsPBIdouille\_propagate_backups\<horodatage>\<page>_<visuel>.json` **avant** écriture —
 défaire un retrait = recopier le fichier. Et l'**Aperçu (dry-run)** de
 l'onglet Rapport, coché par défaut, liste les retraits sans rien changer.
 
@@ -1037,7 +1480,7 @@ compteur du bouton indique toujours le total réel, filtre compris).
 
 **Supprimer la sélection** — un seul bouton, mesures **et** colonnes ensemble
 (⚠ **Desktop fermé**, backup de chaque fichier touché sous
-`_tmdl_backups\<horodatage>\`, ré-analyse après coup).
+`_backupsPBIdouille\_tmdl_backups\<horodatage>\`, ré-analyse après coup).
 
 Trois façons de supprimer une colonne selon sa **catégorie** (suffixe dans
 l'arbre) :
@@ -1100,10 +1543,32 @@ reviendront tant que la config les définit. Rouvrir le `.pbip` ensuite.
 ## 8b. backup_restore.py — sauvegardes et restauration
 
 Chaque outil qui écrit dans un projet copie d'abord les fichiers touchés dans
-un dossier horodaté : `_tmdl_backups\` (ChopChop), `_propagate_backups\`
-(propagation), `_wireframe_backups\` (wireframe). Ces copies étaient « à
-plat » : le nom du fichier ne disait pas **d'où** il venait, donc restaurer
-voulait dire retrouver la bonne destination à la main.
+un dossier horodaté, sous **un seul dossier parent** à la racine du projet :
+
+```
+<projet>\_backupsPBIdouille\
+    _tmdl_backups\<horodatage>\        ChopChop, génération des mesures
+    _propagate_backups\<horodatage>\   propagation
+    _wireframe_backups\<horodatage>\   wireframe (positions, groupes, imports)
+```
+
+Ces copies étaient « à plat » : le nom du fichier ne disait pas **d'où** il
+venait, donc restaurer voulait dire retrouver la bonne destination à la main.
+
+Deux règles de ménage, pour que le dossier du projet reste lisible :
+
+- **un seul endroit où chercher** — au chargement d'un projet, les dossiers
+  restés à la racine (disposition d'avant) sont rangés sous le parent. Rien
+  n'est fusionné de force ni supprimé : une session dont l'horodatage existe
+  déjà de l'autre côté est laissée où elle est, et les deux dispositions
+  restent listables et restaurables de toute façon ;
+- **10 sauvegardes par outil** (`MAX_SESSIONS`) : au-delà, la plus vieille
+  s'efface toute seule, à l'écriture suivante comme à l'ouverture du projet.
+  Le compte est **par outil** : une propagation ne doit pas faire disparaître
+  l'historique du wireframe, dont le Ctrl+Z s'appuie dessus. Un dossier qui
+  n'est pas une sauvegarde (nom non horodaté, pas de manifeste) n'est jamais
+  touché. Si le Ctrl+Z du wireframe remonte plus loin que ce qui reste, il le
+  **dit** au lieu de ne rien faire.
 
 Chaque dossier contient désormais un **`manifeste.json`** : pour chaque
 fichier, son chemin d'origine relatif au projet et ce qui lui est arrivé.
@@ -1233,11 +1698,19 @@ tout piloter sans éditer les constantes en tête des scripts, avec plus
 d'options. Thème : « **Dark Teal Pro** », le thème néon des rapports (vert
 `#56C596` sur fonds bleu nuit `#0F1629`/`#162032`) — QSS autonome dans
 `core\theme.py`, partagé avec ChopChopRapport, rendu identique PyQt5/PySide6.
+Les **titres de groupe** sont **dans** le cadre (à cheval sur la bordure, le
+trait les barrait), dans leur propre police : **Bahnschrift SemiBold** 11 pt,
+la DIN de Windows 10/11 — le reste du texte ne s'en distinguait que par la
+couleur. Qt ignore toute police posée sur `QGroupBox::title` : le titre prend
+celle du groupe, dont les enfants directs repartent en poids normal. La
+**coche** des cases est fine (1,6 px), à angle vif et plus petite, dans une
+case moins arrondie ; elle existe aussi en `@2x` pour les écrans à 150/200 %,
+où l'image simple, agrandie, redevenait floue — donc ronde.
 
 ### Lancement
 
 ```
-py bidouille\app.py
+py app.py
 ```
 
 Dépendances : `qtpy` + PySide6 (maison) ou PyQt5 (travail). L'app rouvre le
@@ -1253,21 +1726,161 @@ existe dans le modèle → sinon **scan du modèle** (première table contenant
 l'onglet « Mesures » est inactif (bandeau explicatif) — l'onglet
 Rapport fonctionne via le scan.
 
+#### « ↻ Tout recharger » — voir le disque sans relancer l'app
+
+Générer des mesures, ajouter une colonne dans TD_Indicateurs, retoucher le
+modèle dans Desktop : l'outil continuait de travailler sur des données
+périmées, et il fallait le fermer puis le rouvrir. Le bouton de la barre projet
+relit tout :
+
+| source | relue par |
+|---|---|
+| modèle : KPI, branches, paramètres de champ | onglet Rapport (`refresh_model`) |
+| `measures_config.json` | onglet Mesures |
+| `TD_Indicateurs.xlsx`, **colonnes comprises** | onglet Mesures (le cache d'en-têtes est invalidé) |
+| grille des sources (`propagation.json`) | onglet Rapport |
+| pages et visuels | Wireframe (reste sur la page courante) |
+| mesures inutilisées | ChopChop (différé : à la prochaine visite de l'onglet) |
+
+Chaque onglet expose un `reload()` et **garde les choix en cours** — les
+branches décochées, par exemple. L'app n'appelle donc pas
+`_set_project`, qui repousserait le projet dans les récents, relancerait le
+rangement des sauvegardes et remettrait les listes à zéro.
+
+Recharger relit le **disque** : ce qui n'est pas écrit est perdu. L'app liste
+donc d'abord ce qui est en attente (config modifié, éléments déplacés) et
+propose **Enregistrer puis recharger** / **Recharger quand même** / **Annuler**
+— jamais de perte silencieuse.
+
+#### Ce qui est mémorisé, et à quelle portée
+
+Un **seul** magasin de réglages (`core/project.py` → `reglages()`, registre
+Windows via QSettings). Il y en avait deux, dont un rien que pour la
+bibliothèque : deux endroits où chercher, et un réglage qui semblait se perdre.
+Ce qui traînait dans l'ancien est **rapatrié** à la première lecture.
+
+| Réglage | Portée |
+|---|---|
+| projet ouvert, projets récents | application |
+| **bibliothèque de variations** (`biblio_path`) | **application** — un fichier global, souvent sur un lecteur partagé ; il ne bouge pas quand on change de rapport |
+| `measures_config.json` choisi (`Config…`) | **par projet** — chaque rapport a le sien |
+| PBIP gabarit du wireframe | **par projet**, avec repli sur le **dernier choisi** où que ce soit |
+
+Le registre plutôt qu'un fichier posé à côté de `app.py` : dézipper une mise à
+jour ailleurs ne fait alors rien perdre.
+
+Deux garde-fous, tirés d'un réglage qui avait l'air de se réinitialiser seul :
+une valeur **vide** n'écrase jamais un réglage (refermer une boîte de dialogue
+sans rien choisir ne défait rien), et le chemin de la bibliothèque est
+**affiché** sous son bouton — avec un avertissement si le fichier a disparu,
+plutôt qu'un repli silencieux sur le défaut.
+
+#### Le journal — une colonne à droite, le plus récent en haut
+
+Chaque onglet avait sa bande de log en bas : deux journaux (Rapport,
+Générer) plus celui de ChopChop, larges et bas, quatre ou cinq lignes
+visibles. Il fallait savoir **dans quel onglet** regarder, et une propagation
+verbeuse défilait dans un hublot.
+
+Désormais **un seul** journal (`core\journal.py`), en colonne à droite, sur
+toute la hauteur de la fenêtre. Tous les onglets y écrivent — y compris
+ChopChop, dont la zone est relayée (le panneau reste partagé avec la fenêtre
+autonome, qui garde la sienne).
+
+**Le plus récent en haut — par entrée, pas par ligne.** Une entrée est un run
+(bannière puis sortie du moteur) ou un groupe de messages. Les entrées
+s'empilent du plus récent au plus ancien, mais **dans** un run les lignes
+restent dans l'ordre de lecture — inversées ligne à ligne, un run se lirait
+de bas en haut, son « Terminé » au-dessus de sa bannière.
+
+| ce qu'on voit | pourquoi |
+|---|---|
+| `▶ 14:32:07  Propagation des attributs (aperçu)   ✔ terminé en 2,4 s` | l'**heure de début**, puis le **verdict et la durée écrits SUR la bannière** : l'issue d'un run se lit sans descendre, même quand sa sortie dépasse la hauteur de la colonne |
+| un **trait** autour de chaque run | sépare les entrées ; les messages isolés (déplacements du wireframe, rechargements) restent groupés **sans** trait, sinon une rafale deviendrait une échelle |
+| `14:33:02  ↻ Tout rechargé …` | un message est horodaté ; ce qu'un clic écrit d'un coup (un rapport de suppression ChopChop) forme **une** entrée, lue dans l'ordre |
+| des **couleurs** par nature de ligne | le vocabulaire des moteurs : `⚠` jaune, `ERREUR` rouge, `+` vert, `~` bleu, `-` orange, `=`/`∅` grisés, `***` bleu, `---` sous-titre ; le texte courant est gris clair, pas blanc — ce sont les couleurs qui doivent sortir |
+| un **tableau** pour les « clé : valeur » | `KPI cibles : A, B, C` devient une rangée : la clé grisée dans une colonne, les valeurs alignées dans la suivante, **une par rangée** (au-delà de 12, la liste reste d'un bloc, repliée dans sa colonne). Seul le texte courant s'y range : un `⚠` ou un `Terminé` garde sa ligne et sa couleur |
+| des **marges** plutôt que des trous | les lignes vides des moteurs deviennent l'espace avant le bloc suivant |
+| un **retrait à gauche** par niveau | une ligne longue revient à la ligne **alignée sous elle-même** |
+
+Un message qui arrive **pendant** un run se place au-dessus (il est plus récent
+que le début du run), et la suite du run continue **sous sa bannière** : les
+entrées ouvertes sont suivies par des curseurs que le document fait glisser
+quand on insère au-dessus d'eux.
+
+Qui est **en haut** y reste et voit arriver le neuf. Qui est **descendu lire**
+plus bas garde **sa** ligne sous les yeux : la vue suit ce qui s'insère
+au-dessus, au lieu de la pousser vers le bas à chaque message.
+
+La police du journal est **proportionnelle**, volontairement : dans une colonne
+étroite, elle loge un tiers de texte de plus par ligne. Le code, lui, est en
+chasse fixe (cf. onglet « Mesures »). Le tableau n'est pas une vraie table :
+chaque rangée est un paragraphe à **taquet de tabulation** et **retrait
+suspendu** — ce qui s'insère sans casser le « plus récent en haut ».
+
+La colonne fait **440 px** par défaut (340 avant) ; une largeur retenue plus
+étroite a été élargie une fois, puis celle qu'on règle à la poignée est
+respectée. La barre projet n'affiche plus que le **nom** du projet (le chemin
+est en infobulle) : elle imposait à elle seule ~1 600 px de fenêtre.
+
+**Dans l'onglet Mesures, le journal porte la génération** : le panneau
+**« Génération des mesures »** (aperçu, orphelines, bouton **Générer les
+mesures**) se pose entre son entête et le fil — le run lancé s'affiche juste
+en dessous, puisque le plus récent est en haut. Ailleurs, le panneau
+s'efface et le journal reste un journal.
+
+**La colonne cède sa place à l'éditeur de variations.** Dans *Mesures →
+Variations*, la colonne de droite accueille le DAX et l'aperçu des noms ; le
+journal y est replié par défaut. Le bouton **« ◂ 🚀 Lancements »** l'y rouvre — avec
+le bouton de génération — et il **reste ouvert dans Variations** tant que tu
+ne l'y refermes pas.
+
+**Les runs bavards se rangent dans des tiroirs.** Un run terminé qui a écrit
+plus de 6 lignes se **replie** sur sa bannière — `▶ 09:57:48  Propagation
+des attributs   ✔ terminé en 0,1 s   25 lignes   ⚠ 1` : combien de lignes elle
+cache, et s'il y a des avertissements dedans. **Un clic** sur la bannière
+l'ouvre (▼), un autre la referme ; la main au survol dit qu'elle se clique.
+Un **échec** reste ouvert — il faut le lire —, un run court aussi (rien à
+cacher), et le run **en cours** ne se replie pas : ses lignes arrivent
+encore. Le texte replié reste dans le document : copier ou chercher le
+trouve. (Les lignes sont masquées, pas retirées : Qt sait sauter un
+paragraphe invisible dans la mise en page.)
+
+Le bouton **« 🚀 Lancements ▸ »** est donc **ton** choix, retenu **par vue** (dans
+*Variations* / ailleurs) d'une session à l'autre, avec la largeur de la
+colonne. Un **run qui démarre remontre** la colonne sans toucher à ce choix —
+un outil qui écrit dans les fichiers sans qu'on voie ce qu'il fait, non ; un
+simple message, lui, ne force pas la main.
+
+Les **poignées** entre volets (ici, dans *Variations*) sont un trait d'un
+pixel au milieu d'une bande de 13 px : les groupes ne butent plus sur une
+barre, et la prise reste facile à attraper (`theme.Separateur` — dessinée à
+la main : pour une poignée stylée, Qt lit la règle `:vertical` même pour un
+splitter horizontal).
+
+La place a été prise **sur la largeur imposée**, pas sur le travail : la
+rangée « Portée » de l'éditeur de variations réclamait 1424 px à elle seule et
+le libellé du projet 984 (chemin complet, désormais en infobulle) — la
+fenêtre descend de ~2300 px de large à ~1860, journal compris.
+
 ### Architecture
 
 ```
+app.py              coquille : barre projet partagée + onglets + thème
 bidouille\
-  app.py            coquille : barre projet partagée + onglets + thème
   core\
     project.py      .pbip -> .Report / .SemanticModel + projets récents
     model_reader.py KPI, branches, entité (délègue à propagate_cf / color_matrix / config)
-    runner.py       ToolRunner (QThread) : lance un outil, journal streamé
-    theme.py        icône émoji, rose vif, cases à cocher, dark mode
-  tabs\
-    tab_report.py       onglet « Rapport » (phase 1)
+    journal.py      LE journal (colonne de droite) : horodatage, couleurs, marges
+    runner.py       ToolRunner (QThread) : lance un outil, ligne à ligne vers le journal
+    theme.py        palette, QSS, icône émoji ; police_code (chasse fixe du
+                    code) et rangee_transparente (rangées dans un groupe)
+  tabs\                 (dans l'ordre des onglets)
+    tab_config.py       onglet « Mesures » (Variations, JSON brut) + la fenêtre ⚙ Réglages
+    tab_model.py        panneau « Génération des mesures », posé en tête du journal (generate_measures.py)
+    tab_report.py       onglet « Rapport » (propagation, couleurs des matrices)
+    dialog_sources.py   la grille des sources du formatage (propagation.json)
     tab_wireframe.py    onglet « Wireframe » (plan des pages, niveaux actifs, gabarits)
-    tab_config.py       onglet « Mesures » (éditeur config + sous-onglet Générer)
-    tab_model.py        panneau « Générer » embarqué dans l'onglet Mesures (generate_measures.py)
     tab_chopchop.py     onglet « ChopChop 🪓 » (embarque le panneau de unused_measures_ui)
     dialog_couleurs.py  aperçu & édition des couleurs KPI (écrit dans l'Excel)
   core\report_reader.py    lecture pages/visuels (positions, types, champs) + write_positions
@@ -1275,26 +1888,31 @@ bidouille\
 ```
 
 Les scripts racine restent utilisables en CLI ; l'app **réutilise la même
-implémentation** : `propagate_cf.propagate(...)` et
+implémentation** : `propagate_cf.propagate_regles(...)` (la grille ;
+`propagate(...)` pour un gabarit seul) et
 `color_matrix_by_kpi.colorize(...)` (leurs `main()` ne sont que ces fonctions
 appelées avec les constantes de tête). Aucune logique dupliquée.
 
 ### Onglet « Rapport »
 
-- **Propagation des attributs** : KPI gabarit, KPI cibles et branches cochables,
-  `Aperçu (dry-run)` pour prévisualiser sans écrire, `Verbeux` pour le détail
-  des candidats → bouton **Propager**.
-- **Couleurs des matrices** : chemin de l'Excel + **menus déroulants des
-  colonnes** (clé / fond / texte), chargés du fichier (bouton ↻ pour
-  recharger ; on peut aussi taper un nom de colonne à créer) → bouton
-  **Colorer**. Le bouton **« Aperçu & édition des couleurs… »** ouvre
+- **Propagation des attributs** : la **grille des sources** — un résumé, et
+  le bouton qui l'ouvre (cf. §7) —, les branches cochables, `Aperçu
+  (dry-run)` pour prévisualiser sans écrire, `Verbeux` pour le détail des
+  candidats → bouton **Propager**. Sans grille, pas de propagation.
+- **Couleurs des matrices** : une **fiche** rappelle l'Excel des indicateurs
+  — son nom (chemin complet en infobulle, ⚠ s'il est introuvable) et les
+  colonnes lues (clé · fond · texte), libellés grisés, valeurs en clair — et
+  un lien **« Se règle dans ⚙ Réglages »** ouvre la fenêtre : l'Excel
+  n'est défini qu'une fois, dans le config → bouton **Colorer**. Le bouton **« Aperçu & édition des couleurs… »** ouvre
   l'éditeur : chaque KPI avec ses pastilles fond/texte
   et un aperçu rendu ; clic = sélecteur de couleurs ; **Enregistrer réécrit
   l'Excel** (et CRÉE les colonnes `couleur_fill`/`couleur_text` si l'Excel n'a
   que l'ancienne colonne `couleur` — laquelle n'est pas touchée).
 - **Propager puis colorer** enchaîne les deux dans le bon ordre.
 - Une écriture réelle (dry-run décoché) demande confirmation ; **fermer Power BI
-  Desktop** avant. Le journal commun reproduit la sortie CLI.
+  Desktop** avant. La sortie CLI arrive telle quelle dans la **colonne
+  journal** à droite, horodatée et colorée (ci-dessus) ; « Propager puis
+  colorer » donne **deux** bannières et **deux** durées, une par étape.
 
 ### Onglet « Wireframe »
 
@@ -1390,7 +2008,7 @@ imbrication respectée — grouper dans un groupe donne un sous-groupe) et
 réécrit les membres (parentGroupName + position relative ; rien ne bouge à
 l'écran). **« Dégrouper »** (groupe sélectionné) fait l'inverse : les enfants
 remontent d'un niveau, le groupe est supprimé. Écriture immédiate (Desktop
-FERMÉ), backups + manifestes sous `_wireframe_backups\`.
+FERMÉ), backups + manifestes sous `_backupsPBIdouille\_wireframe_backups\`.
 
 **Annuler (Ctrl+Z) et enregistrement** : plus de popups de confirmation —
 chaque action écrit directement (toujours backupée) et s'annule par
@@ -1398,14 +2016,18 @@ chaque action écrit directement (toujours backupée) et s'annule par
 redimensionnements — pile en mémoire, vidée au changement de page) comme les
 actions fichiers (import, groupement, dégroupement, enregistrement — le undo
 restaure les backups et supprime les fichiers créés). **« 💾 Enregistrer »**
-écrit les positions modifiées ; le bouton **« 💾 Tout enregistrer »** de la
-barre d'app sauvegarde tous les onglets d'un coup (wireframe + config des
-mesures). Le bandeau vert sous le canevas raconte la dernière action.
+écrit les positions modifiées et s'allume en orange tant qu'il en reste. Il
+n'y a plus de « Tout enregistrer » dans la barre d'app : il doublait ce
+bouton et le « Sauvegarder » des Mesures, qui s'allument, eux. Le bandeau
+vert sous le canevas raconte la dernière action.
 
-Les changements s'accumulent à l'écran (indicateur « ● N modifié(s) »).
+Les changements s'accumulent à l'écran : le bouton **« 💾 Enregistrer (N) »**
+porte le compte et **s'allume en orange** tant qu'il reste quelque chose à
+écrire — l'état se lit là où on va cliquer pour le résoudre, plutôt que dans
+un voyant posé à côté.
 **Enregistrer les positions** écrit les `visual.json` concernés — uniquement le
 bloc `position` (converti en coordonnées locales au groupe ; z/tabOrder
-préservés), **Desktop FERMÉ**, backup sous `_wireframe_backups\<horodatage>\`,
+préservés), **Desktop FERMÉ**, backup sous `_backupsPBIdouille\_wireframe_backups\<horodatage>\`,
 puis rouvrir le `.pbip`. **Annuler** relit le disque et jette les changements
 non sauvés.
 
@@ -1422,16 +2044,29 @@ renumérotés au-dessus du max de la page**, géométrie conservée à l'identiq
 (la racine garde sa **position d'origine** du gabarit — pensé pour les
 en-têtes/pieds de page standard, rangées de slicers, grilles). Écriture
 immédiate (Desktop FERMÉ) + **manifeste d'undo** sous
-`_wireframe_backups\<horodatage>\import_manifest.txt` (undo = supprimer les
+`_backupsPBIdouille\_wireframe_backups\<horodatage>\import_manifest.txt` (undo = supprimer les
 dossiers listés). ⚠ Le modèle importé référence les tables/champs du modèle
 sémantique du GABARIT — compatibilité à vérifier (même modèle ou champs
 communs). Voir `core/template_import.py`.
 
 ### Onglet « Mesures »
 
-Tout ce qui touche aux mesures au même endroit — quatre sous-onglets :
-**Variations** (l'éditeur ci-dessous), **Réglages globaux**, **JSON brut** et
-**Générer** (la génération native, plus bas). Éditeur de
+Deux sous-onglets : **Variations** (l'éditeur ci-dessous) et **JSON brut**.
+Les réglages globaux du config ont leur **fenêtre**, ouverte par **⚙ Réglages**
+dans la barre du haut : ils servent aussi à l'onglet Rapport (l'Excel des
+indicateurs, par exemple), ils n'avaient rien à faire sous les Mesures.
+**Enregistrer** y écrit le config, comme « Sauvegarder » — avec tout ce qui
+est en attente, variations comprises ; **Annuler** oublie ce qui a été
+touché dans la fenêtre, y compris l'orange qu'il avait allumé.
+La génération n'a plus d'onglet : son bouton est **en tête du journal** (plus
+bas).
+
+*Variations* est en **trois volets** : la liste à gauche ; au milieu la
+définition, en deux groupes — **Mesure générée** (nom, format, dossier…) et
+**Portée** (KPI / cibles, enveloppe de branche, types de base, filtres par
+nom) ; à droite, sur toute la hauteur, le **DAX** au-dessus de l'**aperçu des
+noms générés**, une poignée entre les deux. C'est la place du journal, qui
+n'a rien à dire dans cette vue et la lui cède. Éditeur de
 `measures_config.json` — chaque variation s'édite dans un
 formulaire complet avec tooltips explicatifs partout : namePattern,
 description, **formatString en dropdown** (inherit / delta / **text** = aucun
@@ -1442,9 +2077,32 @@ CF Δ 30d vit dans le dossier de Δ 30d), **dataCategory en dropdown**
 
 - **éditeur DAX en clair** : le format JSON array-of-lines devient invisible
   (colle ton bloc DAX, il est sérialisé en lignes à la sauvegarde ; round-trip
-  fidèle, clés inconnues préservées) ;
-- **lint des placeholders** : tout `{jeton}` serré inconnu est signalé
-  (les constructeurs de table DAX `{ ad }` sont tolérés) ;
+  fidèle, clés inconnues préservées). Les gestes d'un éditeur de code, aussi
+  dans le **JSON brut** :
+  - **TAB pose une tabulation**, large de **4 caractères** (Qt en donnait
+    80 px, une dizaine) ; Maj+TAB la reprend — et défait aussi, 4 par 4, un
+    retrait en espaces des variations écrites avant. Une tabulation passe
+    telle quelle dans le TMDL, sous son propre retrait, et la génération
+    suivante n'y voit aucun changement ;
+  - **Début** va au premier caractère après le retrait (un 2e appui : colonne
+    0), donc **Maj+Début** depuis la fin d'une ligne sélectionne le code sans
+    embarquer le retrait ; Ctrl+Début garde son sens ;
+  - **chasse fixe pour de vrai** : le QSS d'app fixe `font-family` sur tous
+    les widgets, ce qui écrasait les `setFont(Consolas)` — l'éditeur DAX
+    était en Segoe UI depuis toujours (4 espaces = 12 px) et l'aide-mémoire
+    des jetons perdait ses colonnes. `theme.police_code()` marque le widget
+    et une règle de thème plus précise reprend la main ;
+- **jetons surlignés à la frappe** : `{connus}` en bleu, `<<attributs>>`
+  connus en vert, **inconnus en rouge souligné**. Sont connus les jetons du
+  générateur, ceux de la portée par KPI (`<<tables>>`, `<<allTables>>`,
+  `<<removeFilters>>`, et `{table}` **dans** un `<<each …>>`) et les
+  `<<labels>>` déclarés dans **⚙ Réglages → Attributs codés en dur** —
+  une déclaration fraîche compte tout de suite, sans enregistrer. Les
+  constructeurs de table DAX `{ ad }` (avec espaces) ne sont pas des jetons ;
+- **lint** sous l'éditeur, fondé sur le **même** repérage que la couleur : ce
+  qui est rouge est exactement ce qu'il signale — `{jeton}` inconnu, et
+  maintenant `<<attribut>>` non déclaré (la génération sauterait la mesure).
+  `{table}` dans un `<<each …>>` n'y est plus signalé à tort ;
 - **aide-mémoire des jetons** sous la zone DAX, **replié** par défaut (un clic
   sur « Jetons disponibles ») : il sert à l'écriture du DAX, pas en permanence.
   Il porte l'opposition qui compte : `{kpi}` = KPI racine **sans** branche,
@@ -1456,11 +2114,25 @@ CF Δ 30d vit dans le dossier de Δ 30d), **dataCategory en dropdown**
   modèle (`Weight cible`, `Weight cible YTD`…) et non les KPI ; portée vide = un
   message le dit au lieu d'une liste trompeuse. Les cibles sont lues par
   `generate_measures.scan_cibles()`, la **même** fonction que la génération —
-  l'aperçu ne peut donc pas diverger de ce qui sera écrit ;
+  l'aperçu ne peut donc pas diverger de ce qui sera écrit. Chaque nom est
+  **en couleur** selon ce qui l'a produit : la racine (KPI ou cible) telle
+  quelle, ce que la **branche** ajoute en bleu (` YTD`), ce que la
+  **variation** ajoute en vert (` Δ 7d`) — la légende est au-dessus. Les
+  branches y sont appliquées avec la **règle de la génération** : jamais à
+  elles-mêmes (l'aperçu montrait `Weight YTD YTD`, jamais généré) et, pour
+  une branche restreinte, aux seules variations qu'elle liste. Un test
+  vérifie, variation par variation, que chaque nom affiché figure dans le
+  plan d'une génération à blanc ;
 - boutons Ajouter / Dupliquer / Renommer / Supprimer + **↑ Monter / ↓ Descendre**
   (réordonne les variations — l'ordre pilote celui des calculs dans le
   paramètre de champ et la génération) ;
-- sous-onglet **Réglages globaux** : `settings`, `fieldParameter`, `switch` et
+- fenêtre **⚙ Réglages** — chaque groupe s'ouvre sur une phrase qui
+  dit à quoi il sert, et chaque réglage a son **ⓘ** (survol = infobulle,
+  clic = fenêtre) : ce qu'il fait, un exemple, sa valeur par défaut. Les
+  paramètres de champ, par exemple, y expliquent les trois familles de tables
+  (par calcul, par KPI, mixtes), le rôle des colonnes Indicateur / Calcul /
+  Branche et de la table de correspondance des libellés — `settings`,
+  `fieldParameter`, `switch` et
   `branches` en cases/champs (les listes de tables paramètre en multi-lignes ;
   les branches en cases à cocher sur les variations, **+ un éditeur de
   restriction** : pour chaque branche, cocher quelles variations elle applique —
@@ -1469,16 +2141,24 @@ CF Δ 30d vit dans le dossier de Δ 30d), **dataCategory en dropdown**
 - sous-onglet **JSON brut** (tout le fichier, validation avant de revenir) ;
 - **Sauvegarder** : backup `measures_config.json.bak` puis écriture.
 
-**Sous-onglet « Générer »** : le bouton **« Générer les mesures »** exécute
+**Génération** — en tête du journal, visible dans l'onglet Mesures : le bouton
+**« Générer les mesures »** exécute
 `generate_measures.py` sur le modèle du projet : mesures × variations ×
 branches, tables paramètre de champ, mesure Switch — **sans Tabular Editor ni
-Desktop ouvert**. Récap du config en tête ; « Aperçu (dry-run) » coché par
+Desktop ouvert**. Récap du config en une ligne (le détail en infobulle) ;
+« Aperçu (dry-run) » coché par
 défaut (liste tout, n'écrit rien) ; case « Supprimer les orphelines » ;
 l'écriture réelle demande confirmation (Desktop FERMÉ), sauvegarde sous
-`_tmdl_backups\`, puis rouvrir le `.pbip`. Le générateur lit le fichier sur le
-disque : un bandeau prévient si le config a des modifs non sauvegardées.
-Workflow complet, tout dans l'onglet Mesures : éditer → **Sauvegarder** →
-sous-onglet **Générer** → rouvrir Desktop.
+`_backupsPBIdouille\_tmdl_backups\`, puis rouvrir le `.pbip`.
+
+Le générateur lit le **fichier**, pas l'éditeur. Le bouton étant désormais à
+côté de l'éditeur (plus d'onglet à traverser, qui enregistrait la vue au
+passage), l'oubli est devenu facile : le panneau le signale en continu, et
+générer avec un config non enregistré propose **Enregistrer puis générer** /
+**Générer l'ancienne version** / **Annuler** plutôt que de générer l'ancien
+en silence. Workflow : éditer → **Générer les mesures** (qui enregistre si
+besoin) → rouvrir Desktop. Le bouton **« Sauvegarder »** s'allume en
+**orange** dès que le config a des modifications en attente.
 
 ### Onglet « ChopChop 🪓 »
 

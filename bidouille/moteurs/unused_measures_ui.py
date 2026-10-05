@@ -19,7 +19,8 @@ du projet PBIP choisi.
 
 IMPORTANT : Power BI Desktop doit être FERMÉ pendant les suppressions (il ne
 relit les fichiers qu'à l'ouverture et les écraserait à l'enregistrement).
-Backup automatique sous _tmdl_backups\<horodatage>\ avant chaque écriture.
+Backup automatique sous _backupsPBIdouille\\_tmdl_backups\\<horodatage>\\ avant
+chaque écriture.
 
 Lancement    : py unused_measures_ui.py
 Dépendances  : py -m pip install qtpy pyside6
@@ -729,7 +730,7 @@ class ChopChopPanel(QWidget):
             QMessageBox.information(
                 self, "Sauvegardes",
                 "Le dialogue de restauration vit dans bidouille\\tabs\\.\n"
-                f"Les sauvegardes sont dans :\n{um.PBIP_DIR}\\_tmdl_backups\\\n"
+                f"Les sauvegardes sont dans :\n{um.PBIP_DIR}\\_backupsPBIdouille\\_tmdl_backups\\\n"
                 "(chaque dossier contient un manifeste.json qui dit d'où "
                 "vient chaque fichier).")
             return
@@ -921,7 +922,7 @@ class ChopChopPanel(QWidget):
         if gen:
             msg.append(f"⚠ {len(gen)} mesure(s) générée(s) reviendront à la "
                        "prochaine génération (config).")
-        msg.append("⚠ Power BI Desktop fermé · backup sous _tmdl_backups\\ · "
+        msg.append("⚠ Power BI Desktop fermé · backup sous _backupsPBIdouille\\_tmdl_backups\\ · "
                    "détail complet dans le journal.")
 
         if QMessageBox.question(

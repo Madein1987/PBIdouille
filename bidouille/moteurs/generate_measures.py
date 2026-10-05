@@ -9,7 +9,8 @@ rang unique KPI-puis-calcul, orphelines. Même config : measures_config.json.
 
 ⚠ Power BI Desktop doit être FERMÉ (il ne relit les fichiers qu'à l'ouverture
 et un enregistrement écraserait nos modifications). Backup automatique sous
-_tmdl_backups\\<horodatage>\\ avant chaque écriture. Rouvrir le .pbip ensuite.
+_backupsPBIdouille\\_tmdl_backups\\<horodatage>\\ avant chaque écriture.
+Rouvrir le .pbip ensuite.
 
 En ligne de commande :  py generate_measures.py   (config à côté du script)
 En module (BIdouille)  : generate(model_dir, config, dry_run=..., log=...)
@@ -31,12 +32,13 @@ import re
 import sys
 import unicodedata
 import uuid
-from datetime import datetime
 from pathlib import Path
 
 # réutilise le découpage TMDL éprouvé de unused_measures (mêmes fichiers cibles)
 sys.path.insert(0, str(Path(__file__).resolve().parent))   # moteurs\ voisins
 from unused_measures import MEMBER_RE, MEASURE_NAME_RE, _first_group
+import backup_restore as br                                # sauvegardes + manifeste
+import xlsx_lecture as _xl                                 # relâche le classeur
 
 # ---------------------------------------------------------------------------
 PBIP_DIR    = Path(r"C:\OneDrive - PJ\Data Cooler\_Power BI\Fitbit")
@@ -48,6 +50,7 @@ ANNOTATION = "MeasureVariation"   # marque les mesures générées : "base|varia
 
 ANNOT_RE   = re.compile(r"^\t\tannotation " + ANNOTATION + r" = (.+)$", re.M)
 FORMAT_RE  = re.compile(r"^\t\tformatString: (.*)$", re.M)
+QUOTE = '"'
 FOLDER_RE  = re.compile(r"^\t\tdisplayFolder: (.*)$", re.M)
 LINEAGE_RE = re.compile(r"^\t\tlineageTag: (.*)$", re.M)
 TABLE_LINEAGE_RE = re.compile(r"^\tlineageTag: (.*)$", re.M)
@@ -276,7 +279,7 @@ def to_pts_format(core: str) -> str:
 
 
 # Symboles d'un format « delta », par section (positif ; négatif ; zéro).
-# Modifiables dans Réglages globaux (settings.deltaSymbols) : « + / − », des
+# Modifiables dans ⚙ Réglages (settings.deltaSymbols) : « + / − », des
 # flèches « ▲ / ▼ », ou rien du tout.
 DELTA_SYMBOLS = {"positive": "+", "negative": "-", "zero": ""}
 
@@ -574,6 +577,60 @@ def split_members(text: str) -> list:
     return chunks
 
 
+# TMDL entoure une valeur de guillemets dès qu'elle en contient elle-même, et
+# DOUBLE ceux du dedans. Un format « secondes » saisi dans Desktop comme
+#     #,0 "s"
+# se retrouve donc sur le disque écrit ainsi (3 guillemets à la fin) :
+#     formatString: "#,0 ""s"""
+# Lire la ligne telle quelle prenait le quoting de TMDL pour une partie du
+# format, avec deux dégâts dans les deltas :
+#   · la valeur entière passait pour un littéral, donc un backslash devant
+#     CHAQUE caractère (\#\,\0 \s) — le format ne formatait plus rien ;
+#   · un « + » déjà en tête ne l'était plus (le guillemet l'était), donc le
+#     signe du delta s'ajoutait par-dessus (++…).
+
+def unquote_tmdl_value(valeur):
+    """Valeur de propriété TMDL -> valeur RÉELLE (cf. le commentaire ci-dessus).
+
+    Un guillemet SOLITAIRE à l'intérieur signe une valeur que TMDL n'a PAS
+    quotée (les formats « pts » du modèle, que TMDL lit jusqu'au bout de
+    ligne) : on n'y touche pas. Aucune devinette — l'inverse exact de
+    `quote_tmdl_value`."""
+    if not valeur or len(valeur) < 2:
+        return valeur
+    if not (valeur[0] == QUOTE and valeur[-1] == QUOTE):
+        return valeur
+    dedans = valeur[1:-1]
+    out: list = []
+    i = 0
+    while i < len(dedans):
+        if dedans[i] == QUOTE:
+            if i + 1 < len(dedans) and dedans[i + 1] == QUOTE:
+                out.append(QUOTE)
+                i += 2
+                continue
+            return valeur              # pas du quoting TMDL : on laisse tel quel
+        out.append(dedans[i])
+        i += 1
+    return "".join(out)
+
+
+def quote_tmdl_value(valeur):
+    """Inverse de `unquote_tmdl_value` : quote SEULEMENT quand TMDL en a besoin
+    pour relire la même valeur, c'est-à-dire quand elle commence par un
+    guillemet (sinon TMDL lit la ligne jusqu'au bout et les guillemets
+    intérieurs se conservent tout seuls).
+
+    Volontairement plus avare que Desktop, qui quote dès qu'il y a un
+    guillemet : les formats « pts » déjà écrits dans les modèles restent
+    identiques au caractère, donc aucune réécriture pour rien."""
+    if not valeur:
+        return valeur
+    if valeur[0] != QUOTE and valeur == valeur.strip():
+        return valeur
+    return QUOTE + valeur.replace(QUOTE, QUOTE + QUOTE) + QUOTE
+
+
 def measure_info(chunk_text: str) -> dict:
     """Extrait nom/annotation/format/dossier/lineage d'un chunk de mesure."""
     m_line = re.search(r"^\tmeasure .*$", chunk_text, re.M)
@@ -597,7 +654,8 @@ def measure_info(chunk_text: str) -> dict:
     return {
         "name": name,
         "annotation": a.group(1).strip() if a else None,
-        "format": f.group(1) if f else None,
+        # dé-quoté : c'est LE format, pas la ligne TMDL qui le porte
+        "format": unquote_tmdl_value(f.group(1)) if f else None,
         "folder": d.group(1) if d else None,
         "lineage": lt.group(1).strip() if lt else None,
         "dax": dax,
@@ -621,7 +679,8 @@ def measure_block(name, dax, fmt, folder, desc, tag, data_cat, lineage) -> str:
         for l in dax_lines:
             out.append("\t\t\t" + l)
     if fmt:
-        out.append("\t\tformatString: " + fmt)
+        # quoté seulement si TMDL ne saurait pas relire la valeur autrement
+        out.append("\t\tformatString: " + quote_tmdl_value(fmt))
     if folder:
         out.append("\t\tdisplayFolder: " + folder)
     out.append("\t\tlineageTag: " + lineage)
@@ -724,6 +783,9 @@ INDICATEURS_DEFAUT = {
     "keyColumn": "mesure",
     "fillColumn": "couleur_fill",
     "textColumn": "couleur_text",
+    # colonne d'ORDRE des KPI dans les tables paramètre. Vide = tri
+    # alphabétique de Power BI (cf. kpi_ranks).
+    "orderColumn": "",
 }
 
 
@@ -845,10 +907,10 @@ def read_attribute_map(xlsx, key_col, attr_col) -> dict:
     kl, al = key_col.lower(), attr_col.lower()
     out = {}
     try:
-        import openpyxl
-        wb = openpyxl.load_workbook(xlsx, read_only=True, data_only=True)
-        rows = list(wb.worksheets[0].iter_rows(values_only=True))
-        wb.close()
+        rows = _xl.lire_lignes(xlsx)      # referme le classeur quoi qu'il arrive
+    except ImportError:
+        rows = None
+    if rows is not None:
         if not rows:
             return out
         header = [str(h).strip().lower() if h is not None else "" for h in rows[0]]
@@ -861,9 +923,8 @@ def read_attribute_map(xlsx, key_col, attr_col) -> dict:
                     and ai < len(r) and r[ai] is not None:
                 out[str(r[ki]).strip()] = _fmt_attr(r[ai])
         return out
-    except ImportError:
-        pass
-    import pandas as pd
+
+    import pandas as pd                     # repli : pandas referme tout seul
     df = pd.read_excel(xlsx)
     df.columns = [str(c).strip().lower() for c in df.columns]
     if kl not in df.columns or al not in df.columns:
@@ -872,6 +933,69 @@ def read_attribute_map(xlsx, key_col, attr_col) -> dict:
         if pd.notna(r[kl]) and str(r[kl]).strip() and pd.notna(r[al]):
             out[str(r[kl]).strip()] = _fmt_attr(r[al])
     return out
+
+
+# --------------------------------- ordre des KPI dans les tables paramètre
+
+# KPI que la colonne d'ordre ne mentionne pas : rangé APRÈS ceux qu'elle
+# mentionne. Devant, un KPI oublié se retrouverait en tête du slicer — la
+# place la plus visible pour la seule ligne dont personne n'a décidé.
+ORDRE_ABSENT = (2, 0.0, "")
+
+
+def _cle_ordre(valeur):
+    """Clé de tri d'une valeur de la colonne d'ordre.
+
+    Un nombre est comparé COMME UN NOMBRE : sinon « 10 » se rangerait entre
+    « 1 » et « 2 », la première déception de toute colonne d'ordre. Ce qui
+    n'en est pas un se range après, alphabétiquement — une colonne à moitié
+    remplie de texte reste ainsi déterministe au lieu de planter."""
+    texte = str(valeur).strip()
+    try:
+        return (0, float(texte.replace(",", ".")), "")
+    except ValueError:
+        return (1, 0.0, texte.casefold())
+
+
+def read_kpi_order(td, log=print) -> dict:
+    """{KPI : valeur d'ordre} lue dans la colonne `orderColumn` de
+    TD_Indicateurs. Pas de colonne configurée, ou illisible = {}, donc tri
+    alphabétique : l'ordre est facultatif, il ne fait jamais échouer.
+
+    L'ordre vit avec LE RAPPORT, comme la portée et les couleurs : le
+    measures_config.json voyage d'un rapport à l'autre, et y inscrire une
+    liste de KPI le rendrait faux dès sa réutilisation ailleurs. Le config ne
+    retient donc que le NOM de la colonne."""
+    col = (td or {}).get("orderColumn")
+    if not col:
+        return {}
+    try:
+        return read_attribute_map(td["path"], td["keyColumn"], col)
+    except SystemExit as e:
+        log(f"⚠ ordre des KPI : {e} — colonne « {col} » ignorée, "
+            "tri alphabétique.")
+        return {}
+
+
+def kpi_ranks(bases, ordres, log=print) -> dict:
+    """{KPI : rang} — ce qui atterrit dans la colonne Ordre des tables
+    paramètre, et donc l'ordre affiché par le slicer (sortByColumn).
+
+    Sans colonne d'ordre : le tri alphabétique de Power BI (`sort_key_pbi`),
+    celui que le rapport appliquerait de lui-même. Avec : la colonne commande,
+    et l'alphabétique ne sert plus qu'à départager deux ex æquo — deux KPI au
+    même rang doivent tomber dans un ordre STABLE, sinon chaque génération
+    réécrirait la table pour rien."""
+    if not ordres:
+        return {b: i for i, b in enumerate(sorted(bases, key=sort_key_pbi))}
+    ordonnes = sorted(bases, key=lambda b: (_cle_ordre(ordres[b]) if b in ordres
+                                            else ORDRE_ABSENT, sort_key_pbi(b)))
+    sans = [b for b in bases if b not in ordres]
+    if sans:
+        log(f"⚠ ordre des KPI : {len(sans)} sans valeur dans la colonne "
+            f"({', '.join(sorted(sans, key=sort_key_pbi))}) — rangé(s) à la fin.")
+    log("Ordre des KPI : " + " → ".join(ordonnes))
+    return {b: i for i, b in enumerate(ordonnes)}
 
 
 def match_kpi(name: str, bases_by_len) -> str | None:
@@ -1080,8 +1204,9 @@ def generate(model_dir, config, *, dry_run=None, remove_orphans=None, log=print)
                 existing[info["name"]] = {"idx": ci, **info}
 
     # mesures de base : sans annotation, displayFolder == sourceFolder.
-    # L'ordre fixé ici devient l'ordre des KPI dans les paramètres de champ
-    # (kpi_order plus bas) : il doit suivre le tri de Power BI, pas l'ordinal.
+    # Ordre alphabétique « à la Power BI » (et non ordinal) : c'est l'ordre
+    # d'écriture dans le TMDL, et le repli des tables paramètre quand aucune
+    # colonne d'ordre n'est configurée (cf. kpi_ranks).
     bases = sorted(
         (n for n, e in existing.items()
          if not e["annotation"]
@@ -1109,10 +1234,14 @@ def generate(model_dir, config, *, dry_run=None, remove_orphans=None, log=print)
     kpi_branch_ref: dict = {}
 
     def process(base_name, base_fmt, base_folder, kpi_lbl, vid, tpl,
-                fp_label, fp_branch, pass_folder_pattern, branch_id, fp_group=2):
+                fp_label, fp_branch, pass_folder_pattern, branch_id, fp_group=2,
+                dax_impose=None):
         """Port de processVariation : calcule la spec + la rangée paramètre.
         `fp_group` = groupe de tri de la rangée (2 = variation de KPI ; 1 =
-        cible). Retourne (nom, format, dossier) ou None."""
+        cible). `dax_impose` remplace le DAX de la variation — c'est ainsi
+        qu'une branche ENVELOPPE la variation Réel au lieu d'en recopier la
+        logique. Tout le reste (nom, format, dossier, annotation, rangée du
+        paramètre) est inchangé. Retourne (nom, format, dossier) ou None."""
         delta_scale = "100" if has_scaling_percent(base_fmt) else "1"
 
         def expand(s):
@@ -1158,7 +1287,8 @@ def generate(model_dir, config, *, dry_run=None, remove_orphans=None, log=print)
             return s
 
         name = expand(tpl.get("namePattern"))
-        dax = expand(token_to_text(tpl.get("dax")))
+        dax = expand(token_to_text(dax_impose if dax_impose is not None
+                                   else tpl.get("dax")))
         desc = expand(token_to_text(tpl.get("description")))
         fmt = resolve_format(tpl.get("formatString"), base_fmt,
                              delta_symbols, delta_fallback)
@@ -1170,7 +1300,7 @@ def generate(model_dir, config, *, dry_run=None, remove_orphans=None, log=print)
             quoi = "portée" if any("each" in x or "able" in x for x in missing) else missing
             log(f"⚠ « {name} » non générée : {quoi} sans valeur pour "
                 f"« {kpi_lbl} » — remplis sa colonne dans TD_Indicateurs, ou "
-                f"coche « déduire du DAX » (Réglages globaux → Portée par KPI).")
+                f"coche « déduire du DAX » (⚙ Réglages → Portée par KPI).")
             return None
 
         folder_var = tpl.get("folderVariation") or vid
@@ -1240,7 +1370,11 @@ def generate(model_dir, config, *, dry_run=None, remove_orphans=None, log=print)
     cible_vids = [vid for vid, tpl in variations.items()
                   if isinstance(tpl, dict) and tpl.get("appliesToCibles", False)]
 
-    branch_bases: list = []   # (nom, fmt, dossier, kpi, branche, hors_param, préfixe, vids_autorisés)
+    branch_bases: list = []   # (nom, fmt, dossier, kpi, branche, hors_param, préfixe, vids_autorisés, base_racine)
+    # (base racine, variation) -> nom RÉEL généré à la 1re passe. C'est lui que
+    # la branche ENVELOPPE quand elle déclare un `wrap` : la 2e passe référence
+    # la mesure au lieu de recopier sa logique (cf. `wrap` plus bas).
+    var_ref: dict = {}
     filtres_format: dict = {}  # variation -> bases écartées par appliesToFormats
 
     def run_base(base_name, base_fmt, base_folder, kpi_lbl, base_calcul,
@@ -1274,6 +1408,8 @@ def generate(model_dir, config, *, dry_run=None, remove_orphans=None, log=print)
                              None if is_branch else (calc_prefix + vid), fp_nobranch,
                              branch_folder_pattern if is_branch else folder_pattern,
                              vid if is_branch else None, var_group)
+            if result and not is_branch:
+                var_ref[(base_name, vid)] = result[0]
             if result and is_branch:
                 # mémorise la mesure de branche du KPI (jamais celle d'une
                 # cible : {kpiRef} doit rendre [Weight YTD], pas [Weight cible YTD])
@@ -1283,7 +1419,8 @@ def generate(model_dir, config, *, dry_run=None, remove_orphans=None, log=print)
                     fp_rows.append([base_calcul, bracket(result[0]), (base_group, 0),
                                     kpi_lbl, base_calcul, vid])
                 branch_bases.append((result[0], result[1], result[2],
-                                     kpi_lbl, vid, False, calc_prefix, allowed_vids))
+                                     kpi_lbl, vid, False, calc_prefix,
+                                     allowed_vids, base_name))
 
     for base in bases:
         run_base(base, existing[base]["format"], existing[base]["folder"],
@@ -1337,9 +1474,11 @@ def generate(model_dir, config, *, dry_run=None, remove_orphans=None, log=print)
                              None, fp_nobranch,
                              branch_folder_pattern if is_branch else folder_pattern,
                              vid if is_branch else None)
+            if result and not is_branch:
+                var_ref[(sw_name, vid)] = result[0]
             if result and is_branch:
                 branch_bases.append((result[0], result[1], result[2],
-                                     sw_name, vid, True, "", kpi_vids))
+                                     sw_name, vid, True, "", kpi_vids, sw_name))
 
     # -- mesures « cibles » : bases SUPPLÉMENTAIRES d'un dossier dédié ---------
     # L'utilisateur crée à la main la cible RACINE par KPI (ex. « Weight cible »,
@@ -1392,8 +1531,11 @@ def generate(model_dir, config, *, dry_run=None, remove_orphans=None, log=print)
                 f"« Weight cible »). Dossiers présents : {', '.join(seen_folders) or '(aucun)'}.")
 
     # -- 2e passe : branches (KPI, switch ET cibles) --
-    for bname, bfmt, bfolder, bkpi, branch_id, no_fp, calc_prefix, allowed_vids in branch_bases:
+    n_wrap = 0
+    for (bname, bfmt, bfolder, bkpi, branch_id, no_fp, calc_prefix,
+         allowed_vids, base_racine) in branch_bases:
         bdef = branches.get(branch_id)
+        wrap = (bdef or {}).get("wrap") if isinstance(bdef, dict) else None
         allowed_set = set(allowed_vids)          # portée de la base (KPI ou cible)
         for vid in branch_variation_ids(branch_id, bdef):
             if vid not in allowed_set:            # respecte aux KPI / aux cibles
@@ -1409,9 +1551,37 @@ def generate(model_dir, config, *, dry_run=None, remove_orphans=None, log=print)
             # donc exclusion comme inclusion l'attrapent aussi)
             if not base_retenue(tpl, bfmt, bname, bkpi):
                 continue
+            # ENVELOPPEMENT : au lieu de ré-émettre la logique de la variation
+            # avec [base branche] à l'intérieur, on enveloppe la mesure Réel
+            # déjà générée. « Weight YTD PY » devient
+            #     CALCULATE([Weight PY], DATESYTD(dates))
+            # Débogage : toutes les mesures de branche se ressemblent, donc le
+            # problème est forcément dans la variation Réel. Et un correctif
+            # apporté à celle-ci se répercute SANS régénérer.
+            #
+            # Deux conditions, parce que l'emballage n'est pas toujours
+            # équivalent : la branche déclare `wrap`, ET la variation se dit
+            # enveloppable (`wrapInBranch`). C'est son DAX qui décide — une
+            # variation qui ÉPINGLE une fenêtre sur la borne du contexte
+            # (MAX({date}), DATEADD) change de sens si on l'enveloppe, alors
+            # qu'un simple DÉCALAGE (SAMEPERIODLASTYEAR) est équivalent.
+            dax_impose = None
+            if wrap and tpl.get("wrapInBranch"):
+                reel = var_ref.get((base_racine, vid))
+                if reel:
+                    dax_impose = wrap.replace("{variationRef}", bracket(reel))
+                    n_wrap += 1
+                else:
+                    log(f"⚠ branche '{branch_id}' : « {vid} » se dit "
+                        f"enveloppable mais sa mesure Réel sur « {base_racine} » "
+                        "n'a pas été générée — repli sur la substitution.")
             process(bname, bfmt, bfolder, bkpi, vid, tpl,
                     None if no_fp else (calc_prefix + vid), branch_id, folder_pattern,
-                    branch_id, 1 if calc_prefix else 2)
+                    branch_id, 1 if calc_prefix else 2, dax_impose)
+
+    if n_wrap:
+        log(f"Branches : {n_wrap} mesure(s) ENVELOPPENT leur variation Réel "
+            "(au lieu d'en recopier la logique).")
 
     # ---- classement des specs vs l'existant ----------------------------------
     def normalized(block_text):
@@ -1473,7 +1643,9 @@ def generate(model_dir, config, *, dry_run=None, remove_orphans=None, log=print)
     fp_writes: list = []      # (path, contenu)
     model_refs_needed: list = []
     if fp_enabled and fp_rows:
-        kpi_order = {b: i for i, b in enumerate(bases)}
+        # ordre des KPI : la colonne d'ordre de TD_Indicateurs si elle est
+        # configurée, sinon le tri alphabétique de Power BI
+        kpi_order = kpi_ranks(bases, read_kpi_order(td, log), log)
         fp_rows_kpi = [[r[3], r[1], kpi_order[r[3]], r[3], r[4], r[5]] for r in fp_rows]
 
         # rang unique KPI-puis-(groupe, sous-rang) : chaque rangée porte en
@@ -1557,8 +1729,6 @@ def generate(model_dir, config, *, dry_run=None, remove_orphans=None, log=print)
         return stats
 
     # backup puis écriture
-    stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    backup_dir = model_dir.parent / "_tmdl_backups" / stamp
     to_write = [(src_path, new_text)] + fp_writes
     model_path = model_dir / "definition" / "model.tmdl"
     if model_refs_needed:
@@ -1574,14 +1744,19 @@ def generate(model_dir, config, *, dry_run=None, remove_orphans=None, log=print)
                 mtext = mtext.rstrip() + "\n" + add
             to_write.append((model_path, mtext))
 
-    backup_dir.mkdir(parents=True, exist_ok=True)
+    # session de sauvegarde partagée : copies + manifeste (d'où venait chaque
+    # fichier), donc restaurable d'un clic depuis « Sauvegardes… » comme le
+    # reste — et soumise au même ménage (on ne garde que les plus récentes)
+    session = br.BackupSession(br.backup_root(model_dir.parent, "_tmdl_backups"),
+                               "Mesures générées", model_dir.parent)
     for path, _ in to_write:
-        if path.exists():
-            (backup_dir / path.name).write_text(path.read_text(encoding="utf-8"),
-                                                encoding="utf-8")
+        session.save(path)
     for path, content in to_write:
         path.write_text(content, encoding="utf-8")
-    log(f"Écrit : {', '.join(p.name for p, _ in to_write)}  (backup : {backup_dir.name})")
+    backup_dir = session.close(f"{len(created)} créée(s), {len(updated)} mise(s) "
+                               f"à jour, {len(removed)} retirée(s)")
+    log(f"Écrit : {', '.join(p.name for p, _ in to_write)}"
+        + (f"  (backup : {backup_dir.name})" if backup_dir else ""))
     log("Rouvre le .pbip dans Power BI Desktop pour charger le nouveau modèle.")
     return stats
 

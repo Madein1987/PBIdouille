@@ -17,6 +17,7 @@ if str(_FITBIT_DIR) not in sys.path:
 
 import propagate_cf as _pcf              # noqa: E402
 import color_matrix_by_kpi as _cmx       # noqa: E402
+import xlsx_lecture as _xl               # noqa: E402  (relâche le classeur)
 
 DEFAULT_FIELD_PARAMETER = "P_Indicateurs_parCalcul"
 DEFAULT_ENTITY = "_mesures"
@@ -122,23 +123,15 @@ def excel_headers(xlsx_path) -> list:
     """En-têtes (1re ligne, 1re feuille) d'un .xlsx — pour peupler les menus de
     colonnes sans ouvrir le fichier. [] si absent / illisible / openpyxl manquant
     (les combos restent éditables : on peut taper un nom à la main)."""
-    try:
-        import openpyxl
-    except ImportError:
-        return []
     p = Path(str(xlsx_path))
     if not p.exists():
         return []
     try:
-        wb = openpyxl.load_workbook(p, read_only=True, data_only=True)
-        ws = wb.worksheets[0]
-        headers = []
-        for row in ws.iter_rows(min_row=1, max_row=1, values_only=True):
-            for h in row:
-                if h is not None and str(h).strip():
-                    headers.append(str(h).strip())
-            break
-        wb.close()
-        return headers
+        # une seule ligne suffit, et le classeur est refermé au retour : ce
+        # menu se repeuple souvent, un handle oublié par passage bloquerait
+        # l'enregistrement du fichier depuis Excel
+        rows = _xl.lire_lignes(p, max_rows=1)
     except Exception:
         return []
+    return [str(h).strip() for h in (rows[0] if rows else ())
+            if h is not None and str(h).strip()]
