@@ -5,7 +5,7 @@ en mémoire :
     DAX en clair) — le format JSON array-of-lines devient invisible ;
   - « JSON brut » (sous-onglet) : tout le fichier, pour les cas non couverts ;
   - la fenêtre « ⚙ Réglages » (barre du haut) : settings, fieldParameter,
-    switch, branches… en cases et champs — ils servent aussi à l'onglet
+    branches… en cases et champs — ils servent aussi à l'onglet
     Rapport, d'où leur fenêtre à eux (cf. ouvrir_reglages).
 
 Synchronisation : à chaque changement de sous-onglet, celui qu'on QUITTE est
@@ -1309,41 +1309,8 @@ class ConfigTab(QWidget):
             "Raccourcis, si tu ne veux rien écrire : <<allTables>>,\n"
             "<<removeFilters>>, <<tables>> (la liste nue).\n\n"
             "Cellule vide et déduction inactive = ce KPI n'a pas la variation\n"
-            "(le journal le nomme). La mesure Switch n'en a jamais : elle\n"
-            "agrège tous les KPI, aucune portée unique ne lui convient.")))
+            "(le journal le nomme).")))
         outer.addWidget(gb_t)
-
-        # -- switch --
-        self.g_sw_enabled = check("switch activé — mesure Switch KPI + ses variations")
-        self.g_sw_name = line("Nom de la mesure switch (ex. Switch KPI).")
-        self.g_sw_selector = line("Colonne sélectrice (ex. 'TD_KPI'[mesure]).")
-        self.g_sw_folder = line("Dossier de la mesure switch (ex. _switch).")
-        self.g_sw_format = line("Format statique du switch (ex. #,0.0).")
-        self.g_sw_dynamicFormat = check("dynamicFormat — le format suit le KPI sélectionné (à valider)")
-        outer.addWidget(self._form_group("Mesure Switch (switch)", [
-            (None, self.g_sw_enabled,
-             "Coché : la mesure switch et ses variations sont générées. Elles\n"
-             "n'entrent jamais dans les paramètres de champ."),
-            ("name :", self.g_sw_name,
-             "Nom de la mesure switch.\n\nEx. Switch KPI"),
-            ("selector :", self.g_sw_selector,
-             "La colonne dont la valeur SÉLECTIONNÉE désigne le KPI :\n"
-             "   SWITCH(SELECTEDVALUE(<selector>), …)\n\n"
-             "Il faut UNE seule valeur sélectionnée — segment en sélection\n"
-             "simple — sinon la mesure est vide.\n\n"
-             "Ex. 'TD_KPI'[mesure]"),
-            ("displayFolder :", self.g_sw_folder,
-             "Dossier de la mesure switch et de ses variations.\n\nEx. _switch"),
-            ("formatString :", self.g_sw_format,
-             "Format FIXE de la mesure switch (format dynamique décoché).\n\n"
-             "Ex. #,0.0"),
-            (None, self.g_sw_dynamicFormat,
-             "Le format suit le KPI sélectionné (expression de format\n"
-             "dynamique) : un % reste un %, une durée une durée.\n"
-             "Statique et dynamique s'excluent. À valider au premier usage."),
-        ], resume="UNE mesure qui bascule entre tous les KPI selon celui qui est "
-                  "sélectionné, avec toutes ses variations — pour un visuel qui "
-                  "change de KPI sans paramètre de champ."))
 
         # -- attributs codés en dur (au lieu de LOOKUPVALUE) --
         gb_hc = QGroupBox("Attributs codés en dur (au lieu de LOOKUPVALUE)")
@@ -1559,15 +1526,7 @@ class ConfigTab(QWidget):
         self.g_lkp_key.setText(lkp.get("keyColumn", "") or "")
         self.g_lkp_label.setText(lkp.get("labelColumn", "") or "")
 
-        sw = self._config.get("switch") or {}
-        self.g_sw_enabled.setChecked(bool(sw.get("enabled", True)) if "switch" in self._config else False)
-        self.g_sw_name.setText(sw.get("name", "") or "")
-        self.g_sw_selector.setText(sw.get("selector", "") or "")
-        self.g_sw_folder.setText(sw.get("displayFolder", "") or "")
-        self.g_sw_format.setText(sw.get("formatString", "") or "")
-        self.g_sw_dynamicFormat.setChecked(bool(sw.get("dynamicFormat", True)))
-
-        hc = self._config.get("hardcodedAttributes") or {}
+        hc =self._config.get("hardcodedAttributes") or {}
         td = gm.indicateurs_xlsx(self._config)
         self.g_td_path.setText(td["path"])
         self.g_td_key.setCurrentText(td["keyColumn"])
@@ -1720,7 +1679,7 @@ class ConfigTab(QWidget):
 
     def _commit_global(self):
         """Reporte les widgets globaux dans le config (clés vides retirées ;
-        blocs fieldParameter/switch absents non matérialisés s'ils restent
+        blocs fieldParameter absents non matérialisés s'ils restent
         désactivés — préserve « absent = off »)."""
         s = self._config.setdefault("settings", {})
 
@@ -1816,22 +1775,9 @@ class ConfigTab(QWidget):
             else:
                 fp.pop("kpiLabelLookup", None)
 
-        sw_on = self.g_sw_enabled.isChecked()
-        if sw_on or "switch" in self._config:
-            sw = self._config.setdefault("switch", {})
-            sw["enabled"] = sw_on
-
-            def swset(key, val):
-                if val:
-                    sw[key] = val
-                else:
-                    sw.pop(key, None)
-
-            swset("name", self.g_sw_name.text().strip())
-            swset("selector", self.g_sw_selector.text().strip())
-            swset("displayFolder", self.g_sw_folder.text().strip())
-            swset("formatString", self.g_sw_format.text().strip())
-            sw["dynamicFormat"] = self.g_sw_dynamicFormat.isChecked()
+        # la mesure Switch n'est plus générée (cf. generate_measures) : un
+        # bloc « switch » resté d'une version précédente part à l'enregistrement
+        self._config.pop("switch", None)
 
         # attributs codés en dur
         tokens = {}

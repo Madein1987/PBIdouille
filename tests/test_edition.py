@@ -170,6 +170,31 @@ edition.MARQUEUR_DEV = PRESENT
 k2 = ChopChopTab()
 check("dev : bouton Supprimer présent", not k2.panel.btn_delete.isHidden())
 
+# ===================================================================== 5
+print("5. la fenêtre : pas d'onglet Wireframe en production")
+import app as application                            # noqa: E402
+import propagate_cf as _pcf                          # noqa: E402
+_pcf.migrer_groupes = lambda *a, **k: None
+# la fenêtre rouvre le « dernier projet » : la COPIE, jamais le vrai dossier
+prj.reglages().setValue("last_pbip", str(c / (PROJ + ".pbip")))
+
+
+def onglets():
+    f = application.BidouilleWindow()
+    t = [f.tabs.tabText(i) for i in range(f.tabs.count())]
+    n = len(f._tabs)
+    f.close()
+    return t, n
+
+
+edition.MARQUEUR_DEV = ABSENT
+t, n = onglets()
+check("production : Mesures, Rapport, ChopChop", t == ["Mesures", "Rapport", "ChopChop 🪓"])
+check("production : « Tout recharger » ne parcourt que ces trois-là", n == 3)
+edition.MARQUEUR_DEV = PRESENT
+t, n = onglets()
+check("dev : le Wireframe est là", "Wireframe" in t and n == 4)
+
 edition.MARQUEUR_DEV = VRAI_MARQUEUR
 prj.reglages().clear()
 QSettings(*prj._ANCIEN_MAGASIN).clear()

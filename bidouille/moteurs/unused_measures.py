@@ -606,22 +606,28 @@ def analyze() -> dict:
         quoted = '"' + c.lower() + '"'
         if quoted in colinfo["prop_text"].get(t, ""):
             hits.append(("propriétés (paramètre de champ)", f"'{t}'"))
-        # POWER QUERY : seule une AUTRE requête protège la colonne. Si une
-        # requête consomme celle de cette table et cite le nom de la colonne
-        # (clé de jointure, colonne développée ou sélectionnée), la retirer
-        # casse l'actualisation du consommateur.
+        # POWER QUERY : seule une AUTRE requête protège la colonne — et dès
+        # qu'une autre requête consomme celle de cette table (fusion, ajout,
+        # jointure), TOUTES ses colonnes sont protégées.
+        # On ne cherchait autrefois que les colonnes CITÉES par le
+        # consommateur (clé de jointure, liste d'expansion). Mais trois formes
+        # courantes font traverser chaque colonne sans en nommer aucune :
+        # Table.Join (jointure à plat), Table.Combine (ajout) et une
+        # expansion construite par Table.ColumnNames. La colonne passait pour
+        # inutilisée, son retrait ajoutait un Table.RemoveColumns à SA
+        # requête, et le consommateur perdait la colonne à l'actualisation
+        # suivante. Lire le M pour décider ce qui traverse vraiment n'est pas
+        # sûr ; garder toute la table l'est, et c'est la règle de ce fichier :
+        # un faux « utilisée » plutôt qu'un faux « inutilisée ».
         # Une mention à l'intérieur de SA PROPRE requête (typage, renommage,
-        # calcul d'une autre colonne) n'est PAS un motif : ChopChop ajoute son
-        # Table.RemoveColumns en toute FIN de requête, donc toutes les étapes
-        # précédentes continuent de fonctionner. Protéger là-dessus revenait à
-        # déclarer « utilisée » quasiment toute colonne importée (un simple
-        # « Type modifié » cite chaque colonne) — plus rien ne ressortait.
-        src = (info.get("source_column") or c).lower()
-        for q in query_consumers.get(t, []):
-            qsrc = m_src.get(q, "").lower()
-            if f'"{src}"' in qsrc or f"[{src}]" in qsrc:
-                hits.append(("Power Query (requête « " + q + " »)", f"'{q}'"))
-                break
+        # calcul d'une autre colonne) n'est toujours PAS un motif : ChopChop
+        # ajoute son Table.RemoveColumns en toute FIN de requête, donc toutes
+        # les étapes précédentes continuent de fonctionner.
+        consommateurs = query_consumers.get(t, [])
+        if consommateurs:
+            hits.append(("Power Query (table consommée par « "
+                         + ", ".join(consommateurs) + " »)",
+                         f"'{consommateurs[0]}'"))
         # filet conservateur : réf [Col] quelque part dans le .tmdl de sa
         # table hors mesures (M de partition, annotations...) — mieux vaut un
         # faux « utilisée » qu'un faux « inutilisée »

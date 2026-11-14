@@ -312,10 +312,13 @@ fen = application.BidouilleWindow()
 titres = [fen.tabs.tabText(i) for i in range(fen.tabs.count())]
 print("   onglets :", titres)
 check("Mesures en tete", titres[0] == "Mesures")
+# le Wireframe n'existe qu'en edition dev (cf. core/edition.py)
+_dev = application.edition.dev()
+attendus = ["Rapport", "Wireframe", "ChopChop 🪓"] if _dev else ["Rapport", "ChopChop 🪓"]
 check("les autres suivent dans le meme ordre qu'avant",
-      titres[1:] == ["Rapport", "Wireframe", "ChopChop 🪓"])
-check("« Enregistrer puis recharger » touche toujours les quatre onglets",
-      len(fen._tabs) == 4 and fen._tabs[0] is fen.tab_config)
+      titres[1:] == attendus)
+check("« Enregistrer puis recharger » touche tous les onglets affiches",
+      len(fen._tabs) == len(titres) and fen._tabs[0] is fen.tab_config)
 from qtpy.QtWidgets import QPushButton as _QPB                 # noqa: E402
 check("plus de bouton « Tout enregistrer » : chaque onglet a le sien",
       not any("Tout enregistrer" in b.text()

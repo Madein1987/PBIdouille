@@ -548,7 +548,10 @@ class ChopChopPanel(QWidget):
             f"{len(measures)} mesures — <b>{len(unused)} inutilisée(s)</b> "
             f"(dont {generated} générée(s) depuis le config) · "
             f"{len(columns)} colonnes — <b>{len(col_no_ref) + len(col_chained)} inutilisée(s)</b>"
-            f"{dead_txt}. ⚠ Fermer Power BI Desktop avant toute suppression."
+            f"{dead_txt}."
+            # sans suppression (production), l'avertissement n'a pas d'objet
+            + ("" if _production() else
+               " ⚠ Fermer Power BI Desktop avant toute suppression.")
         )
 
         self.tree.blockSignals(True)

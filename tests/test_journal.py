@@ -1148,7 +1148,7 @@ check("la case est moins arrondie (rayon 3 px)",
 print("   les Reglages globaux s'expliquent")
 glob = onglet._dlg_reglages                     # la fenetre ⚙ Reglages
 for titre, n_min in (("Paramètres de champ (fieldParameter)", 14),
-                     ("Génération (settings)", 9), ("Mesure Switch (switch)", 6)):
+                     ("Génération (settings)", 9)):
     gbx = [g for g in glob.findChildren(QGroupBox) if g.title() == titre]
     aides = [b for b in gbx[0].findChildren(QToolButton)
              if b.text() == "ⓘ" and len(b.toolTip()) > 15] if gbx else []

@@ -18,15 +18,15 @@ TD_KPI (Excel)                    mesures de base (_mesures\_indicateurs)
         │                                        ▼
         │                          create_measure_variations.csx  ◄── measures_config.json
         │                                        │
-        │            ┌───────────────┬───────────┴────────────┬──────────────┐
-        │            ▼               ▼                        ▼              ▼
-        │      variations      branches (YTD ...)      mesure Switch    mesures CF
-        │      7d avg, PY...   YTD PY, YTD Δ 30d...    + ses variations (couleurs)
-        │            │               │                        │
-        │            └───────┬───────┘                        │
-        │                    ▼                                ▼
-        │      paramètres de champ (3 tables)          dossier _switch
-        │      P_Indicateurs_parCalcul (+_2)           (jamais dans les paramètres)
+        │            ┌───────────────┬───────────┴────────────┐
+        │            ▼               ▼                        ▼
+        │      variations      branches (YTD ...)        mesures CF
+        │      7d avg, PY...   YTD PY, YTD Δ 30d...      (couleurs)
+        │            │               │
+        │            └───────┬───────┘
+        │                    ▼
+        │      paramètres de champ (3 tables)
+        │      P_Indicateurs_parCalcul (+_2)
         │      P_Indicateurs_parKPI
         │                    │
         └──── relations ─────┤
@@ -49,8 +49,8 @@ reste et sont **idempotents** : relancer met à jour, jamais de doublon.
 
 | Fichier | Couche | Rôle |
 |---|---|---|
-| `measures_config.json` | config | définit variations, branches, paramètres, switch |
-| `generate_measures.py` | modèle | **générateur natif** : mesures + paramètres + switch, écrit le TMDL (Desktop fermé) |
+| `measures_config.json` | config | définit variations, branches, paramètres |
+| `generate_measures.py` | modèle | **générateur natif** : mesures + paramètres, écrit le TMDL (Desktop fermé) |
 | `create_measure_variations.csx` | modèle (TE) | même génération via Tabular Editor — **solution de secours** |
 | `propagate_cf.py` | rapport | propage le formatage conditionnel d'un KPI template |
 | `color_matrix_by_kpi.py` | rapport | colore les colonnes d'une matrice par KPI (couleurs dans TD) |
@@ -130,11 +130,9 @@ n'existe pas (poste du travail), une boîte de dialogue s'ouvre.
    TYPOGRAPHIQUE `'` (U+2019), elle, est significative pour .NET — elle n'est
    volontairement pas dans l'ensemble.
 2. **Variations** (1re passe) : une mesure par (base × template).
-3. **Switch** : une mesure `SWITCH(SELECTEDVALUE(selector), "KPI", [KPI], ...)`
-   sur toutes les bases, puis toutes les variations dessus.
-4. **Branches** (2e passe) : les variations déclarées comme branches (ex. YTD)
+3. **Branches** (2e passe) : les variations déclarées comme branches (ex. YTD)
    deviennent des bases à leur tour.
-5. **Cibles** (bases supplémentaires d'un dossier dédié, déclinées comme les
+4. **Cibles** (bases supplémentaires d'un dossier dédié, déclinées comme les
    KPI) : voir ci-dessous.
 6. **Nettoyage** : si `removeOrphans`, supprime les mesures générées qui ne
    correspondent plus à la config.
@@ -514,24 +512,18 @@ change, on reste en substitution. Noms, paramètres de champ, annotations,
 formats et propagation sont **inchangés** dans les deux cas — seul le DAX généré
 diffère, donc l'essai se fait et se défait par une régénération.
 
-### switch
+### switch — retiré
 
-```json
-"switch": {
-  "enabled": true,
-  "name": "Switch KPI",
-  "selector": "'TD_KPI'[mesure]",
-  "displayFolder": "_switch",
-  "formatString": "#,0.0",
-  "dynamicFormat": false
-}
-```
+La mesure Switch (`SWITCH(SELECTEDVALUE(selector), …)` sur tous les KPI, plus
+ses variations sous `_switch`) n'est **plus générée** : elle produisait
+beaucoup d'erreurs et ne servait pas. Un bloc `"switch"` resté dans un config
+est ignoré par la génération, et retiré au prochain enregistrement des
+Réglages.
 
-UNE mesure qui bascule entre tous les KPI selon la sélection (sélection
-**simple** requise sur le slicer), plus toutes ses variations — jamais dans
-les paramètres de champ, rangées sous `_switch`. `dynamicFormat: true` donne à
-la mesure switch un format DAX qui suit le KPI sélectionné (statique et
-dynamique sont exclusifs ; le script gère la bascule dans les deux sens).
+Les mesures Switch qu'un modèle porte encore sont des **orphelines** comme les
+autres : retirées par une génération avec « Supprimer les orphelines »,
+gardées sinon. Le journal le dit en clair, avec leur nombre — vérifie avant
+qu'aucun visuel ne s'en sert. (Le `.csx` de secours, lui, les génère encore.)
 
 ### fieldParameter
 
@@ -655,7 +647,7 @@ disparaissent de la liste, donc on voit avant de générer. Le journal résume :
 « pct total » : 1 base(s) écartée(s) par le filtre de format (Body Fat %).
 ```
 
-Le filtre s'applique aussi aux **branches** et à la mesure **switch**.
+Le filtre s'applique aussi aux **branches**.
 
 ### kpiTables — variations à PORTÉE (ALL / REMOVEFILTERS)
 
@@ -748,8 +740,7 @@ dès qu'on veut être précis.
 Un KPI **sans** portée déclarée (cellule vide) ne reçoit tout simplement pas la
 variation, et le journal dit lequel et pourquoi — pas de mesure à moitié
 construite. Les
-**cibles** héritent de la portée de leur KPI. La mesure **switch**, qui n'est
-propre à aucun KPI, n'en a pas : une variation à portée la saute.
+**cibles** héritent de la portée de leur KPI.
 
 #### Recette complète : « % du total »
 
@@ -885,7 +876,7 @@ Dans le DAX d'une variation, écris **`<<label>>`** (ex. `<<direction>>`). À la
 génération, pour la mesure du KPI *X*, le jeton est remplacé par la valeur de la
 colonne (ligne `mesure == X` dans l'Excel). Valeur **brute** : un entier donne
 `1`/`-1` (pour du texte, quote toi-même : `"<<label>>"`). Un KPI absent de
-l'Excel (ex. `Switch KPI`) → la mesure n'est **pas générée** (avertissement),
+l'Excel (ajouté au modèle, pas encore à l'Excel) → la mesure n'est **pas générée** (avertissement),
 pour ne jamais écrire du DAX cassé. Re-générer après avoir modifié l'Excel met
 les valeurs à jour. UI : **⚙ Réglages → « Attributs
 codés en dur »** (colonne au menu déroulant, label à côté).
@@ -921,7 +912,7 @@ suivante renomme les colonnes `Value4`-`Value6`.
 
 ---
 
-## 6. Les trois façons de construire un visuel
+## 6. Les deux façons de construire un visuel
 
 1. **Paramètre parCalcul** — page « détail d'un KPI » : TD_KPI filtre le KPI,
    le visuel montre Base/7d avg/Δ.../PY..., slicer `Branche` pour basculer
@@ -929,13 +920,8 @@ suivante renomme les colonnes `Value4`-`Value6`.
    rôle de `propagate_cf.py`.
 2. **Paramètre parKPI** — page « comparaison » : slicer `Calcul` en sélection
    simple, l'axe/la légende montre les KPIs.
-3. **Mesures Switch** — un seul jeu de mesures (`Switch KPI`, `Switch KPI Δ
-   30d`...) qui suit la sélection TD_KPI. Avantage décisif : le **CF est
-   dynamique** (un seul binding, aucun script de propagation). Limites :
-   sélection simple obligatoire, format statique sur les variations.
-
-Règle pratique : Switch pour les tuiles/cartes pilotées par un slicer KPI ;
-paramètres pour les tableaux/matrices et tout ce qui liste plusieurs champs.
+(Une troisième, la mesure Switch, n'est plus générée — cf. §4, « switch —
+retiré ».)
 
 ---
 
@@ -1596,6 +1582,22 @@ La confirmation liste les tables qui recevront une étape M. Si une requête n'e
 la colonne est retirée du modèle et un avertissement invite à éditer Power
 Query à la main — l'import continue sinon.
 
+#### Une table consommée par Power Query garde TOUTES ses colonnes
+
+Une table qu'une autre requête Power Query consomme — fusion, ajout,
+jointure, que cette requête soit chargée ou « ne pas charger »
+(`expressions.tmdl`) — n'est jamais proposée à la suppression, ni elle ni
+**aucune de ses colonnes**.
+
+On ne protégeait autrefois que les colonnes que le consommateur **nommait**
+(clé de jointure, liste d'expansion). Mais `Table.Join` (jointure à plat),
+`Table.Combine` (ajout) et une expansion construite par `Table.ColumnNames`
+font traverser chaque colonne sans en nommer aucune : la colonne passait pour
+inutilisée, son retrait ajoutait un `Table.RemoveColumns` à sa requête, et le
+consommateur la perdait à l'actualisation suivante. Décider dans le M ce qui
+traverse vraiment n'est pas sûr ; garder la table entière l'est.
+`tests/test_chopchop_power_query.py` couvre ces formes.
+
 ### Tables entièrement inutilisées
 
 Quand **rien d'externe** ne dépend d'une table — aucune relation, aucun visuel,
@@ -1714,7 +1716,7 @@ pointer `ROOT` vers le répertoire des projets.
 
 **Ajouter un KPI** : créer la mesure de base dans `_mesures` (dossier
 `_indicateurs`) + sa ligne dans TD_Indicateurs.xlsx → actualiser TD_KPI →
-relancer le `.csx` (variations, paramètres et switch suivent tout seuls) →
+relancer la génération (variations et paramètres suivent tout seuls) →
 si visuels à CF par paramètre : `py propagate_cf.py` (Desktop fermé).
 
 **Ajouter une variation** : nouveau bloc dans `variations` (penser à
@@ -1744,8 +1746,7 @@ les générées.
    Microsoft Store qui ne fait rien).
 4. Première exécution sur un nouveau modèle : `"dryRun": true`.
 5. Les relations TD_KPI → paramètres se créent dans TE, une par table.
-6. Sélection **simple** sur les slicers qui pilotent SELECTEDVALUE (switch)
-   et sur `Calcul` pour la table parKPI.
+6. Sélection **simple** sur `Calcul` pour la table parKPI.
 
 ---
 
@@ -1770,7 +1771,7 @@ d'un autre Python). Un zip prêt à l'emploi peut être régénéré depuis la
 racine (voir la liste ci-dessus).
 
 - [ ] `measures_config.json` : `dateColumn`, `sourceTable`/`sourceFolder`,
-      noms des tables paramètre, `switch.selector`, libellés (`Réel`...)
+      noms des tables paramètre, libellés (`Réel`...)
 - [ ] `.csx` : le chemin codé en dur (ou laisser la boîte de dialogue)
 - [ ] `propagate_cf.py` : `REPORT_DIR`, `TEMPLATE_KPI`, `FIELD_PARAMETER`
 - [ ] `unused_measures.py` : `PBIP_DIR`, `PROJECT`
@@ -1967,7 +1968,7 @@ reste, il n'est pas offert) :
 | | production | dev |
 |---|---|---|
 | Mesures, Rapport, Réglages, Bibliothèque | ✔ | ✔ |
-| Wireframe | **lecture seule** : plan, structure, détails d'un visuel | + déplacer, redimensionner, grouper, importer un gabarit, enregistrer |
+| Wireframe | **absent** : pas encore utilisable pour un usager | l'onglet complet |
 | ChopChop | analyse, export, restauration des sauvegardes | + suppression |
 
 **La production est le défaut.** L'édition dev ne s'obtient qu'en posant un
@@ -1977,7 +1978,9 @@ la version dev par mégarde, alors que l'inverse (oublier de « passer en
 production » avant de zipper) l'aurait permis. Le titre de la fenêtre porte
 la version, et « (dev) » hors production. Voir `bidouille/core/edition.py`.
 
-Les méthodes qui écrivent refusent aussi d'elles-mêmes en production — pas
+L'objet Wireframe existe quand même en production (il ne lit rien sans
+projet) ; s'il était un jour réaffiché, il serait en **lecture seule**. Les
+méthodes qui écrivent refusent aussi d'elles-mêmes en production — pas
 seulement leurs boutons : un raccourci (Ctrl+Z) ou un appel oublié ne passe
 pas. `tests/test_edition.py` force chacune et vérifie que rien n'est écrit.
 
@@ -2268,7 +2271,7 @@ CF Δ 30d vit dans le dossier de Δ 30d), **dataCategory en dropdown**
   paramètres de champ, par exemple, y expliquent les trois familles de tables
   (par calcul, par KPI, mixtes), le rôle des colonnes Indicateur / Calcul /
   Branche et de la table de correspondance des libellés — `settings`,
-  `fieldParameter`, `switch` et
+  `fieldParameter` et
   `branches` en cases/champs (les listes de tables paramètre en multi-lignes ;
   les branches en cases à cocher sur les variations, **+ un éditeur de
   restriction** : pour chaque branche, cocher quelles variations elle applique —
@@ -2280,7 +2283,7 @@ CF Δ 30d vit dans le dossier de Δ 30d), **dataCategory en dropdown**
 **Génération** — en tête du journal, visible dans l'onglet Mesures : le bouton
 **« Générer les mesures »** exécute
 `generate_measures.py` sur le modèle du projet : mesures × variations ×
-branches, tables paramètre de champ, mesure Switch — **sans Tabular Editor ni
+branches, tables paramètre de champ — **sans Tabular Editor ni
 Desktop ouvert**. Récap du config en une ligne (le détail en infobulle) ;
 « Aperçu (dry-run) » coché par
 défaut (liste tout, n'écrit rien) ; case « Supprimer les orphelines » ;

@@ -125,7 +125,7 @@ class BidouilleWindow(QMainWindow):
         btn_reglages = QPushButton("⚙ Réglages")
         btn_reglages.setToolTip(
             "Les réglages globaux du measures_config.json de ce rapport :\n"
-            "Excel des indicateurs, génération, paramètres de champ, switch,\n"
+            "Excel des indicateurs, génération, paramètres de champ,\n"
             "attributs, branches… — ce qui sert à plusieurs onglets.")
         btn_reglages.clicked.connect(self._ouvrir_reglages)
         btn_reload_all = QPushButton("↻ Tout recharger")
@@ -183,7 +183,12 @@ class BidouilleWindow(QMainWindow):
         self.tab_report = ReportTab(self.journal)
         self.tabs.addTab(self.tab_report, "Rapport")
         self.tab_wireframe = WireframeTab(self.journal)
-        self.tabs.addTab(self.tab_wireframe, "Wireframe")
+        # PRODUCTION : pas d'onglet Wireframe du tout — pas encore utilisable
+        # pour un usager (cf. core/edition.py). L'objet existe quand même : il
+        # ne lit rien tant qu'on ne lui donne pas de projet, et le reste de
+        # la fenêtre n'a pas à se demander s'il est là.
+        if edition.dev():
+            self.tabs.addTab(self.tab_wireframe, "Wireframe")
         self.tab_chopchop = ChopChopTab(self.journal)
         self.tabs.addTab(self.tab_chopchop, "ChopChop 🪓")
         v.addWidget(self.tabs, 1)
@@ -220,8 +225,9 @@ class BidouilleWindow(QMainWindow):
         # le lien de la fiche Excel (onglet Rapport) mène là où elle se règle
         self.tab_report.ouvrir_reglages.connect(self._ouvrir_reglages)
 
-        self._tabs = [self.tab_config, self.tab_report, self.tab_wireframe,
-                      self.tab_chopchop]
+        self._tabs = [self.tab_config, self.tab_report, self.tab_chopchop]
+        if edition.dev():
+            self._tabs.insert(2, self.tab_wireframe)
         self._reload_recents()
         self._load_initial_project()
         self._colonne_selon_la_vue()

@@ -3,8 +3,7 @@
 (Tabular Editor) en écrivant directement les fichiers TMDL du projet PBIP.
 
 Port 1:1 de la logique du csx : découverte des mesures de base, variations,
-branches (variations de variations), mesure Switch (+ format dynamique
-optionnel), tables paramètre de champ (parCalcul/parCalcul_2, parKPI, baseKPI),
+branches (variations de variations), tables paramètre de champ (parCalcul/parCalcul_2, parKPI, baseKPI),
 rang unique KPI-puis-calcul, orphelines. Même config : measures_config.json.
 
 ⚠ Power BI Desktop doit être FERMÉ (il ne relit les fichiers qu'à l'ouverture
@@ -724,15 +723,6 @@ def measure_block(name, dax, fmt, folder, desc, tag, data_cat, lineage) -> str:
     return "\n".join(out) + "\n"
 
 
-def dyn_format_lines(expr: str) -> list:
-    """Propriété formatStringDefinition (switch dynamique) — dormant tant que
-    dynamicFormat=false dans le config ; à valider au premier usage."""
-    out = ["\t\tformatStringDefinition ="]
-    for l in expr.split("\n"):
-        out.append("\t\t\t" + l)
-    return out
-
-
 def param_table_file(table, expr, kpi_col, calc_col, branch_col, lineages) -> str:
     """Fichier .tmdl complet d'une NOUVELLE table paramètre de champ (même
     structure que celles générées par Desktop/TE). `lineages` : dict nom ->
@@ -1114,7 +1104,7 @@ def scan_cibles(model_dir, config) -> list:
 
 
 def generate(model_dir, config, *, dry_run=None, remove_orphans=None, log=print) -> dict:
-    """Génère mesures + tables paramètre + switch dans les TMDL de `model_dir`
+    """Génère mesures + tables paramètre dans les TMDL de `model_dir`
     d'après `config` (dict du measures_config.json). Retourne les stats.
     dry_run / remove_orphans None = valeurs du config (settings)."""
     model_dir = Path(model_dir)
@@ -1168,14 +1158,6 @@ def generate(model_dir, config, *, dry_run=None, remove_orphans=None, log=print)
     fp_base_lbl   = fp.get("baseLabel") or "Base"
     fp_branch_col = fp.get("branchColumn") or "Branche"
     fp_nobranch   = fp.get("noBranchLabel") or "Base"
-
-    sw = config.get("switch") or {}
-    sw_enabled  = sw.get("enabled", True) if sw else False
-    sw_name     = sw.get("name") or "Switch KPI"
-    sw_selector = sw.get("selector") or "'TD_KPI'[mesure]"
-    sw_folder   = sw.get("displayFolder") or "_switch"
-    sw_fmt      = sw.get("formatString") or "#,0.0"
-    sw_dyn      = sw.get("dynamicFormat", True)
 
     # le config du rapport est AUTONOME : ce qu'il contient est exactement ce
     # qui sera généré (les variations viennent de la bibliothèque par import)
@@ -1473,54 +1455,28 @@ def generate(model_dir, config, *, dry_run=None, remove_orphans=None, log=print)
             log(f"« {vid} » : {len(ecartes)} base(s) écartée(s) par le filtre de "
                 f"format/nom ({', '.join(sorted(ecartes))}).")
 
-    # -- mesure switch + ses variations (jamais dans les paramètres) --
-    if sw_enabled:
-        sw_lines = ["SWITCH(", "    SELECTEDVALUE(" + sw_selector + "),"]
-        for b in bases:
-            sw_lines.append('    "' + dax_str(b) + '", ' + bracket(b) + ",")
-        sw_lines.append("    BLANK()")
-        sw_lines.append(")")
-        sw_tag = "switch|" + sw_name
-        sw_prev = existing.get(sw_name)
-        if sw_prev is not None and not sw_prev["annotation"]:
-            log(f"⚠ '{sw_name}' existe mais n'est pas générée — switch ignoré.")
-            sw_enabled = False
-    if sw_enabled:
-        sw_spec = {
-            "name": sw_name, "dax": "\n".join(sw_lines), "folder": sw_folder,
-            "desc": None, "data_cat": None,
-        }
-        if sw_dyn:
-            fmt_lines = ["SWITCH(", "    SELECTEDVALUE(" + sw_selector + "),"]
-            for b in bases:
-                if existing[b]["format"]:
-                    fmt_lines.append('    "' + dax_str(b) + '", "'
-                                     + dax_str(existing[b]["format"]) + '",')
-            fmt_lines.append('    "' + dax_str(sw_fmt) + '"')
-            fmt_lines.append(")")
-            sw_spec["fmt"] = None
-            sw_spec["dyn_fmt"] = "\n".join(fmt_lines)   # à valider au 1er usage
-        else:
-            sw_spec["fmt"] = sw_fmt
-        planned[sw_tag] = sw_spec
-        planned_names[sw_name] = sw_tag
-
-        for vid in kpi_vids:                 # le switch suit la portée « KPI »
-            tpl = variations.get(vid)
-            if not isinstance(tpl, dict):
-                continue
-            if not base_retenue(tpl, sw_fmt, sw_name):
-                continue
-            is_branch = vid in branches
-            result = process(sw_name, sw_fmt, sw_folder, sw_name, vid, tpl,
-                             None, fp_nobranch,
-                             branch_folder_pattern if is_branch else folder_pattern,
-                             vid if is_branch else None)
-            if result and not is_branch:
-                var_ref[(sw_name, vid)] = result[0]
-            if result and is_branch:
-                branch_bases.append((result[0], result[1], result[2],
-                                     sw_name, vid, True, "", kpi_vids, sw_name))
+    # -- l'ancienne mesure Switch -----------------------------------------------
+    # La mesure Switch (SWITCH(SELECTEDVALUE(...)) sur tous les KPI) et ses
+    # variations ne sont plus générées : elles produisaient beaucoup d'erreurs
+    # et ne servaient pas. Celles qu'un modèle porte encore sont des
+    # orphelines comme les autres (retirées si « Supprimer les orphelines »
+    # est coché) — on le dit en clair plutôt que de les laisser se perdre
+    # dans la liste des orphelines. Un bloc « switch » resté dans le config
+    # est simplement ignoré.
+    anciens_sw = {t.split("|", 1)[1] for t in
+                  (e["annotation"] for e in existing.values() if e["annotation"])
+                  if t.startswith("switch|")}
+    if anciens_sw:
+        restes = sorted(n for n, e in existing.items() if e["annotation"]
+                        and (e["annotation"].startswith("switch|")
+                             or any(e["annotation"].split("|", 1)[0].startswith(w)
+                                    for w in anciens_sw)))
+        log(f"⚠ La mesure Switch n'est plus générée : {len(restes)} mesure(s) "
+            f"« {', '.join(sorted(anciens_sw))}… » encore dans le modèle "
+            + ("seront supprimées avec les orphelines."
+               if remove_orphans else
+               "restent en place — coche « Supprimer les orphelines » pour les "
+               "retirer (vérifie d'abord qu'aucun visuel ne s'en sert)."))
 
     # -- mesures « cibles » : bases SUPPLÉMENTAIRES d'un dossier dédié ---------
     # L'utilisateur crée à la main la cible RACINE par KPI (ex. « Weight cible »,
@@ -1572,7 +1528,7 @@ def generate(model_dir, config, *, dry_run=None, remove_orphans=None, log=print)
                 f"correspond ; (3) leur nom commence par un KPI de base (ex. "
                 f"« Weight cible »). Dossiers présents : {', '.join(seen_folders) or '(aucun)'}.")
 
-    # -- 2e passe : branches (KPI, switch ET cibles) --
+    # -- 2e passe : branches (KPI ET cibles) --
     n_wrap = 0
     for (bname, bfmt, bfolder, bkpi, branch_id, no_fp, calc_prefix,
          allowed_vids, base_racine) in branch_bases:
@@ -1637,11 +1593,6 @@ def generate(model_dir, config, *, dry_run=None, remove_orphans=None, log=print)
         block = measure_block(spec["name"], spec["dax"], spec.get("fmt"),
                               spec["folder"], spec["desc"], tag,
                               spec.get("data_cat"), lineage)
-        if spec.get("dyn_fmt"):
-            lines = block.split("\n")
-            anchor = next(i for i, l in enumerate(lines) if l.startswith("\t\tlineageTag:"))
-            lines[anchor:anchor] = dyn_format_lines(spec["dyn_fmt"])
-            block = "\n".join(lines)
         new_chunks_by_tag[tag] = block
         if prev is None:
             created.append(spec["name"])
