@@ -264,13 +264,45 @@ Exemple de lecture : cible `Weight cible`, branche `YTD`.
 | `{baseRef}` | ↳ en référence DAX → `[Weight cible YTD]` | oui |
 | `{kpi}` | **KPI racine, SANS branche** → `Weight` (un libellé, pas une réf) | **non — voulu** |
 | `{kpiRef}` | ↳ la mesure du KPI **dans la branche** → `[Weight YTD]` (= `{baseRef}` pour un KPI ; ≠ pour une cible → écart réel−cible) | oui |
-| `{branch}` | branche courante → `YTD` (vide en Réel) | — |
+| `{branch}` | branche courante → `YTD` ; en Réel, **rien — ni l'espace qui le précède** : `[{kpi} cible {branch}]` → `[Weight cible]`, puis `[Weight cible YTD]` en branche | — |
 | `{date}` | `settings.dateColumn` | — |
 | `{variation}` | id du template | — |
 | `{deltaScale}` | `100` si la base a un format `%`, sinon `1` — deltas en points | — |
+| `{baseFormatString}` | le **format de la base**, en chaîne DAX → `"#,0.0"` (guillemets du dedans doublés) — pour `FORMAT({baseRef}, {baseFormatString})` | oui |
 
 Dossiers seulement : `{baseFolder}` (dossier de la base — en 2e passe, racine
 de la branche), `{folder}`.
+
+**Une valeur mise en texte, au format de sa mesure.** DAX ne sait pas lire le
+format d'une AUTRE mesure : `SELECTEDMEASUREFORMATSTRING()` ne vaut que dans
+un groupe de calcul ou dans le format dynamique de la mesure elle-même, et les
+fonctions `INFO.*` ne s'emploient pas dans une mesure. Le générateur, lui, lit
+le format dans le TMDL et l'écrit en dur avec `{baseFormatString}` :
+
+```
+FORMAT({baseRef}, {baseFormatString}) & " pas"
+→ FORMAT([Total Steps], "#,0") & " pas"
+```
+
+Donne à la variation le format `"text"` (elle rend du texte). Le format est
+figé à la génération : si tu changes celui de la base dans Desktop,
+**régénère**. Une base sans format donne `""` (le nombre brut), avec un
+avertissement au journal. Dans le champ **format** de la variation, c'est
+`{baseFormat}` qui sert (la section positive) ; dans le **DAX**, c'est
+`{baseFormatString}` (le format entier, négatifs compris).
+
+**Viser une autre mesure de la même branche.** `{kpiRef}` donne le KPI dans
+la branche ; pour une AUTRE mesure — la cible du KPI, une de ses variations —,
+compose le nom avec `{branch}`, qui emporte son espace quand il n'y a pas de
+branche :
+
+```
+[{kpi} cible {branch}]  → [Weight cible]   puis  [Weight cible YTD]
+[{kpi} {branch} PY]     → [Weight PY]      puis  [Weight YTD PY]
+```
+
+(Avant, `{branch}` n'était remplacé que dans les noms de dossiers : dans le
+DAX il restait tel quel.) L'aperçu des noms suit la même règle.
 
 > ⚠ **Le piège `{kpi}` / `{kpiRef}`.** Pour un écart réel−cible, écrire
 > `[{kpi}] - {baseRef}` donne `[Weight] - [Weight cible YTD]` en branche YTD :
@@ -1044,12 +1076,14 @@ s'y partagent le travail :
 - le **gabarit de base** sert à **tout le monde** : on le formate en entier
   dans Desktop, et ce qu'aucune règle plus précise ne décide vient de lui ;
 - un **groupe** est une famille de KPI qui se propagent **entre eux** : son
-  gabarit — un de ses membres — donne aux autres. Un KPI n'est que dans un
-  groupe ; le gabarit de base, dans aucun ;
+  gabarit — un de ses membres — donne aux autres. Son gabarit se pose
+  **par-dessus la base** : il en reçoit d'abord tout, puis ses propres
+  réglages l'emportent, propriété par propriété — et ses KPI copient le
+  résultat. Un KPI n'est que dans un groupe ; le gabarit de base, dans aucun ;
 - la ligne **« Tous les KPI »** donne un **gabarit par variation**, pour tout
-  le monde, **groupes compris** : le PY se formate une fois, sur un KPI, et
-  vaut partout — c'était tout l'enjeu, chaque gabarit de groupe devait
-  sinon porter le PY lui aussi ;
+  le monde, **groupes compris** (sous leur gabarit) : le PY se formate une
+  fois, sur un KPI, et vaut partout — chaque gabarit de groupe n'a plus à
+  porter le PY lui aussi ;
 - une ligne de **groupe** peut aussi avoir un gabarit par variation (le YoY %
   de la famille Sommeil vient de Weight) ;
 - une **case** peut avoir sa propre règle : copier un autre KPI, ou rester
@@ -1069,9 +1103,13 @@ s'y partagent le travail :
 
 Une règle **pour une variation** passe donc avant une règle « toutes
 variations », et à niveau égal, le plus étroit gagne (KPI > groupe > tous).
+Une exception : pour les KPI d'un groupe, « Tous les KPI » (3) passe **par**
+le gabarit du groupe (5) — dessous lui, voir plus bas. « Tous les KPI » à la
+main reste à la main pour tous, groupes compris.
 
 Dans Desktop, on formate la base **en entier**, chaque gabarit de groupe pour
-ce qui fait sa famille, et un gabarit par variation pour ce qui vaut partout.
+**ce qui distingue** sa famille (le reste lui vient de la base), et un gabarit
+par variation pour ce qui vaut partout.
 Contrepartie, voulue : ce qu'un KPI porte hors de ce que ses règles lui
 laissent est remplacé à la prochaine propagation — c'est ce qui fait tenir le
 tout. La sauvegarde de l'action défait tout.
@@ -1122,7 +1160,9 @@ changer au reste).
     { "nom": "Sommeil",
       "kpis": ["Average Sleep Duration", "Sleep Score"],
       "base": "Average Sleep Duration",
-      "colonnes": { "YoY %": "Weight" } } ],
+      "colonnes": { "YoY %": "Weight" } },
+    { "nom": "Poids", "kpis": ["Weight", "Body Fat %"], "base": "Weight",
+      "independant": true } ],
   "exceptions": [
     { "source": "Weight", "kpis": ["Body Fat %"], "variations": ["YoY %"] },
     { "source": "(manuel)", "kpis": ["Total Steps"], "variations": ["Réel"] } ] }
@@ -1130,6 +1170,8 @@ changer au reste).
 
 `"(manuel)"` = « à la main ». Une exception sans `"variations"` vaut pour
 toutes (niveau 4). Le gabarit d'un groupe en est membre d'office.
+`"independant": true` : le gabarit du groupe ne reçoit rien de la base (cf.
+ci-dessous).
 
 **Une source est toujours sa propre source** pour ce qu'elle donne : Weight,
 qui donne son YoY % à la famille Sommeil, le garde — c'est implicite, inutile
@@ -1148,6 +1190,46 @@ c'est une perte. La grille la marque d'un **coin orange**, le journal la
 chiffre avant la première passe. Cas typique : une cible que la base n'a pas →
 donne-la à tous les KPI depuis un KPI qui l'a.
 
+#### Un gabarit de groupe se pose PAR-DESSUS la base
+
+La propagation applique d'abord le **maître** — la base, ou pour une variation
+le gabarit de « Tous les KPI » —, puis le **gabarit du groupe** par-dessus.
+Propriété par propriété : la base règle la taille et la couleur du titre
+d'une étiquette, le gabarit du groupe seulement la couleur → ses KPI ont la
+couleur du gabarit et la taille de la base. Ce que le gabarit règle lui-même
+l'emporte, le reste vient du maître.
+
+C'est le **gabarit** qui reçoit le maître (une passe « d'abord, sous le
+gabarit de groupe » au journal) ; ses KPI le copient ensuite en entier. Il se
+lit donc dans Desktop tel que son groupe le verra. Retoucher dans Desktop un
+réglage qu'il a reçu le fait **sien** : il tient, même quand la base change.
+
+Pour qu'un changement de la base descende **aussi** dans les gabarits, on
+retient ce qu'on y a posé — la **mémoire**,
+`_backupsPBIdouille\_propagate_memoire\<rapport>.json` : une valeur posée
+par nous et que personne n'a retouchée suit la base ; la base perd un
+réglage, il s'en va du gabarit aussi. La mémoire est dans la sauvegarde de
+l'action : restaurer la remet avec le rapport. Perdue, rien ne casse — ce que
+le gabarit porte passe pour le sien.
+
+Un gabarit **ne peut pas retirer** ce que la base donne, seulement le régler
+autrement (le masquer, par exemple). Pour une famille dont les attributs n'ont
+rien à voir avec ceux de la base : une règle de groupe pour la variation
+(ligne du groupe — elle dit tout, rien ne passe dessous), ou le groupe entier
+**indépendant** (menu Groupes → décocher « Gabarit posé par-dessus la base ») :
+son gabarit est alors sa seule source, et « Tous les KPI » passe avant lui.
+Les groupes de l'**ancien format** sont indépendants — ils l'étaient.
+
+#### Le détail d'une étiquette a sa colonne
+
+Sur une carte, le **détail** d'une étiquette de référence (sous la cible : un
+écart en % chez l'un, en valeur chez l'autre) n'est pas l'étiquette. Il a sa
+colonne, juste après elle : **« Cible — détail »** à côté de « Cible ». On
+propage donc l'étiquette sans le détail (« Tous les KPI » · Cible — détail →
+à la main : chacun garde le sien), ou le détail sans l'étiquette. **Tant
+qu'aucune règle ne le nomme, le détail suit son étiquette** — comme avant ;
+l'infobulle le dit.
+
 #### La fenêtre « Grille des sources… »
 
 Onglet **Rapport** → **Grille des sources…**. En haut, le gabarit de base ;
@@ -1158,6 +1240,7 @@ décoder :
 | dans une case de KPI | |
 |---|---|
 | `Gabarit` | formaté à la main dans Desktop, et copié par d'autres (l'infobulle dit qui) |
+| `Gabarit sur la base` | un gabarit de groupe : il reçoit d'abord la base (ou, `Gabarit sur Weight`, le gabarit de « Tous les KPI »), puis ses propres réglages |
 | `À la main` | formaté à la main, rien n'y est copié |
 | le nom d'un KPI | la case copie ce KPI — **en gras** si la règle est posée sur la case, en clair si elle hérite (d'un groupe, de « Tous les KPI », d'un gabarit) |
 | `pas de mesure` | ce KPI n'a pas cette variation : rien à y écrire |
@@ -1176,7 +1259,8 @@ règle** (la case suit de nouveau la règle plus large) — aussi au clic droit.
 Le bouton **Groupes** : nouveau groupe avec les KPI sélectionnés (son gabarit
 est le premier, à changer ensuite), ajouter ou retirer des KPI, choisir le
 gabarit d'un groupe (un membre, « à la main » pour chacun, ou aucun : ses KPI
-suivent la base), renommer, supprimer.
+suivent la base), le poser par-dessus la base ou le rendre indépendant
+(l'en-tête du groupe dit « indépendant »), renommer, supprimer.
 
 La fenêtre **ne sait pas fabriquer** une grille incohérente :
 
@@ -1202,9 +1286,11 @@ rien toucher.
 
 Un `propagation.json` d'avant (`{"groupes": [...]}` avec un gabarit par
 groupe) marche **tel quel** : le groupe sans liste de KPI devient la base,
-chaque autre groupe reste un **groupe** avec son gabarit, dans le même ordre
-de passes — le résultat est **identique au caractère** à celui de l'ancien
-moteur (vérifié sur quatre configurations, dont celle du rapport Fitbit). Un
+chaque autre groupe reste un **groupe** avec son gabarit — **indépendant**,
+comme il l'était —, dans le même ordre de passes : le résultat est
+**identique au caractère** à celui de l'ancien moteur (vérifié sur quatre
+configurations, dont celle du rapport Fitbit), à une correction près — les
+faces de branche (ci-dessous). Un
 KPI dans aucun groupe, sans groupe par défaut, reste non propagé.
 Enregistrer la grille réécrit le fichier au format actuel.
 
@@ -1326,6 +1412,15 @@ le même avec et sans les tables du paramètre.
 (pas de `Body Fat % cible` dans le modèle), il n'existe aucun équivalent à
 propager ; le repli par nom s'applique et peut écrire un nom inexistant.
 Génère les cibles de **tous** les KPI visés avant de propager.
+
+**Les faces de branche suivent leur Réel.** Une entrée de branche à la place
+d'une entrée Réel du gabarit — même sélecteur, `Weight YTD PY` face à
+`Weight PY` — en est une **face** : régénérée depuis le Réel, jamais source.
+Avant, elle n'était reconnue qu'à la même liste de propriétés : quand le Réel
+gagnait (ou perdait) un réglage dans Desktop, sa face d'avant passait pour une
+entrée « de branche seule », restait, et se propageait — deux entrées au même
+sélecteur sur chaque face YTD, l'ancienne valeur collée. Seule une entrée de
+branche **sans** Réel en face est une source de branche.
 
 ### Miroir : les suppressions se propagent aussi
 
@@ -1899,6 +1994,10 @@ appelées avec les constantes de tête). Aucune logique dupliquée.
   le bouton qui l'ouvre (cf. §7) —, les branches cochables, `Aperçu
   (dry-run)` pour prévisualiser sans écrire, `Verbeux` pour le détail des
   candidats → bouton **Propager**. Sans grille, pas de propagation.
+  La grille lit tout le modèle et tous les visuels : un fichier n'est relu
+  que s'il a changé (date, taille), et dès l'ouverture du projet, l'onglet
+  les lit d'avance, par petites bouchées, quand l'app ne fait rien — la
+  grille s'ouvre alors tout de suite, même la première fois.
 - **Couleurs des matrices** : une **fiche** rappelle l'Excel des indicateurs
   — son nom (chemin complet en infobulle, ⚠ s'il est introuvable) et les
   colonnes lues (clé · fond · texte), libellés grisés, valeurs en clair — et

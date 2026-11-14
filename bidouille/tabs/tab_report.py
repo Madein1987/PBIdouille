@@ -9,8 +9,9 @@ import html
 import json
 from pathlib import Path
 
-from qtpy.QtCore import Qt, Signal
+from qtpy.QtCore import Qt, QTimer, Signal
 from qtpy.QtWidgets import (
+    QApplication,
     QCheckBox,
     QComboBox,
     QFileDialog,
@@ -278,11 +279,16 @@ class ReportTab(QWidget):
         from tabs.dialog_sources import SourcesDialog
         # lu là où il est (partagé, ou ancien fichier de ce rapport), ÉCRIT
         # toujours dans le fichier partagé : enregistrer la grille d'une
-        # version la donne à toutes
-        dlg = SourcesDialog(
-            propagate_cf.groupes_path(self.project.report_dir),
-            self._kpis, self, source=self._sources_path(),
-            analyse=self._analyse())
+        # version la donne à toutes. L'analyse lit le modèle et le rapport :
+        # au premier passage, ça peut prendre un moment — on le montre.
+        QApplication.setOverrideCursor(Qt.WaitCursor)
+        try:
+            dlg = SourcesDialog(
+                propagate_cf.groupes_path(self.project.report_dir),
+                self._kpis, self, source=self._sources_path(),
+                analyse=self._analyse())
+        finally:
+            QApplication.restoreOverrideCursor()
         dlg.exec_() if hasattr(dlg, "exec_") else dlg.exec()
         if dlg.enregistre:
             self.journal.info("Grille des sources enregistrée dans "
@@ -344,6 +350,51 @@ class ReportTab(QWidget):
         self._set_enabled(project.valid)
         if not project.valid:
             self.journal.info("⚠ Projet invalide : dossiers .Report/.SemanticModel introuvables.")
+        self.prechauffer()
+
+    # La grille des sources lit TOUT le modèle et TOUS les visuels. Au bureau
+    # (OneDrive, antivirus), ouvrir un fichier coûte cher : c'était l'attente
+    # à l'ouverture de la grille. propagate_cf.lire_texte garde chaque texte
+    # tant que son fichier ne change pas ; on le remplit ici, par bouchées de
+    # quelques fichiers, quand l'app n'a rien d'autre à faire — dans le fil
+    # principal, entre deux événements : rien ne bloque longtemps, et rien ne
+    # lit pendant qu'une écriture se fait.
+    PRECHAUFFAGE_DELAI = 400        # ms avant la 1re bouchée
+    PRECHAUFFAGE_BOUCHEE = 6        # fichiers par bouchée
+
+    def prechauffer(self):
+        """Lance (ou relance) le préchauffage du projet courant ; un
+        changement de projet abandonne le précédent."""
+        self._prechauffage = getattr(self, "_prechauffage", 0) + 1
+        self.prechauffage_fini = False
+        p = self.project
+        if p is None or not p.valid:
+            return
+        jeton = self._prechauffage
+        try:
+            fichiers = (sorted((p.model_dir / "definition" / "tables").glob("*.tmdl"))
+                        + sorted(p.report_dir.glob(
+                            "definition/pages/*/visuals/*/visual.json")))
+        except OSError:
+            return
+        lus = [0]
+
+        def bouchee():
+            if jeton != self._prechauffage:
+                return                  # un autre projet depuis : abandon
+            debut = lus[0]
+            for f in fichiers[debut:debut + self.PRECHAUFFAGE_BOUCHEE]:
+                try:
+                    propagate_cf.lire_texte(f)
+                except OSError:
+                    pass                # disparu entre-temps : tant pis
+            lus[0] = debut + self.PRECHAUFFAGE_BOUCHEE
+            if lus[0] < len(fichiers):
+                QTimer.singleShot(10, bouchee)
+            else:
+                self.prechauffage_fini = True
+
+        QTimer.singleShot(self.PRECHAUFFAGE_DELAI, bouchee)
 
     def _lire_kpis(self) -> list:
         try:

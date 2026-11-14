@@ -5,10 +5,11 @@ variation.
 Une ligne par KPI, une colonne par variation, et dans chaque case le NOM du
 KPI copié — en toutes lettres, pas en symboles. Le gabarit de BASE sert à tout
 le monde. Un GROUPE est une famille de KPI qui se propagent entre eux : son
-gabarit, un de ses membres, donne aux autres. La ligne « Tous les KPI » donne
-un gabarit PAR VARIATION, pour tout le monde, groupes compris : le PY se règle
-une fois. Et une case peut avoir sa propre règle : copier un autre KPI, ou
-rester « à la main ».
+gabarit, un de ses membres, donne aux autres — et il se pose PAR-DESSUS la
+base : il en reçoit d'abord tout, puis ses propres réglages l'emportent. La
+ligne « Tous les KPI » donne un gabarit PAR VARIATION, pour tout le monde
+(aux groupes, par leur gabarit) : le PY se règle une fois. Et une case peut
+avoir sa propre règle : copier un autre KPI, ou rester « à la main ».
 
 Les règles (l'ordre de priorité, une source est toujours sa propre source,
 ceux qui copiaient suivent…) vivent dans propagate_cf.Sources : cette fenêtre
@@ -58,6 +59,7 @@ TOUS = "Tous les KPI"
 SANS_GROUPE = "Sans groupe"
 # ce qu'on lit dans une case — des mots, pas des symboles
 GABARIT = "Gabarit"
+SUR_LA_BASE = "Gabarit sur la base"      # un gabarit de groupe, par-dessus
 A_LA_MAIN = "À la main"
 NON_PROPAGE = "non propagé"
 PAS_DE_MESURE = "pas de mesure"
@@ -160,11 +162,13 @@ class SourcesDialog(QDialog):
         intro = QLabel(
             "Chaque case dit de quel KPI ce KPI copie le formatage de cette "
             "variation. Par défaut, tout vient du <b>gabarit de base</b>. Un "
-            "<b>groupe</b> a son propre gabarit, que ses KPI copient. La ligne "
-            "<b>Tous les KPI</b> donne un gabarit par variation, pour tout le "
-            "monde — groupes compris. Sélectionne des cases (clic-glisser, ou "
-            "un en-tête de ligne ou de colonne), puis choisis ce qu'elles "
-            "copient.")
+            "<b>groupe</b> a son propre gabarit, posé <b>par-dessus</b> la "
+            "base : il en reçoit d'abord tout, puis ses propres réglages "
+            "l'emportent — et ses KPI copient le résultat. La ligne <b>Tous "
+            "les KPI</b> donne un gabarit par variation, pour tout le monde "
+            "(aux groupes, par leur gabarit). Sélectionne des cases "
+            "(clic-glisser, ou un en-tête de ligne ou de colonne), puis "
+            "choisis ce qu'elles copient.")
         intro.setWordWrap(True)
         intro.setStyleSheet(f"color:{TEXT_DIM};")
         lay.addWidget(intro)
@@ -180,7 +184,9 @@ class SourcesDialog(QDialog):
         self.cmb_base.currentTextChanged.connect(self._changer_base)
         haut.addWidget(self.cmb_base)
         ordre = QLabel("Priorité : règle de la case › groupe (variation) › "
-                       "Tous les KPI › gabarit du groupe › gabarit de base")
+                       "gabarit du groupe › Tous les KPI › gabarit de base\n"
+                       "Un gabarit de groupe se pose par-dessus Tous les KPI "
+                       "et la base : ce qu'il règle l'emporte.")
         ordre.setStyleSheet(f"color:{TEXT_MUTED};")
         haut.addSpacing(16)
         haut.addWidget(ordre)
@@ -243,6 +249,9 @@ class SourcesDialog(QDialog):
 
         legende = QLabel(
             f"<b>{GABARIT}</b> : formaté à la main, copié par d'autres"
+            f"&nbsp;&nbsp;·&nbsp;&nbsp;<b>{SUR_LA_BASE}</b> : un gabarit de "
+            "groupe, qui reçoit d'abord la base (ou « Tous les KPI ») puis "
+            "ses propres réglages"
             f"&nbsp;&nbsp;·&nbsp;&nbsp;<b>{A_LA_MAIN}</b> : rien n'y est copié"
             "&nbsp;&nbsp;·&nbsp;&nbsp;<b>un nom</b> : la case copie ce KPI "
             "(en gras : règle posée sur cette ligne)"
@@ -317,7 +326,8 @@ class SourcesDialog(QDialog):
         if quoi == "tous":
             return TOUS
         if quoi == "groupe":
-            return pc.groupe_en_mots(qui, majuscule=True)
+            return pc.groupe_en_mots(qui, majuscule=True) + (
+                ", indépendant" if g.groupes[qui].get("independant") else "")
         if quoi == "sans_groupe":
             return SANS_GROUPE
         role = ""
@@ -341,9 +351,11 @@ class SourcesDialog(QDialog):
         """Une case des lignes « Tous les KPI » et groupe : la règle posée à
         ce niveau, ou rien."""
         if valeur is None:
+            etiquette = pc.etiquette_du_detail(v)
             return ("", FOND_TITRE, TEXT_MUTED, False, False, False,
-                    f"{ou} · {v}\nAucune règle ici : les KPI suivent la règle "
-                    "plus large.")
+                    f"{ou} · {v}\nAucune règle ici : "
+                    + (f"le détail suit son étiquette, « {etiquette} »."
+                       if etiquette else "les KPI suivent la règle plus large."))
         if valeur == pc.MANUEL:
             return (A_LA_MAIN, TEINTE_MAIN, TEXT, True, False, False,
                     f"{ou} · {v}\nÀ la main : chaque KPI garde ce qui est "
@@ -357,6 +369,11 @@ class SourcesDialog(QDialog):
         s = g.source(k, v)
         quoi, qui = g.niveau(k, v)
         origine = ORIGINE[quoi].format(qui)
+        suit = g.suit_son_etiquette(k, v)
+        if suit:
+            # aucune règle sur le détail : celle de son étiquette décide
+            origine = (f"le détail suit son étiquette, « "
+                       f"{pc.etiquette_du_detail(v)} » — {origine}")
         mesures = self.analyse.get("mesures")
         reglages = self.analyse.get("reglages") or {}
         tete = f"{k} · {v}\n"
@@ -370,15 +387,31 @@ class SourcesDialog(QDialog):
         elif s == k and g.gabarit(k, v):
             texte, fond, encre, gras, ital = GABARIT, self._teinte(k), TEXT, True, False
             copieurs = [x for x in g.kpis if x != k and g.source(x, v) == k]
-            info = (tete + f"Gabarit ({origine}) : formaté à la main dans "
-                    "Desktop." + (f"\nCopié par : {', '.join(copieurs)}."
-                                   if copieurs else ""))
+            u = g.sous_couche(k, v)
+            if u:
+                texte = SUR_LA_BASE if u == g.base else f"{GABARIT} sur {u}"
+                info = (tete + f"Gabarit du groupe, posé par-dessus « {u} » ("
+                        + ("la base" if u == g.base else "Tous les KPI")
+                        + f") : il reçoit d'abord le formatage de « {u} », "
+                        "puis le sien par-dessus — ce qu'il règle lui-même "
+                        f"l'emporte, le reste vient de « {u} ». Retoucher "
+                        "un réglage reçu dans Desktop le fait sien.")
+            else:
+                info = (tete + f"Gabarit ({origine}) : formaté à la main dans "
+                        "Desktop.")
+                nom_g = g.groupe_de.get(k)
+                if (nom_g and g.groupes[nom_g]["base"] == k
+                        and g.groupes[nom_g].get("independant")):
+                    info += " Groupe indépendant : il ne reçoit rien de la base."
+            info += (f"\nCopié par : {', '.join(copieurs)}." if copieurs else "")
         elif s == k:
-            texte, fond, encre, gras, ital = A_LA_MAIN, TEINTE_MAIN, TEXT, quoi in ("case", "ligne"), False
+            texte, fond, encre, gras, ital = (A_LA_MAIN, TEINTE_MAIN, TEXT,
+                                              quoi in ("case", "ligne") and not suit,
+                                              False)
             info = (tete + f"À la main ({origine}) : rien ne lui est copié, "
                     "il garde ce qui est formaté sur lui.")
         else:
-            posee = quoi in ("case", "ligne")
+            posee = quoi in ("case", "ligne") and not suit
             if posee:
                 fond, encre = self._teinte(s), TEXT
             elif s == g.base:
@@ -387,6 +420,10 @@ class SourcesDialog(QDialog):
                 fond, encre = _palir(self._teinte(s)), TEXT
             texte, gras, ital = s, posee, False
             info = tete + f"Copie « {s} » — {origine}."
+            u = g.sous_couche(s, v)
+            if u:
+                info += (f"\n« {s} » se pose par-dessus « {u} » : ce que "
+                         f"« {s} » ne règle pas vient de « {u} ».")
             if mesures is not None and (s, v) not in mesures:
                 # la source n'a pas cette mesure (une cible que la base n'a
                 # pas) : rien ne sera copié — la case le montre, en retrait
@@ -462,7 +499,14 @@ class SourcesDialog(QDialog):
     def _legende_couleurs(self):
         """Quel KPI derrière quelle couleur : les sources présentes."""
         g = self.grille
-        sources = [s for s in g.sources() if s]
+        # les KPI dont une case porte la COULEUR : copiés par d'autres, ou
+        # nommés gabarit (base, groupe, « Tous les KPI ») — pas ceux qui ne
+        # sont qu'« à la main », peints de la teinte « à la main »
+        copies = {s for v in g.variations for k in g.kpis
+                  for s in [g.source(k, v)] if s not in (None, k)}
+        nommes = ({g.base} | {gr["base"] for gr in g.groupes.values()}
+                  | set(g.colonnes.values()))
+        sources = [s for s in g.sources() if s and (s in copies or s in nommes)]
         morceaux = []
         for s in sources:
             role = " (gabarit de base)" if s == g.base else ""
@@ -591,6 +635,9 @@ class SourcesDialog(QDialog):
     def changer_gabarit_groupe(self, nom, gabarit):
         self._apres(self.grille.changer_gabarit_groupe(nom, gabarit))
 
+    def rendre_independant(self, nom, independant=True):
+        self._apres(self.grille.rendre_independant(nom, independant))
+
     def renommer_groupe(self, nom, nouveau=None):
         if nouveau is None:
             nouveau, ok = QInputDialog.getText(self, "Renommer le groupe",
@@ -637,6 +684,12 @@ class SourcesDialog(QDialog):
                 lambda nom=nom: self.changer_gabarit_groupe(nom, None))
             act.setCheckable(True)
             act.setChecked(gr["base"] is None)
+            act = sous.addAction(
+                "Gabarit posé par-dessus la base (décoché : groupe indépendant)",
+                lambda nom=nom, gr=gr: self.rendre_independant(
+                    nom, not gr.get("independant")))
+            act.setCheckable(True)
+            act.setChecked(not gr.get("independant"))
             sous.addAction("Renommer…", lambda nom=nom: self.renommer_groupe(nom))
             sous.addAction("Supprimer le groupe",
                            lambda nom=nom: self.supprimer_groupe(nom))

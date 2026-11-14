@@ -1094,7 +1094,8 @@ check("« variation à la main : KPI » — ceux qui gardent le leur, en mots",
 check("un gabarit par variation pour tous",
       plan("Average Steps → PY") == ("Average Steps → PY", ["tous les KPI"]))
 check("un groupe, son gabarit, ses KPI — un par rangee",
-      plan("Groupe Poids") == ("Groupe Poids ← Weight", ["Weight", "Body Fat %"]))
+      plan("Groupe Poids") == ("Groupe Poids ← Weight, par-dessus la base",
+                               ["Weight", "Body Fat %"]))
 check("la base, d'un bloc (pas coupee a une virgule)",
       plan("Average Steps :") == ("Average Steps",
                                   ["gabarit de base — tout le reste"]))

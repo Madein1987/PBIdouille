@@ -76,6 +76,7 @@ INDENT_DAX = 4
 KNOWN_PLACEHOLDERS = {
     "base", "baseRef", "date", "variation", "deltaScale",
     "kpi", "kpiRef", "folder", "baseFolder", "baseFormat", "branch",
+    "baseFormatString",  # le format de la base, en chaîne DAX (FORMAT)
     "variationRef",     # enveloppe de branche : la mesure Réel de la variation
 }
 
@@ -90,8 +91,12 @@ TOKENS_HELP = (
     "  {kpi}      KPI racine, SANS branche ........ Weight\n"
     "  {kpiRef}   ↳ le KPI DANS la branche ........ [Weight YTD]\n"
     "  {branch}   branche courante ................ YTD\n"
+    "      en Réel, rien — ni l'espace devant : [{kpi} cible {branch}]\n"
+    "      vise [Weight cible], et [Weight cible YTD] en branche\n"
     "  {variation} id de la variation · {date} colonne de dates\n"
-    "  {deltaScale} 100 si le format est un %, sinon 1"
+    "  {deltaScale} 100 si le format est un %, sinon 1\n"
+    "  {baseFormatString} format de la base, en chaîne DAX — \"#,0.0\"\n"
+    "      FORMAT({baseRef}, {baseFormatString}) & \" pas\""
 )
 PLACEHOLDER_RE = re.compile(r"\{([A-Za-z_][A-Za-z0-9_]*)\}")
 
@@ -174,6 +179,17 @@ def segments_nom(motif: str, base: list, valeurs: dict, style: str) -> list:
             texte, st = valeurs.get(m.group(1), ("", style))
             if texte:
                 out.append((texte, st))
+            elif m.group(1) == "branch":
+                # pas de branche : le jeton s'efface avec UNE espace voisine,
+                # celle d'avant de préférence (cf. remplacer_branche)
+                if (motif[m.start() - 1:m.start()] == " " and out
+                        and out[-1][0].endswith(" ")):
+                    t, st0 = out.pop()
+                    if t[:-1]:
+                        out.append((t[:-1], st0))
+                elif motif[m.end():m.end() + 1] == " ":
+                    pos = m.end() + 1
+                    continue
         pos = m.end()
     if pos < len(motif):
         out.append((motif[pos:], style))

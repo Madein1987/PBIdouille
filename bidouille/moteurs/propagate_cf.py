@@ -84,6 +84,40 @@ MEASURE_NAME_RE = re.compile(
     r"^\tmeasure\s+(?:'((?:[^']|'')+)'|([^\s=']+))", re.M)
 
 
+# chemin -> ((date, taille), texte)
+_TEXTES: dict = {}
+
+
+def lire_texte(chemin) -> str:
+    """Le texte d'un fichier — relu seulement s'il a CHANGÉ (date, taille).
+
+    Ouvrir un fichier coûte cher dans un dossier synchronisé (OneDrive) sous
+    antivirus : plusieurs millisecondes chacun, bien plus au bureau. Lire sa
+    date ne coûte presque rien. La grille des sources relisait tout le modèle
+    — deux fois — et tout le rapport à chaque ouverture : c'était l'essentiel
+    de son temps. Un fichier qu'on vient d'écrire a une nouvelle date : il
+    est relu, jamais servi périmé."""
+    p = Path(chemin)
+    st = p.stat()
+    cle = (st.st_mtime_ns, st.st_size)
+    vu = _TEXTES.get(str(p))
+    if vu is not None and vu[0] == cle:
+        return vu[1]
+    texte = p.read_text(encoding="utf-8")
+    _TEXTES[str(p)] = (cle, texte)
+    return texte
+
+
+def ecrire_texte(chemin, texte) -> None:
+    """Écrit, et garde le cache de lire_texte à jour : deux passes qui
+    écrivent le même visuel coup sur coup (même seconde, même taille, sur un
+    disque à dates grossières) ne relisent jamais l'avant-dernière version."""
+    p = Path(chemin)
+    p.write_text(texte, encoding="utf-8")
+    st = p.stat()
+    _TEXTES[str(p)] = ((st.st_mtime_ns, st.st_size), texte)
+
+
 def measures_of_model(semantic_dir) -> set:
     """Tous les noms de mesures du modèle.
 
@@ -97,7 +131,7 @@ def measures_of_model(semantic_dir) -> set:
     noms: set = set()
     tables = Path(semantic_dir) / "definition" / "tables"
     for tmdl in sorted(tables.glob("*.tmdl")) if tables.is_dir() else []:
-        for m in MEASURE_NAME_RE.finditer(tmdl.read_text(encoding="utf-8")):
+        for m in MEASURE_NAME_RE.finditer(lire_texte(tmdl)):
             nom = m.group(1) or m.group(2)
             if nom:
                 noms.add(nom.replace("''", "'"))
@@ -135,7 +169,7 @@ def cibles_of_model(semantic_dir, dossiers) -> set:
     tables = Path(semantic_dir) / "definition" / "tables"
     for tmdl in sorted(tables.glob("*.tmdl")) if tables.is_dir() else []:
         courante = None
-        for ligne in tmdl.read_text(encoding="utf-8").splitlines():
+        for ligne in lire_texte(tmdl).splitlines():
             m = MEASURE_NAME_RE.match(ligne + "\n")
             if m:
                 courante = (m.group(1) or m.group(2) or "").replace("''", "'")
@@ -200,7 +234,7 @@ def kpis_from_parameter(semantic_dir: Path, field_parameter: str = FIELD_PARAMET
             f"Enregistrer le PBIP après avoir créé {field_parameter}, ou définir "
             "TARGET_KPIS explicitement."
         )
-    text = tmdl.read_text(encoding="utf-8")
+    text = lire_texte(tmdl)
     # NAMEOF\(.*?\) (et non [^)]*) pour gérer les parenthèses DANS les noms de
     # mesures, ex. NAMEOF([Weight (locf)]) : le non-greedy revient à la bonne
     # parenthèse fermante, ancrée par « ), <ordre>, "<KPI>" ». Le 4e élément
@@ -410,7 +444,7 @@ def read_fp_maps(semantic_dir: Path, field_parameter: str = FIELD_PARAMETER):
     reverse: dict = {}
     if not tmdl.exists():
         return forward, reverse
-    text = tmdl.read_text(encoding="utf-8")
+    text = lire_texte(tmdl)
     for m in re.finditer(
         r'\(\s*"[^"]*"\s*,\s*NAMEOF\(\s*\[([^\]]+)\]\s*\)\s*,\s*\d+\s*,'
         r'\s*"([^"]*)"\s*,\s*"([^"]*)"\s*,\s*"([^"]*)"\s*\)', text):
@@ -834,6 +868,24 @@ def split_entry_scopes(entry):
 # référence, rattachées par leur id)
 PROPRIETES_AFFICHEES = ("imageData", "imageUrl")
 
+# Le DÉTAIL d'une étiquette (referenceLabelDetail, même id) a sa colonne à
+# lui : « Cible — détail » à côté de « Cible ». Le détail de la cible montre
+# un écart en % chez l'un, en valeur chez l'autre : il doit pouvoir rester à
+# la main — ou se propager — sans emporter l'étiquette, et réciproquement.
+# Tant qu'aucune règle ne le nomme, il suit son étiquette (cf. Sources).
+DETAIL = " — détail"
+CLES_DETAIL = ("referenceLabelDetail",)
+
+
+def colonne_detail(variation) -> str:
+    return f"{variation}{DETAIL}"
+
+
+def etiquette_du_detail(variation):
+    """« Cible » pour « Cible — détail », sinon None."""
+    v = str(variation or "")
+    return v[:-len(DETAIL)] if v.endswith(DETAIL) and len(v) > len(DETAIL) else None
+
 
 def _premiere_mesure(node):
     """Le nom de la première mesure référencée dans un sous-arbre, ou None."""
@@ -875,13 +927,17 @@ def emplacements_de(objects, classer, kpis_tries, entity=ENTITY) -> dict:
     return out
 
 
-def variation_entree(entry, kpi, classer, emplacements=None, entity=ENTITY):
+def variation_entree(entry, kpi, classer, emplacements=None, entity=ENTITY,
+                     cle=None):
     """La variation qu'une entrée MONTRE, pour le KPI `kpi` : celle de son
-    étiquette de référence (par son id), celle de l'image qu'elle affiche,
-    sinon celle de son selector."""
+    étiquette de référence (par son id) — la colonne de son DÉTAIL si
+    l'entrée vient d'une clé de détail (`cle`, la clé d'objet) —, celle de
+    l'image qu'elle affiche, sinon celle de son selector."""
     sel = entry.get("selector") if isinstance(entry, dict) else None
     ident = sel.get("id") if isinstance(sel, dict) else None
     if ident and emplacements and ident in emplacements:
+        if cle and str(cle).startswith(CLES_DETAIL):
+            return colonne_detail(emplacements[ident])
         return emplacements[ident]
     props = entry.get("properties") if isinstance(entry, dict) else None
     if isinstance(props, dict):
@@ -892,13 +948,135 @@ def variation_entree(entry, kpi, classer, emplacements=None, entity=ENTITY):
     return classer(entry_metadata(entry), kpi)
 
 
+# ---- un gabarit de groupe se pose PAR-DESSUS la base ------------------------
+#
+# Un groupe reçoit d'abord ce que donne le maître — la base, ou le gabarit
+# par variation de « Tous les KPI » —, puis les réglages de son gabarit
+# par-dessus : ce que le gabarit règle lui-même l'emporte, le reste vient du
+# maître. C'est le GABARIT qui reçoit le maître ; ses KPI le copient ensuite
+# en entier. Il se lit donc dans Desktop tel que son groupe le verra.
+#
+# PROPRIÉTÉ par propriété : la couleur du titre que le gabarit a choisie
+# l'emporte, la taille qu'il ne règle pas vient du maître. Pour qu'un
+# changement du maître descende AUSSI dans les gabarits, on retient ce qu'on
+# y a posé (la MÉMOIRE, cf. memoire_path) : une valeur posée par nous et que
+# personne n'a retouchée suit le maître ; une valeur retouchée dans Desktop
+# appartient au gabarit. Un gabarit ne peut pas RETIRER ce que le maître
+# donne — seulement le régler autrement (ou rendre son groupe indépendant).
+
+def _canon(x) -> str:
+    """Une valeur JSON en texte canonique : pour comparer sans que True == 1."""
+    return json.dumps(x, sort_keys=True, ensure_ascii=False)
+
+
+def superposer_entrees(dessous, dessus, posees):
+    """Pose `dessous` — les entrées du maître, déjà clonées sur le gabarit —
+    SOUS `dessus`, celles du gabarit, propriété par propriété.
+
+    `posees` : {(sélecteur canonique, propriété): valeur} que les passes
+    précédentes ont posées depuis le maître. Pour chaque propriété :
+
+      - le gabarit ne l'a pas : celle du maître (posée, retenue) ;
+      - il a la même : rien à faire (retenue : elle suit le maître) ;
+      - il a celle qu'on y avait posée : le maître a changé, elle suit ;
+      - il a autre chose : c'est la sienne, elle l'emporte ;
+      - le maître ne l'a plus et c'est celle qu'on avait posée : retirée.
+
+    Rend (remplacements {id(entrée du gabarit): nouvelle entrée, ou None
+    quand il ne lui reste rien}, ajouts [entrées neuves], posées après,
+    nombre d'entrées changées)."""
+    m: dict = {}
+    venues: list = []                       # (entrée du maître, sélecteur)
+    for e in dessous:
+        sel = _canon(e.get("selector"))
+        venues.append((e, sel))
+        for p, v in (e.get("properties") or {}).items():
+            m[(sel, p)] = v
+    h: dict = {}
+    for e in dessus:
+        sel = _canon(e.get("selector"))
+        for p, v in (e.get("properties") or {}).items():
+            h[(sel, p)] = v
+
+    def posee_par_nous(k):
+        return k in posees and _canon(h[k]) == _canon(posees[k])
+
+    garde: dict = {}
+    # ce qu'on avait posé HORS de cette passe (une autre variation, un autre
+    # maître) ne la regarde pas : retenu tel quel
+    apres = {k: v for k, v in posees.items() if k not in m and k not in h}
+    for k, v in m.items():
+        if k not in h or _canon(h[k]) == _canon(v) or posee_par_nous(k):
+            garde[k] = v
+            apres[k] = v
+        else:
+            garde[k] = h[k]                  # la sienne : elle l'emporte
+    for k, v in h.items():
+        if k not in m and not posee_par_nous(k):
+            garde[k] = v                     # à lui seul
+
+    remplacements: dict = {}
+    hotes: dict = {}                         # sélecteur -> entrée qui accueille
+    for e in dessus:
+        sel = _canon(e.get("selector"))
+        neuves = {p: garde[(sel, p)] for p in (e.get("properties") or {})
+                  if (sel, p) in garde}
+        if not neuves:
+            remplacements[id(e)] = None
+            continue
+        nouvelle = dict(e)
+        nouvelle["properties"] = neuves
+        remplacements[id(e)] = nouvelle
+        hotes.setdefault(sel, nouvelle)
+    ajouts: list = []
+    for e, sel in venues:
+        neuves = {p: garde[(sel, p)] for p in (e.get("properties") or {})
+                  if (sel, p) not in h}
+        if not neuves:
+            continue
+        hote = hotes.get(sel)
+        if hote is None:
+            # même sélecteur que le maître (copié : l'ordre de ses clés reste
+            # celui que Desktop écrit)
+            hote = {"properties": {},
+                    "selector": json.loads(json.dumps(e.get("selector")))}
+            ajouts.append(hote)
+            hotes[sel] = hote
+        hote["properties"].update(neuves)
+    n = sum(1 for e in dessus
+            if remplacements[id(e)] is None
+            or _canon(remplacements[id(e)]) != _canon(e)) + len(ajouts)
+    return remplacements, ajouts, apres, n
+
+
+def _posees_lues(liste) -> dict:
+    """La mémoire d'un gabarit, pour une clé d'objet : {(sélecteur canonique,
+    propriété): valeur}."""
+    out: dict = {}
+    for x in liste or ():
+        if isinstance(x, dict) and isinstance(x.get("proprietes"), dict):
+            sel = _canon(x.get("selector"))
+            for p, v in x["proprietes"].items():
+                out[(sel, p)] = v
+    return out
+
+
+def _posees_ecrites(posees) -> list:
+    par_sel: dict = {}
+    for (sel, p), v in posees.items():
+        par_sel.setdefault(sel, {})[p] = v
+    return [{"selector": json.loads(sel), "proprietes": props}
+            for sel, props in sorted(par_sel.items())]
+
+
 def process_visual(path: Path, template: str, targets: list[str], *,
                    entity: str = ENTITY, branches=BRANCHES,
                    verbose: bool = False, dry_run: bool = False, log=print,
                    backup_dir=None, fp_forward=None, fp_reverse=None,
                    known=None, communes=None, sans_equiv=None,
                    kpis_connus=None, cibles=None,
-                   cellules=None, classer=None) -> int:
+                   cellules=None, classer=None,
+                   superposer=False, memoire=None) -> int:
     """Aligne, dans chaque liste de visual.objects, les KPI cibles sur le KPI
     template : les entrées visant le template sont clonées vers chaque cible,
     et celles que le template ne porte PLUS sont retirées des cibles (miroir).
@@ -913,8 +1091,14 @@ def process_visual(path: Path, template: str, targets: list[str], *,
     `classer(metadata, kpi)` dit la variation d'une entrée (cf. classeur).
     Une entrée hors des cases de la passe n'est ni une source, ni une cible,
     ni à retirer : la base et une exception se partagent un même visuel sans
-    se marcher dessus. None = toutes les variations des KPI de la passe."""
-    data = json.loads(path.read_text(encoding="utf-8"))
+    se marcher dessus. None = toutes les variations des KPI de la passe.
+
+    `superposer` : le template est un MAÎTRE (la base, un gabarit par
+    variation) et les `targets` des gabarits de groupe — il passe DESSOUS,
+    propriété par propriété (cf. superposer_entrees), sans miroir. `memoire`
+    : ce qu'on a posé sur ces gabarits dans ce visuel, {gabarit: {clé
+    d'objet: [...]}}, tenu à jour ici."""
+    data = json.loads(lire_texte(path))
     objects = (data.get("visual") or {}).get("objects")
     if not isinstance(objects, dict):
         return 0
@@ -946,17 +1130,49 @@ def process_visual(path: Path, template: str, targets: list[str], *,
     emplacements = (emplacements_de(objects, classer, _managed, entity)
                     if cellules is not None else {})
 
-    def _variation(e, kpi):
-        return variation_entree(e, kpi, classer, emplacements, entity)
+    def _variation(e, kpi, cle):
+        return variation_entree(e, kpi, classer, emplacements, entity, cle)
 
-    def _dans_la_passe(e) -> bool:
+    def _face_reel(e, kpi):
+        """(branche, sélecteur ramené au Réel, signature ramenée au Réel)
+        d'une entrée de `kpi` — la signature a la forme d'entry_key."""
+        md = entry_metadata(e)
+        b = detect_branch(md, kpi, branches, entity, fp_reverse)
+        base_md = (swap_kpi_branch(md, kpi, b, kpi, "", entity, fp_forward,
+                                   fp_reverse) if b else md)
+        sel = dict(e.get("selector") or {}) if isinstance(e, dict) else {}
+        if b:
+            sel["metadata"] = base_md
+        sid, order = _selector_id_order(e)
+        props = ()
+        if isinstance(e, dict) and isinstance(e.get("properties"), dict):
+            props = tuple(sorted(e["properties"].keys()))
+        return b, _canon(sel), (base_md, sid, order, props)
+
+    def _faces(reel):
+        """Le test « face d'une de ces entrées Réel » : une entrée de branche
+        À LA PLACE d'une entrée Réel — même signature, ou même sélecteur.
+        Le sélecteur suffit : si le Réel a gagné (ou perdu) une propriété
+        depuis la dernière passe, sa face d'avant a gardé l'ancienne
+        signature, mais elle reste sa face. La prendre pour une entrée « de
+        branche seule » la gardait, et la propageait : deux entrées au même
+        sélecteur sur chaque face, l'ancienne valeur restait collée."""
+        cles = {entry_key(e) for e in reel}
+        sels = {_canon(e.get("selector")) for e in reel}
+
+        def est_face(e, kpi):
+            b, sel, sig = _face_reel(e, kpi)
+            return bool(b) and (sig in cles or sel in sels)
+        return est_face
+
+    def _dans_la_passe(e, cle) -> bool:
         """Cette entrée tombe-t-elle dans une case de CETTE passe ?"""
         kpi = _managed_kpi(entry_metadata(e))
         if kpi not in _portee:
             return False
-        return cellules is None or (kpi, _variation(e, kpi)) in cellules
+        return cellules is None or (kpi, _variation(e, kpi, cle)) in cellules
 
-    def _targets_template(entry) -> bool:
+    def _targets_template(entry, cle) -> bool:
         """L'entrée vise-t-elle une mesure DU KPI template ?
 
         Le test doit passer par _managed_kpi (plus long KPI géré d'abord), et
@@ -971,7 +1187,7 @@ def process_visual(path: Path, template: str, targets: list[str], *,
             return False
         # le gabarit ne donne que les variations dont il est la source : les
         # autres appartiennent à une autre passe (une colonne venue d'ailleurs)
-        return cellules is None or (template, _variation(entry, template)) in cellules
+        return cellules is None or (template, _variation(entry, template, cle)) in cellules
 
     # Le MIROIR (retrait de ce que le template ne porte plus) ne s'applique
     # qu'aux visuels PILOTÉS par le template, c'est-à-dire portant au moins une
@@ -984,10 +1200,12 @@ def process_visual(path: Path, template: str, targets: list[str], *,
     # peut poser des entrées sur le KPI source d'une exception, dans un visuel
     # où il n'en avait aucune, et la passe suivante s'y croirait pilotée.
     driven_by_template = any(
-        _targets_template(e)
-        for entries in objects.values() if isinstance(entries, list)
+        _targets_template(e, cle)
+        for cle, entries in objects.items() if isinstance(entries, list)
         for e in entries
     )
+    if superposer and not driven_by_template:
+        return 0           # le maître n'a rien ici : rien à poser dessous
 
     for key, entries in objects.items():
         if not isinstance(entries, list):
@@ -1011,7 +1229,7 @@ def process_visual(path: Path, template: str, targets: list[str], *,
                 entries[:] = rebuilt
 
         # candidats = toute entrée dont le selector.metadata vise le KPI template
-        candidates = [e for e in entries if _targets_template(e)]
+        candidates = [e for e in entries if _targets_template(e, key)]
         # templates = candidats qui visent une mesure du KPI template, SAUF les
         # couleurs statiques de columnFormatting (gérées par color_matrix_by_kpi).
         # -> inclut CF à base de mesure, reference labels (titre, détail), display
@@ -1043,32 +1261,82 @@ def process_visual(path: Path, template: str, targets: list[str], *,
         # - ses entrées ne sont JAMAIS réécrites par un clone (sinon une entrée
         #   de branche périmée d'un run précédent écrase la modif fraîche de
         #   l'utilisateur — vu avec les display units) ;
-        # - une entrée de BRANCHE du template ne sert de source QUE si aucune
-        #   entrée Réel n'a la même signature (branche seule formatée).
-        def _reel_key(e):
-            # même forme que entry_key (metadata ramené au Réel + id + order +
-            # props) — sinon la comparaison `_reel_key not in reel_keys` porte
-            # sur des tuples de tailles différentes et ne matche jamais
-            md = entry_metadata(e)
-            b = detect_branch(md, template, branches, entity, fp_reverse)
-            base_md = swap_kpi_branch(md, template, b, template, "", entity,
-                                      fp_forward, fp_reverse)
-            sid, order = _selector_id_order(e)
-            props = ()
-            if isinstance(e, dict) and isinstance(e.get("properties"), dict):
-                props = tuple(sorted(e["properties"].keys()))
-            return (base_md, sid, order, props)
-
+        # - une entrée de BRANCHE à la place d'une entrée Réel en est une FACE
+        #   (cf. _faces) : régénérée depuis le Réel, jamais source. Seule une
+        #   entrée de branche sans Réel en face sert de source (branche seule
+        #   formatée).
         reel_keys = {entry_key(e) for e in template_entries
                      if not detect_branch(entry_metadata(e), template, branches, entity, fp_reverse)}
-        sources = [e for e in template_entries
-                   if not detect_branch(entry_metadata(e), template, branches, entity, fp_reverse)
-                   or _reel_key(e) not in reel_keys]
+        est_face = _faces([e for e in template_entries
+                           if not detect_branch(entry_metadata(e), template,
+                                                branches, entity, fp_reverse)])
+        sources = [e for e in template_entries if not est_face(e, template)]
 
         # signatures que le visuel DOIT porter à la fin : celles du template
-        # (il garde tout ce qu'il porte) + tous les clones générés ci-dessous.
-        # Tout le reste, sur un KPI géré, est une relique -> retiré (miroir).
-        expected = {entry_key(e) for e in template_entries}
+        # (il garde ce qu'il porte, sauf ses faces : elles sont régénérées)
+        # + tous les clones générés ci-dessous. Tout le reste, sur un KPI
+        # géré, est une relique -> retiré (miroir) — dont une face restée à
+        # l'ancienne signature.
+        expected = {entry_key(e) for e in sources}
+
+        if superposer:
+            # PAR-DESSOUS : le maître passe sous chaque gabarit de groupe —
+            # sous son RÉEL (ses faces de branche le suivront à sa propre
+            # passe, cf. _faces), et sous ses entrées de branche seule. Ni
+            # miroir ni retrait en bloc : on ne retire que ce qu'on avait posé
+            # et que le maître n'a plus.
+            for kpi in targets:
+                if kpi == template:
+                    continue
+                siennes = [e for e in entries
+                           if not owned_by_color_matrix(key, e)
+                           and _managed_kpi(entry_metadata(e)) == kpi
+                           and (kpi, _variation(e, kpi, key)) in cellules]
+                dessous = []
+                for tpl_entry in sources:
+                    if (kpi, _variation(tpl_entry, template, key)) not in cellules:
+                        continue
+                    manquante = entree_sans_equivalent(
+                        tpl_entry, template, kpi, entity, fp_forward,
+                        fp_reverse, cibles, known)
+                    if manquante is not None:
+                        if sans_equiv is not None:
+                            sans_equiv.add((manquante, kpi))
+                        continue
+                    b = detect_branch(entry_metadata(tpl_entry), template,
+                                      branches, entity, fp_reverse)
+                    clone = swap_tree_branch(
+                        tpl_entry, template, b, kpi, b,
+                        entity, fp_forward, fp_reverse, known, communes)
+                    ensure_datapoint_scope(clone)
+                    dessous.append(clone)
+                # ses faces suivent son Réel : le maître n'y passe pas dessous
+                face_du_gabarit = _faces(
+                    [e for e in siennes + dessous
+                     if not detect_branch(entry_metadata(e), kpi, branches,
+                                          entity, fp_reverse)])
+                dessous = [c for c in dessous if not face_du_gabarit(c, kpi)]
+                dessus = [e for e in siennes if not face_du_gabarit(e, kpi)]
+                if not dessous and not dessus:
+                    continue
+                notes = memoire.setdefault(kpi, {}) if memoire is not None else {}
+                remplacements, ajouts, apres, n = superposer_entrees(
+                    dessous, dessus, _posees_lues(notes.get(key)))
+                if apres:
+                    notes[key] = _posees_ecrites(apres)
+                else:
+                    notes.pop(key, None)
+                if memoire is not None and not notes:
+                    memoire.pop(kpi, None)
+                if n:
+                    entries[:] = [remplacements.get(id(e), e) for e in entries
+                                  if remplacements.get(id(e), e) is not None
+                                  ] + ajouts
+                    changes += n
+                    if verbose:
+                        log("        sous {0} : {1} entrée(s) ({2})".format(
+                            kpi, n, template))
+            continue
 
         for tpl_entry in sources:
             # branche de l'entrée template (ex. Réel ou YTD)
@@ -1082,7 +1350,7 @@ def process_visual(path: Path, template: str, targets: list[str], *,
             dst_branches = ([""] + list(branches)) if not src_branch else [src_branch]
             # on génère pour chaque KPI cible ET chaque branche visée,
             # en sautant l'entrée template elle-même (même KPI + même branche)
-            src_var = (_variation(tpl_entry, template)
+            src_var = (_variation(tpl_entry, template, key)
                        if cellules is not None else None)
             for kpi in targets:
                 if cellules is not None and (kpi, src_var) not in cellules:
@@ -1164,7 +1432,7 @@ def process_visual(path: Path, template: str, targets: list[str], *,
             # formatage des autres sources, qu'elle n'a pas vocation à décrire.
             stale = [e for e in entries
                      if not owned_by_color_matrix(key, e)
-                     and _dans_la_passe(e)
+                     and _dans_la_passe(e, key)
                      and (entry_key(e) not in expected or _reference_morte(e))]
             if stale:
                 for e in stale:
@@ -1183,10 +1451,7 @@ def process_visual(path: Path, template: str, targets: list[str], *,
             # mécanique (cf. backup_restore.py)
             backup_dir.save(
                 path, name=f"{path.parents[2].name}_{path.parent.name}.json")
-        path.write_text(
-            json.dumps(data, indent=2, ensure_ascii=False) + "\n",
-            encoding="utf-8",
-        )
+        ecrire_texte(path, json.dumps(data, indent=2, ensure_ascii=False) + "\n")
     return changes
 
 
@@ -1194,7 +1459,8 @@ def propagate(report_dir, template_kpi, *, branches=BRANCHES, targets=None,
               entity: str = ENTITY, field_parameter: str = FIELD_PARAMETER,
               dry_run: bool = False, verbose: bool = False, log=print,
               backup_dir=None, cible_folders=(), cellules=None, classer=None,
-              contexte=None, entete=None) -> int:
+              contexte=None, entete=None, superposer=False,
+              memoire=None) -> int:
     """Propage le formatage conditionnel du KPI template vers tous les KPI (et
     toutes les branches) dans les visual.json du rapport. Retourne le nombre
     total d'entrées écrites. Point d'entrée commun CLI (main) et UI (Atelier) :
@@ -1209,7 +1475,10 @@ def propagate(report_dir, template_kpi, *, branches=BRANCHES, targets=None,
     (cf. propagate_regles) — seules ses cases sont lues, écrites, nettoyées.
     `contexte` : le modèle déjà lu (cf. contexte_modele) — N passes ne le
     relisent pas N fois, et n'en répètent pas le compte rendu. `entete`
-    remplace alors les lignes « KPI template / KPI cibles » du journal."""
+    remplace alors les lignes « KPI template / KPI cibles » du journal.
+
+    `superposer` / `memoire` : le template passe SOUS les gabarits de groupe
+    (cf. process_visual) ; `memoire` = {"page/visuel": {...}}, tenue à jour."""
     report_dir = Path(report_dir)
     branches = list(branches)
     # Ce qu'on lit du modèle (cf. contexte_modele) : TOUS les KPI — pour
@@ -1261,7 +1530,11 @@ def propagate(report_dir, template_kpi, *, branches=BRANCHES, targets=None,
                            backup_dir=backup_dir, fp_forward=fp_forward, fp_reverse=fp_reverse,
                            known=known, communes=communes, sans_equiv=sans_equiv,
                            kpis_connus=kpis_connus, cibles=cibles,
-                           cellules=cellules, classer=classer)
+                           cellules=cellules, classer=classer,
+                           superposer=superposer,
+                           memoire=(None if memoire is None else memoire.setdefault(
+                               f"{visual_json.parents[2].name}/"
+                               f"{visual_json.parent.name}", {})))
         if n:
             page = visual_json.parents[2].name
             log(f"  page {page} / visuel {visual_json.parent.name} : {n} entrée(s)")
@@ -1309,14 +1582,22 @@ def propagate(report_dir, template_kpi, *, branches=BRANCHES, targets=None,
 #   6. le GABARIT DE BASE.
 #
 # Une règle POUR UNE VARIATION passe donc avant une règle « toutes
-# variations » : le PY de tout le monde se règle une fois (3), même pour un
-# groupe qui a son gabarit (5) — c'était tout l'enjeu : avant, chaque gabarit
-# de groupe devait porter le PY lui aussi. À niveau égal, le plus étroit gagne
-# (KPI > groupe > tous).
+# variations » : le PY de tout le monde se règle une fois (3). À niveau égal,
+# le plus étroit gagne (KPI > groupe > tous).
 #
 # Un GROUPE est une famille de KPI qui se propagent entre eux : son gabarit
 # (un de ses membres) donne à tous les autres ce qu'aucune règle plus précise
 # ne règle. Un KPI n'est que dans un groupe ; le gabarit de base, dans aucun.
+#
+# Le gabarit d'un groupe se pose PAR-DESSUS le maître : il reçoit d'abord la
+# base — ou, pour une variation, le gabarit de « Tous les KPI » —, puis ses
+# propres réglages par-dessus, propriété par propriété (cf.
+# superposer_entrees). Ses KPI le copient ensuite en entier. Le PY « Tous les
+# KPI » arrive donc aux KPI d'un tel groupe PAR leur gabarit (niveau 5), et ce
+# que le gabarit règle lui-même pour le PY l'emporte. Un groupe INDÉPENDANT
+# (les groupes de l'ancien format, ou décoché dans la fenêtre) ne reçoit rien
+# du maître : son gabarit est sa seule source, et « Tous les KPI » (3) passe
+# avant lui pour ses KPI.
 #
 # Une source est un nom de KPI, ou MANUEL : la case est formatée à la main —
 # rien ne lui est copié d'ailleurs (ses faces de branche suivent son Réel).
@@ -1335,7 +1616,9 @@ def propagate(report_dir, template_kpi, *, branches=BRANCHES, targets=None,
 #    "groupes": [
 #      {"nom": "Sommeil", "kpis": ["Average Sleep Duration", "Sleep Score"],
 #       "base": "Average Sleep Duration",
-#       "colonnes": {"YoY %": "Weight"}}],
+#       "colonnes": {"YoY %": "Weight"}},
+#      {"nom": "Poids", "kpis": ["Weight", "Body Fat %"], "base": "Weight",
+#       "independant": true}],
 #    "exceptions": [
 #      {"source": "Weight", "kpis": ["Body Fat %"], "variations": ["YoY %"]},
 #      {"source": "(manuel)", "kpis": ["Total Steps"], "variations": ["Réel"]}]}
@@ -1578,7 +1861,7 @@ def analyser(report_dir, *, entity=ENTITY, field_parameter=FIELD_PARAMETER,
     reglages: dict = {}
     for vj in sorted(report_dir.glob("definition/pages/*/visuals/*/visual.json")):
         try:
-            data = json.loads(vj.read_text(encoding="utf-8"))
+            data = json.loads(lire_texte(vj))
         except (OSError, ValueError):
             continue
         objets = (data.get("visual") or {}).get("objects")
@@ -1597,7 +1880,8 @@ def analyser(report_dir, *, entity=ENTITY, field_parameter=FIELD_PARAMETER,
                 if k is None:
                     continue
                 par_visuel = reglages.setdefault(
-                    (k, variation_entree(e, k, classer, emplacements, entity)),
+                    (k, variation_entree(e, k, classer, emplacements, entity,
+                                         cle)),
                     {})
                 par_visuel[visuel] = par_visuel.get(visuel, 0) + 1
 
@@ -1622,6 +1906,19 @@ def analyser(report_dir, *, entity=ENTITY, field_parameter=FIELD_PARAMETER,
         ajouter(calcul)
     for v in sorted(presentes):
         ajouter(v)
+    # le détail d'une étiquette juste après elle
+    details = [v for v in colonnes if etiquette_du_detail(v) is not None]
+    rangees: list = []
+    for v in colonnes:
+        if v in details:
+            continue
+        rangees.append(v)
+        if colonne_detail(v) in details:
+            rangees.append(colonne_detail(v))
+    colonnes = rangees + [d for d in details if d not in rangees]
+    # un KPI a le détail d'une étiquette s'il en a la mesure
+    mesures |= {(k, colonne_detail(v)) for (k, v) in mesures
+                if colonne_detail(v) in details}
     return {"kpis": kpis, "variations": colonnes, "reel": reel,
             "mesures": mesures, "reglages": reglages, "classer": classer}
 
@@ -1641,7 +1938,8 @@ def _regles_propres(data) -> dict | None:
         groupes.append({"nom": str(gr["nom"]),
                         "kpis": [str(k) for k in (gr.get("kpis") or []) if k],
                         "base": _source(gr.get("base")),
-                        "colonnes": colonnes_de(gr.get("colonnes"))})
+                        "colonnes": colonnes_de(gr.get("colonnes")),
+                        "independant": bool(gr.get("independant"))})
     exceptions = []
     for x in data.get("exceptions") or []:
         if not isinstance(x, dict) or not x.get("source"):
@@ -1665,14 +1963,16 @@ def _regles_propres(data) -> dict | None:
 def regles_depuis_groupes(groupes) -> dict:
     """L'ancien format dans le nouveau, sans rien changer au résultat : le
     groupe SANS liste de KPI devient la base ; chaque autre groupe reste un
-    GROUPE, avec son gabarit. Sans groupe par défaut, un KPI dans aucun
-    groupe reste hors propagation, comme avant — et les passes gardent
-    l'ordre des groupes."""
+    GROUPE, avec son gabarit — INDÉPENDANT, comme il l'était : il ne reçoit
+    rien de la base. Sans groupe par défaut, un KPI dans aucun groupe reste
+    hors propagation, comme avant — et les passes gardent l'ordre des
+    groupes."""
     defauts = [g for g in groupes if not g["kpis"]]
     return {"base": defauts[0]["gabarit"] if defauts else None,
             "colonnes": {},
             "groupes": [{"nom": g["nom"], "kpis": list(g["kpis"]),
-                         "base": g["gabarit"], "colonnes": {}}
+                         "base": g["gabarit"], "colonnes": {},
+                         "independant": True}
                         for g in groupes if g["kpis"]],
             "exceptions": [],
             "ordre": [g["gabarit"] for g in groupes],
@@ -1725,6 +2025,24 @@ class _CasesDe:
                 and g.source(self.source, variation) == self.source)
 
 
+class _CouchesDe:
+    """Les cases d'une passe PAR-DESSOUS : un maître et les gabarits de
+    groupe qu'il passe sous (cf. Sources.sous_couche)."""
+
+    def __init__(self, grille, source, gabarits):
+        self.grille, self.source = grille, source
+        self.gabarits = list(gabarits)
+
+    def __contains__(self, cle):
+        kpi, variation = cle
+        g = self.grille
+        if kpi == self.source:
+            return any(g.sous_couche(t, variation) == self.source
+                       for t in self.gabarits)
+        return (kpi in self.gabarits
+                and g.sous_couche(kpi, variation) == self.source)
+
+
 def groupe_en_mots(nom, majuscule=False) -> str:
     """« groupe Sommeil » — mais « groupe 2 » (un ancien nom) ne devient pas
     « groupe groupe 2 »."""
@@ -1746,7 +2064,9 @@ class Sources:
       2. groupe          son groupe, pour cette variation ;
       3. tous            « Tous les KPI », pour cette variation ;
       4. ligne           une exception du KPI, pour toutes ses variations ;
-      5. gabarit_groupe  le gabarit de son groupe ;
+      5. gabarit_groupe  le gabarit de son groupe — par-dessus la base, et
+                         pour ses KPI la ligne « Tous les KPI » passe PAR lui
+                         (sauf groupe indépendant) ;
       6. base            le gabarit de base.
 
     Sert au moteur (propagate_regles) ET à la fenêtre qui l'édite : les
@@ -1759,7 +2079,8 @@ class Sources:
         self.variations = list(dict.fromkeys(variations))
         self.base = base
         self.colonnes: dict = {}      # variation -> KPI | MANUEL (tous les KPI)
-        self.groupes: dict = {}       # nom -> {"kpis", "base", "colonnes"}
+        self.groupes: dict = {}       # nom -> {"kpis", "base", "colonnes",
+                                      #         "independant"}
         self.groupe_de: dict = {}     # KPI -> nom de son groupe
         self.lignes: dict = {}        # KPI -> KPI | MANUEL (toutes ses variations)
         self.cases: dict = {}         # (KPI, variation) -> KPI | MANUEL
@@ -1821,7 +2142,8 @@ class Sources:
                 g._nommer(v)
                 colonnes_g[v] = _source(src)
             g.groupes[nom] = {"kpis": membres, "base": base_g,
-                              "colonnes": colonnes_g}
+                              "colonnes": colonnes_g,
+                              "independant": bool(gr.get("independant"))}
 
         voulues: set = set()          # « à la main » demandés tels quels
         lignes_voulues: set = set()
@@ -1906,31 +2228,106 @@ class Sources:
 
     # ---- résolution ----------------------------------------------------------
 
-    def niveau(self, kpi, variation):
-        """(niveau, qui) : la règle qui décide de la case — cf. NIVEAUX."""
-        if (kpi, variation) in self.cases:
-            return ("case", kpi)
+    def par_dessus(self, nom):
+        """Le gabarit du groupe `nom` s'il se pose PAR-DESSUS le maître (un
+        KPI, groupe non indépendant), sinon None."""
+        gr = self.groupes.get(nom)
+        if (gr is None or gr.get("independant")
+                or gr["base"] in (None, MANUEL) or gr["base"] not in self.kpis):
+            return None
+        return gr["base"]
+
+    def gabarits_par_dessus(self) -> list:
+        return [t for t in (self.par_dessus(nom) for nom in self.groupes) if t]
+
+    @staticmethod
+    def _chaine_variations(variation) -> list:
+        """La variation, puis l'étiquette dont elle est le DÉTAIL : le détail
+        suit son étiquette tant qu'aucune règle ne le nomme lui."""
+        etiquette = etiquette_du_detail(variation)
+        return [variation] + ([etiquette] if etiquette else [])
+
+    def _decision(self, kpi, variation):
+        """(niveau, qui, variation dont la règle décide) — cf. niveau."""
         nom = self.groupe_de.get(kpi)
         groupe = self.groupes.get(nom)
-        if groupe is not None and variation in groupe["colonnes"]:
-            return ("groupe", nom)
-        if variation in self.colonnes:
-            return ("tous", None)
+        for v in self._chaine_variations(variation):
+            if (kpi, v) in self.cases:
+                return ("case", kpi, v)
+            if groupe is not None and v in groupe["colonnes"]:
+                return ("groupe", nom, v)
+            if v in self.colonnes:
+                # le gabarit par variation de « Tous les KPI » arrive aux KPI
+                # d'un groupe PAR leur gabarit, qui se pose par-dessus (cf.
+                # sous_couche). « À la main » pour tous reste à la main.
+                if self.colonnes[v] != MANUEL and self.par_dessus(nom):
+                    return ("gabarit_groupe", nom, v)
+                return ("tous", None, v)
         if kpi in self.lignes:
-            return ("ligne", kpi)
+            return ("ligne", kpi, variation)
         if groupe is not None and groupe["base"]:
-            return ("gabarit_groupe", nom)
-        return ("base", None)
+            return ("gabarit_groupe", nom, variation)
+        return ("base", None, variation)
+
+    def niveau(self, kpi, variation):
+        """(niveau, qui) : la règle qui décide de la case — cf. NIVEAUX."""
+        quoi, qui, _v = self._decision(kpi, variation)
+        return (quoi, qui)
+
+    def suit_son_etiquette(self, kpi, variation) -> bool:
+        """Une case de DÉTAIL décidée par la règle de son étiquette."""
+        return self._decision(kpi, variation)[2] != variation
+
+    def sous_couche(self, kpi, variation):
+        """Ce qui passe SOUS une case de gabarit de groupe : le maître — le
+        gabarit de « Tous les KPI » pour cette variation, sinon la base —,
+        que le gabarit reçoit d'abord avant ses propres réglages. None :
+        rien dessous (pas un gabarit qui se pose par-dessus, ou une règle
+        posée sur la case, sur le groupe pour cette variation, ou sur le KPI
+        pour toutes : elle dit tout)."""
+        nom = self.groupe_de.get(kpi)
+        if nom is None or self.par_dessus(nom) != kpi:
+            return None
+        if self.source(kpi, variation) != kpi:
+            return None
+        gr = self.groupes[nom]
+        u = self.base
+        for v in self._chaine_variations(variation):
+            if (kpi, v) in self.cases and (kpi, v) not in self._implicites:
+                return None
+            if v in gr["colonnes"]:
+                return None
+            if v in self.colonnes:
+                u = self.colonnes[v]
+                break
+        else:
+            if kpi in self.lignes and kpi not in self._lignes_implicites:
+                return None
+        if u in (None, MANUEL, kpi) or u not in self.kpis:
+            return None
+        # le maître doit être SA source : sinon ce serait une copie de copie
+        return u if self.source(u, variation) == u else None
+
+    def couches(self) -> dict:
+        """{maître: [gabarits de groupe qu'il passe sous]} — les passes
+        PAR-DESSOUS, à faire avant toutes les autres."""
+        out: dict = {}
+        for t in self.gabarits_par_dessus():
+            for v in self._toutes_variations():
+                u = self.sous_couche(t, v)
+                if u and t not in out.setdefault(u, []):
+                    out[u].append(t)
+        return out
 
     def regle(self, kpi, variation):
         """La valeur de la règle qui décide : un KPI, MANUEL ou None."""
-        quoi, qui = self.niveau(kpi, variation)
+        quoi, qui, v = self._decision(kpi, variation)
         if quoi == "case":
-            return self.cases[(kpi, variation)]
+            return self.cases[(kpi, v)]
         if quoi == "groupe":
-            return self.groupes[qui]["colonnes"][variation]
+            return self.groupes[qui]["colonnes"][v]
         if quoi == "tous":
-            return self.colonnes[variation]
+            return self.colonnes[v]
         if quoi == "ligne":
             return self.lignes[kpi]
         if quoi == "gabarit_groupe":
@@ -2094,6 +2491,11 @@ class Sources:
                 tete += " à la main"
             elif gr["base"]:
                 tete += f" ← {gr['base']}"
+                if gr.get("independant"):
+                    tete += ", indépendant"
+                elif self.base or self.colonnes:
+                    tete += (", par-dessus la base" if self.base
+                             else ", par-dessus « Tous les KPI »")
             out.append(f"  {tete} : " + (", ".join(gr["kpis"]) or "aucun KPI"))
             for s, vs in par_source(gr["colonnes"]):
                 out.append(ligne(s, vs, groupe_en_mots(nom)))
@@ -2207,6 +2609,10 @@ class Sources:
         phrases à montrer à l'usager."""
         cases = list(cases)
         colonnes = sorted({v for _q, v in cases}, key=self._rang)
+        # le détail d'une étiquette la suit : il se répare avec elle
+        colonnes += [colonne_detail(v) for v in list(colonnes)
+                     if colonne_detail(v) in self.variations
+                     and colonne_detail(v) not in colonnes]
         avant = self._etat(colonnes)
         for qui, v in cases:
             if qui is None:
@@ -2444,7 +2850,8 @@ class Sources:
             return ["Donne un nom au groupe."]
         if nom in self.groupes:
             return [f"Un groupe s'appelle déjà « {nom} »."]
-        self.groupes[nom] = {"kpis": [], "base": None, "colonnes": {}}
+        self.groupes[nom] = {"kpis": [], "base": None, "colonnes": {},
+                             "independant": False}
         notes = self.mettre_dans(nom, kpis)
         membres = self.groupes[nom]["kpis"]
         if membres:
@@ -2485,6 +2892,19 @@ class Sources:
                 return [f"« {gabarit} » n'est pas dans le groupe « {nom} »."]
             self.groupes[nom]["base"] = gabarit
             return []
+        return self._structure(changer)
+
+    def rendre_independant(self, nom, independant=True) -> list:
+        """Un groupe INDÉPENDANT ne reçoit rien du maître : son gabarit est sa
+        seule source, et « Tous les KPI » passe avant lui pour ses KPI. Sinon
+        (le défaut) son gabarit se pose par-dessus la base."""
+        def changer():
+            self.groupes[nom]["independant"] = bool(independant)
+            if independant:
+                return [f"Groupe « {nom} » indépendant : son gabarit ne reçoit "
+                        "plus rien de la base ni de « Tous les KPI »."]
+            return [f"Groupe « {nom} » : son gabarit se pose par-dessus la "
+                    "base — ce qu'il ne règle pas vient d'elle."]
         return self._structure(changer)
 
     def renommer_groupe(self, ancien, nouveau) -> list:
@@ -2528,6 +2948,8 @@ class Sources:
                 x: dict = {"nom": nom, "kpis": list(gr["kpis"])}
                 if gr["base"]:
                     x["base"] = gr["base"]
+                if gr.get("independant"):
+                    x["independant"] = True
                 if gr["colonnes"]:
                     x["colonnes"] = {v: gr["colonnes"][v] for v in
                                      self._variations_rangees(gr["colonnes"])}
@@ -2564,6 +2986,58 @@ class Sources:
         return out
 
 
+# ---- la MÉMOIRE de ce qu'on a posé sous les gabarits de groupe -----------------
+#
+# Par rapport, dans le dossier des sauvegardes (hors de Desktop, hors du
+# dépôt) : {"page/visuel": {gabarit: {clé d'objet: [{"selector",
+# "proprietes"}]}}}. Perdue, rien ne casse : ce que le gabarit porte passe
+# pour le sien tant que le maître n'y change rien.
+
+MEMOIRE_DOSSIER = "_propagate_memoire"
+
+
+def memoire_path(report_dir) -> Path:
+    report_dir = Path(report_dir)
+    nom = report_dir.name
+    if nom.endswith(".Report"):
+        nom = nom[:-len(".Report")]
+    return br.backup_root(report_dir.parent, MEMOIRE_DOSSIER) / (nom + ".json")
+
+
+def lire_memoire(chemin) -> dict:
+    """La mémoire d'un rapport ; {} si absente ou illisible."""
+    try:
+        data = json.loads(Path(chemin).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    vis = data.get("visuels") if isinstance(data, dict) else None
+    return vis if isinstance(vis, dict) else {}
+
+
+def ecrire_memoire(chemin, memoire, rapport="") -> None:
+    chemin = Path(chemin)
+    chemin.parent.mkdir(parents=True, exist_ok=True)
+    chemin.write_text(json.dumps({
+        "version": 1,
+        "rapport": rapport,
+        "role": "ce que la propagation a posé sous les gabarits de groupe "
+                "(depuis la base ou « Tous les KPI ») — pour qu'un "
+                "changement du maître y descende aussi",
+        "visuels": memoire}, indent=1, ensure_ascii=False) + "\n",
+        encoding="utf-8")
+
+
+def _elaguer_memoire(memoire, report_dir) -> None:
+    """Sans les visuels disparus ni les tiroirs vides."""
+    report_dir = Path(report_dir)
+    for vis in list(memoire):
+        page, _, visuel = vis.partition("/")
+        if (not isinstance(memoire[vis], dict) or not memoire[vis]
+                or not (report_dir / "definition" / "pages" / page / "visuals"
+                        / visuel / "visual.json").exists()):
+            del memoire[vis]
+
+
 def retraits_prevus(analyse, grille) -> list:
     """Ce que la prochaine propagation RETIRERA faute de source :
     [(KPI, variation, source, entrées)]. Une case qui copie un KPI qui n'a
@@ -2577,12 +3051,29 @@ def retraits_prevus(analyse, grille) -> list:
         if grille.source(k, v) == k:
             pilotes.setdefault(k, set()).update(
                 vis for vis, n in par_visuel.items() if n)
+    # un gabarit de groupe recevra d'abord ce que son maître porte : là où
+    # le maître pilote, le gabarit pilotera aussi
+    gabarits = grille.gabarits_par_dessus()
+    for (u, v), par_visuel in reglages.items():
+        for t in gabarits:
+            if grille.sous_couche(t, v) == u:
+                pilotes.setdefault(t, set()).update(
+                    vis for vis, n in par_visuel.items() if n)
+
+    def chez(s, v) -> dict:
+        """Ce que la source portera pour v : le sien, et sa sous-couche."""
+        out = dict(reglages.get((s, v)) or {})
+        u = grille.sous_couche(s, v)
+        for vis, n in ((reglages.get((u, v)) or {}).items() if u else ()):
+            out[vis] = out.get(vis, 0) + n
+        return out
+
     out = []
     for (k, v), par_visuel in reglages.items():
         s = grille.source(k, v)
         if s in (None, k):
             continue
-        chez_la_source = reglages.get((s, v), {})
+        chez_la_source = chez(s, v)
         n = sum(nb for vis, nb in par_visuel.items()
                 if vis in pilotes.get(s, ()) and not chez_la_source.get(vis))
         if n:
@@ -2594,9 +3085,14 @@ def retraits_prevus(analyse, grille) -> list:
 
 def _executer_passes(report_dir, grille, *, branches, entity, field_parameter,
                      dry_run, verbose, log, cible_folders, classer, contexte,
-                     titre, entete_passe) -> tuple:
+                     titre, entete_passe, memoire=None) -> tuple:
     """Une passe par source de la grille, sous UNE session de sauvegarde.
-    Rend (total, session, sources)."""
+    Rend (total, session, sources).
+
+    D'abord les passes PAR-DESSOUS : chaque maître (la base, un gabarit par
+    variation) passe sous les gabarits de groupe — c'est ce qu'ils donneront
+    ensuite à leurs KPI. Un maître est toujours sa propre source : il est
+    prêt avant toute passe, l'ordre de ces passes-là ne compte pas."""
     session = None
     if not dry_run:
         session = br.BackupSession(
@@ -2604,6 +3100,18 @@ def _executer_passes(report_dir, grille, *, branches, entity, field_parameter,
             titre, report_dir.parent)
         log(f"Sauvegardes  : {session.dir} (une seule pour toute l'action)")
     total = 0
+    for u, gabarits in grille.couches().items():
+        log("")
+        log(f"--- « {u} » d'abord, sous le gabarit de groupe : "
+            + ", ".join(gabarits) + " ---")
+        total += propagate(report_dir, u, branches=branches,
+                           targets=list(gabarits), entity=entity,
+                           field_parameter=field_parameter, dry_run=dry_run,
+                           verbose=verbose, log=log, backup_dir=session,
+                           cible_folders=cible_folders,
+                           cellules=_CouchesDe(grille, u, gabarits),
+                           classer=classer, contexte=contexte, entete=[],
+                           superposer=True, memoire=memoire)
     sources = grille.sources()
     for s in sources:
         log("")
@@ -2678,13 +3186,27 @@ def propagate_regles(report_dir, regles=None, *, branches=BRANCHES,
     if dry_run:
         log("*** DRY_RUN : aucun fichier modifié (diagnostic seulement) ***")
 
+    chemin_memoire = memoire_path(report_dir)
+    memoire = lire_memoire(chemin_memoire)
+    memoire_avant = _canon(memoire)
     total, session, sources = _executer_passes(
         report_dir, grille, branches=list(branches), entity=entity,
         field_parameter=field_parameter, dry_run=dry_run, verbose=verbose,
         log=log, cible_folders=cible_folders, classer=analyse["classer"],
         contexte=ctx, titre="Propagation",
         entete_passe=lambda s: (f"--- source « {s} » "
-                                + ("(base) ---" if s == grille.base else "---")))
+                                + ("(base) ---" if s == grille.base else "---")),
+        memoire=memoire)
+    _elaguer_memoire(memoire, report_dir)
+    if session is not None and _canon(memoire) != memoire_avant:
+        # la mémoire suit le rapport : restaurer la sauvegarde la remet
+        # aussi comme elle était (sinon on croirait avoir posé ce qui ne
+        # l'est plus)
+        if chemin_memoire.exists():
+            session.save(chemin_memoire)
+        else:
+            session.mark_absent(chemin_memoire)
+        ecrire_memoire(chemin_memoire, memoire, report_dir.name)
     if session is not None:
         session.close(f"{total} entrée(s), {len(sources)} source(s) : "
                       + ", ".join(sources))

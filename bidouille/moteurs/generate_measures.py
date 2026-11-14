@@ -532,6 +532,39 @@ def bracket(name: str) -> str:
     return "[" + name.replace("]", "]]") + "]"
 
 
+def chaine_dax(texte) -> str:
+    """Une chaîne DAX : entre guillemets, ceux du dedans doublés. C'est ce
+    que rend {baseFormatString} — le format de la base, prêt pour FORMAT().
+
+    Pourquoi un jeton : DAX ne sait pas lire le format d'une AUTRE mesure.
+    SELECTEDMEASUREFORMATSTRING() ne vaut que dans un groupe de calcul ou le
+    format dynamique de la mesure elle-même, et les fonctions INFO.* ne
+    s'emploient pas dans une mesure. Le générateur, lui, le lit dans le
+    TMDL : il l'écrit en dur, et une régénération le remet à jour."""
+    return '"' + (texte or "").replace('"', '""') + '"'
+
+
+# {branch} et UNE espace voisine — celle d'avant de préférence
+_JETON_BRANCHE = re.compile(r" \{branch\}|\{branch\} ?")
+
+
+def remplacer_branche(texte, branche):
+    """{branch} : la branche courante (« YTD »). En Réel il n'y en a pas : le
+    jeton s'efface AVEC l'espace qui le sépare de son voisin, pour qu'un nom
+    composé reste juste des deux côtés —
+
+        [{kpi} cible {branch}]  ->  [Weight cible]  /  [Weight cible YTD]
+        [{kpi} {branch} PY]     ->  [Weight PY]     /  [Weight YTD PY]
+
+    Sans ça, le Réel visait « Weight cible  » (une espace de trop) : une
+    mesure qui n'existe pas."""
+    if texte is None:
+        return None
+    if branche:
+        return texte.replace("{branch}", branche)
+    return _JETON_BRANCHE.sub("", texte)
+
+
 def quote_tmdl(name: str) -> str:
     """Nom TMDL : quoté (apostrophes doublées) sauf identifiant simple."""
     if re.match(r"^[A-Za-z0-9_]+$", name):
@@ -1247,6 +1280,9 @@ def generate(model_dir, config, *, dry_run=None, remove_orphans=None, log=print)
         def expand(s):
             if s is None:
                 return None
+            # {branch} d'abord : il emporte son espace, avant que les autres
+            # jetons ne deviennent du texte
+            s = remplacer_branche(s, branch_id)
             # {kpi}    = le KPI RACINE, sans branche (« Weight ») — un libellé.
             # {kpiRef} = la mesure du KPI dans la MÊME branche que la base
             # courante : [Weight] en Réel, [Weight YTD] en branche YTD. Pour une
@@ -1268,7 +1304,8 @@ def generate(model_dir, config, *, dry_run=None, remove_orphans=None, log=print)
                   .replace("{kpi}", kpi_lbl or "")
                   .replace("{date}", date_column)
                   .replace("{variation}", vid)
-                  .replace("{deltaScale}", delta_scale))
+                  .replace("{deltaScale}", delta_scale)
+                  .replace("{baseFormatString}", chaine_dax(base_fmt)))
             # attributs codés en dur : <<label>> -> valeur pour ce KPI (si trouvée ;
             # sinon le jeton reste et process() saute la mesure en avertissant)
             for label, valmap in hc.items():
@@ -1290,6 +1327,11 @@ def generate(model_dir, config, *, dry_run=None, remove_orphans=None, log=print)
         dax = expand(token_to_text(dax_impose if dax_impose is not None
                                    else tpl.get("dax")))
         desc = expand(token_to_text(tpl.get("description")))
+        if (not base_fmt and "{baseFormatString}"
+                in (token_to_text(tpl.get("dax")) or "")):
+            log(f"⚠ variation '{vid}' : « {base_name} » n'a pas de format — "
+                "{baseFormatString} vaut \"\" (FORMAT rendra le nombre brut). "
+                "Donne-lui un format dans Desktop, puis régénère.")
         fmt = resolve_format(tpl.get("formatString"), base_fmt,
                              delta_symbols, delta_fallback)
         if not name or not dax:

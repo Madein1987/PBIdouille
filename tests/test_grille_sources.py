@@ -19,6 +19,9 @@
   8. CHANGER DE BASE : les en-tetes suivent.
   9. LES CIBLES : leurs colonnes, « pas de mesure » pour les KPI sans
      cible, et un avertissement quand la source n'a pas la mesure.
+ 10. PAR-DESSUS : le gabarit d'un groupe neuf se pose par-dessus la base —
+     ses cases le disent ; un groupe de l'ancien fichier est independant,
+     et le menu bascule l'un a l'autre.
 """
 
 from __future__ import annotations
@@ -123,6 +126,32 @@ check("… « propager puis colorer » : la grille, puis les couleurs",
       len(lances) == 2 and lances[1][0][0] is pc.propagate_regles
       and len(lances[1]) == 2)
 
+print("   le prechauffage : la grille s'ouvre sans relire le disque")
+import time as _temps                                         # noqa: E402
+fin = _temps.time() + 15
+while not getattr(onglet, "prechauffage_fini", False) and _temps.time() < fin:
+    app.processEvents()
+    _temps.sleep(0.02)
+vus = set(pc._TEXTES)
+check("a l'ouverture du projet, le modele et les visuels sont lus d'avance, "
+      "quand l'app ne fait rien", getattr(onglet, "prechauffage_fini", False)
+      and all(str(v) in vus for v in R.glob("definition/pages/*/visuals/*/visual.json"))
+      and all(str(t) in vus for t in (c / (PROJ + ".SemanticModel") / "definition"
+                                      / "tables").glob("*.tmdl")))
+essai = c / "essai_cache.txt"
+essai.write_text("un", encoding="utf-8")
+premier = pc.lire_texte(essai)
+essai.write_text("deux", encoding="utf-8")
+check("un fichier qui change est relu, jamais servi perime",
+      premier == "un" and pc.lire_texte(essai) == "deux")
+avant_ecriture = essai.stat()
+pc.ecrire_texte(essai, "troi")
+# un disque a dates grossieres : meme taille, meme date qu'avant l'ecriture
+os.utime(essai, ns=(avant_ecriture.st_atime_ns, avant_ecriture.st_mtime_ns))
+check("… et ce qu'on ecrit soi-meme n'est jamais servi a l'ancienne, meme a "
+      "taille et date egales", pc.lire_texte(essai) == "troi")
+essai.unlink()
+
 # ===================================================================== 2
 print("2. la grille lit l'ancien fichier, et parle en mots")
 
@@ -181,7 +210,8 @@ check("les lignes : Tous les KPI, le groupe et ses KPI, puis les autres",
       [q for q, _ in dlg._rangs] == ["tous", "groupe", "kpi", "sans_groupe",
                                      "kpi", "kpi", "kpi", "kpi"])
 check("… en-tetes en clair : « Tous les KPI », le groupe, « Sans groupe »",
-      entete("tous") == "Tous les KPI" and entete("groupe", "groupe 2") == "groupe 2"
+      entete("tous") == "Tous les KPI"
+      and entete("groupe", "groupe 2") == "groupe 2, indépendant"
       and entete("sans_groupe") == "Sans groupe")
 check("… le gabarit du groupe et le gabarit de base sont nommes comme tels",
       entete("kpi", SLEEP).strip() == SLEEP + " — gabarit du groupe"
@@ -256,12 +286,17 @@ check("un groupe neuf : sa ligne, puis ses KPI",
       [x for x in dlg._rangs if x[0] in ("groupe", "sans_groupe")]
       == [("groupe", "groupe 2"), ("groupe", "Famille"), ("sans_groupe", None)]
       and dlg.rang_de("kpi", FAT) == dlg.rang_de("groupe", "Famille") + 1)
-check("… son gabarit : le premier de ses KPI, que l'autre copie",
-      texte(FAT, "Réel") == ds.GABARIT and texte(TOTAL, "Réel") == FAT)
+check("… son gabarit : le premier de ses KPI, posé par-dessus la base, "
+      "que l'autre copie", texte(FAT, "Réel") == ds.SUR_LA_BASE
+      and texte(TOTAL, "Réel") == FAT)
+check("… l'infobulle dit ce que ca veut dire",
+      "par-dessus « " + BASE + " »" in item("kpi", FAT, "Réel").toolTip()
+      and "l'emporte" in item("kpi", FAT, "Réel").toolTip()
+      and "se pose par-dessus" in item("kpi", TOTAL, "Réel").toolTip())
 check("… mais une regle posee sur la case reste (le YoY % de Weight)",
       texte(FAT, "YoY %") == WEIGHT)
 dlg.changer_gabarit_groupe("Famille", TOTAL)
-check("changer le gabarit du groupe", texte(TOTAL, "Réel") == ds.GABARIT
+check("changer le gabarit du groupe", texte(TOTAL, "Réel") == ds.SUR_LA_BASE
       and texte(FAT, "Réel") == TOTAL
       and entete("kpi", TOTAL).strip() == TOTAL + " — gabarit du groupe")
 choisir(("groupe", "Famille", "MTD"))
@@ -444,6 +479,61 @@ check("… les KPI sans cible restent « pas de mesure »",
       texte(BASE, "Cible écart") == ds.PAS_DE_MESURE)
 check("… et l'avertissement de cette colonne s'en va",
       "« Cible écart » —" not in dlg.lbl_verdict.text())
+dlg.reject()
+
+# ===================================================================== 10
+print("10. par-dessus la base : le groupe neuf, l'ancien, la bascule")
+pc.ecrire_regles(c / "propagation.json", {
+    "version": 2, "base": BASE, "colonnes": {"PY": WEIGHT},
+    "groupes": [{"nom": "Sommeil", "kpis": [SLEEP, FAT], "base": SLEEP}]})
+dlg = ouvrir()
+V = dlg.grille.variations
+check("le gabarit d'un groupe dit sur QUOI il se pose : la base…",
+      texte(SLEEP, "Réel") == ds.SUR_LA_BASE)
+check("… ou le gabarit de « Tous les KPI » pour cette variation",
+      texte(SLEEP, "PY") == ds.GABARIT + " sur " + WEIGHT)
+check("ses KPI copient leur gabarit, PY compris",
+      texte(FAT, "PY") == SLEEP and texte(FAT, "Réel") == SLEEP)
+check("… les autres prennent le PY de Weight", texte(TOTAL, "PY") == WEIGHT)
+check("l'en-tete du groupe ne dit rien de plus : il se pose par-dessus, "
+      "c'est le defaut", entete("groupe", "Sommeil") == "Groupe Sommeil")
+menu = ds.QMenu()
+dlg._remplir_menu_groupes(menu)
+sous = next(m for m in menu.findChildren(ds.QMenu)
+            if m.title() == "Groupe Sommeil")
+bascule = next(a for a in sous.actions() if "par-dessus la base" in a.text())
+check("le menu du groupe : « posé par-dessus la base », coche",
+      bascule.isCheckable() and bascule.isChecked())
+bascule.trigger()
+check("decocher : le groupe devient independant — l'en-tete le dit, le PY "
+      "de Weight passe avant son gabarit", entete("groupe", "Sommeil")
+      == "Groupe Sommeil, indépendant" and texte(SLEEP, "Réel") == ds.GABARIT
+      and texte(FAT, "PY") == WEIGHT and texte(SLEEP, "PY") == WEIGHT
+      and "indépendant" in dlg.lbl_notes.text())
+check("… sans aucun symbole", not any(SYMBOLES.search(x) for x in tout_le_texte()))
+check("la legende des couleurs ne nomme que les sources qui colorent une case",
+      WEIGHT in dlg.lbl_couleurs.text() and BASE in dlg.lbl_couleurs.text()
+      and TOTAL not in dlg.lbl_couleurs.text())
+dlg.rendre_independant("Sommeil", False)
+check("… et recocher le remet par-dessus", texte(SLEEP, "Réel") == ds.SUR_LA_BASE
+      and texte(FAT, "PY") == SLEEP)
+
+print("   le detail d'une etiquette de carte")
+check("sa colonne, juste apres celle de l'etiquette",
+      "PY — détail" in V and V.index("PY — détail") == V.index("PY") + 1)
+check("sans regle a lui, il suit son etiquette — et l'infobulle le dit",
+      texte(TOTAL, "PY — détail") == texte(TOTAL, "PY") == WEIGHT
+      and "le détail suit son étiquette" in item("kpi", TOTAL, "PY — détail").toolTip()
+      and not gras(TOTAL, "PY — détail"))
+check("… la ligne « Tous les KPI » aussi",
+      "le détail suit son étiquette" in item("tous", None, "PY — détail").toolTip())
+choisir(("tous", None, "PY — détail"))
+dlg.btn_main.click()
+check("« Tous les KPI » · PY — détail a la main : chacun garde son detail, "
+      "l'etiquette suit toujours Weight",
+      texte(TOTAL, "PY — détail") == ds.A_LA_MAIN and texte(TOTAL, "PY") == WEIGHT
+      and texte(FAT, "PY — détail") == ds.A_LA_MAIN and texte(FAT, "PY") == SLEEP
+      and not dlg.grille.problemes()[0])
 dlg.reject()
 
 onglet.deleteLater()

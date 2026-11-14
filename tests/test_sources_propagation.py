@@ -12,7 +12,9 @@ Ce que ce fichier verifie :
      la tolerance, la source d'une exception comprise d'office.
   3. LES REFUS : source inconnue, case a deux sources, copie de copie — et
      rien n'est ecrit.
-  4. LA PRECEDENCE : case > ligne > colonne > base.
+  4. LA PRECEDENCE : case > ligne > colonne > base ; un gabarit de groupe
+     se pose PAR-DESSUS « Tous les KPI » et la base (sauf groupe
+     independant).
   5. LA BASE COUVRE TOUT LE MONDE, sauf les exceptions — le KPI source d'une
      exception recoit la base pour le reste. C'est la demande : « le PY une
      fois, pour tous », et les petites exceptions a part.
@@ -26,7 +28,7 @@ Ce que ce fichier verifie :
      toujours sa propre source, les copieurs suivent, ce que l'usager pose
      reste pose.
  11. LES GROUPES : une famille qui copie son gabarit ; « Tous les KPI »
-     passe avant le gabarit d'un groupe.
+     lui arrive PAR son gabarit, qui le recoit dessous. Independant : non.
  12. UN GROUPE DANS LE RAPPORT : il propage entre ses KPI, et a eux seuls.
  13. LES CIBLES : une base a part entiere. Leurs variations — hors
      parametre de champ — ont leurs colonnes (« Cible ecart »), lues dans
@@ -35,6 +37,15 @@ Ce que ce fichier verifie :
      l'etiquette de reference « PY » (titre et detail compris), l'image
      sparkline —, pas a la mesure de son selector, qui est celle du KPI.
      Sinon, sur une page de cartes, seul le gabarit de base propageait.
+ 15. PAR-DESSUS : la base passe sous le gabarit d'un groupe, propriete par
+     propriete — ce que le gabarit regle l'emporte, le reste vient de la
+     base, et ses KPI copient le tout. Un changement de la base y descend
+     (la MEMOIRE de ce qu'on a pose), une retouche du gabarit reste a lui.
+ 16. LES FACES de branche suivent leur Reel, meme quand il gagne ou perd une
+     propriete : plus de doublon a l'ancienne valeur sur les faces YTD.
+ 17. LE DETAIL d'une etiquette de carte a sa colonne (« PY — détail ») : il
+     se propage — ou reste a la main — sans emporter l'etiquette, et
+     reciproquement. Sans regle a lui, il suit son etiquette.
 """
 
 from __future__ import annotations
@@ -202,8 +213,12 @@ print("   colonnes de la grille :", colonnes)
 check("la grille montre TOUTES les variations du config, dans le parametre "
       "de champ ou non", {"sparkline", "CF Δ 30d", "CF YoY %"} <= set(colonnes)
       and {"PY", "YoY %", "MTD"} <= set(colonnes))
-check("… dans l'ordre du config, le Reel en tete",
-      colonnes == ["Réel"] + [v for v, _s in VARIATIONS if v != "YTD"])
+check("… dans l'ordre du config, le Reel en tete — le detail d'une "
+      "etiquette de carte juste apres elle",
+      [v for v in colonnes if not pc.etiquette_du_detail(v)]
+      == ["Réel"] + [v for v, _s in VARIATIONS if v != "YTD"]
+      and all(colonnes[colonnes.index(v) - 1] == pc.etiquette_du_detail(v)
+              for v in colonnes if pc.etiquette_du_detail(v)))
 check("… une BRANCHE n'est pas une colonne : chaque colonne couvre sa face YTD",
       "YTD" not in colonnes)
 check("une variation au nom hors motif « {base} … » a sa colonne quand meme",
@@ -234,9 +249,11 @@ check("… une exception sans source est laissee de cote", len(r["exceptions"]) 
     {"nom": "g2", "gabarit": "C", "kpis": ["C", "D"]}]}), encoding="utf-8")
 r = pc.lire_regles(tmp / "ancien.json")
 check("l'ancien format : le groupe par defaut devient la base", r["base"] == "A")
-check("… un groupe reste un GROUPE, avec son gabarit",
+check("… un groupe reste un GROUPE, avec son gabarit — INDEPENDANT, comme "
+      "avant : il ne recoit rien de la base",
       r["groupes"] == [{"nom": "g2", "kpis": ["C", "D"], "base": "C",
-                        "colonnes": {}}] and r["exceptions"] == [])
+                        "colonnes": {}, "independant": True}]
+      and r["exceptions"] == [])
 g = pc.Sources.depuis_regles(pc.regles_depuis_groupes([
     {"nom": "g1", "gabarit": "A", "kpis": []},
     {"nom": "seul", "gabarit": "C", "kpis": ["C"]}]), ["A", "C"], ["Réel"])
@@ -353,9 +370,30 @@ check("une ligne (toutes variations) l'emporte sur la base",
       g.source("E", "Réel") == "C" and g.niveau("E", "Réel")[0] == "ligne")
 check("« Tous les KPI » l'emporte sur une ligne",
       g.source("E", "PY") == "B" and g.niveau("E", "PY")[0] == "tous")
-check("« Tous les KPI » l'emporte sur le gabarit du groupe — le PY de tout "
-      "le monde se regle une fois", g.source("C", "PY") == "B"
-      and g.source("D", "PY") == "B")
+check("« Tous les KPI » passe SOUS le gabarit du groupe : ses KPI copient "
+      "leur gabarit, qui recoit d'abord le PY de B — le PY de tout le monde "
+      "se regle toujours une fois", g.source("D", "PY") == "C"
+      and g.niveau("D", "PY")[0] == "gabarit_groupe"
+      and g.source("C", "PY") == "C" and g.sous_couche("C", "PY") == "B")
+check("… et la base passe sous lui pour le reste — sous LUI seul",
+      g.sous_couche("C", "Réel") == "A" and g.sous_couche("D", "Réel") is None)
+check("… rien sous le gabarit la ou le groupe a sa regle pour la variation",
+      g.sous_couche("C", "YoY %") is None)
+check("les passes par-dessous : A sous C, B sous C",
+      g.couches() == {"A": ["C"], "B": ["C"]})
+gi = pc.Sources.depuis_regles({
+    "base": "A", "colonnes": {"PY": "B"},
+    "groupes": [{"nom": "G", "kpis": ["C", "D"], "base": "C",
+                 "independant": True}]}, CONNUS, V3)
+check("un groupe INDEPENDANT : « Tous les KPI » passe avant son gabarit, et "
+      "rien ne passe dessous", gi.source("C", "PY") == "B"
+      and gi.source("D", "PY") == "B" and gi.source("D", "Réel") == "C"
+      and gi.sous_couche("C", "Réel") is None and not gi.couches())
+check("« Tous les KPI » a la main reste a la main pour tous, groupes compris",
+      pc.Sources.depuis_regles({"base": "A", "colonnes": {"PY": pc.MANUEL},
+                                "groupes": [{"nom": "G", "kpis": ["C", "D"],
+                                             "base": "C"}]}, CONNUS, V3
+                               ).source("D", "PY") == "D")
 check("le groupe, pour une variation, l'emporte sur « Tous les KPI »",
       g.source("C", "YoY %") == "E" and g.niveau("C", "YoY %")[0] == "groupe")
 check("la case l'emporte sur le groupe",
@@ -626,8 +664,9 @@ check("un groupe neuf : son gabarit est le 1er de ses KPI, que les autres "
 check("… hors du groupe, rien ne change", g.source("B", "Réel") == "A"
       and g.source("E", "PY") == "A")
 g.appliquer([(None, "PY")], "A")
-check("« Tous les KPI » PY = la base : le groupe le prend aussi",
-      g.source("D", "PY") == "A" and g.source("C", "PY") == "A")
+check("« Tous les KPI » PY = la base : le groupe le prend PAR son gabarit, "
+      "qui le recoit dessous", g.source("D", "PY") == "C"
+      and g.source("C", "PY") == "C" and g.sous_couche("C", "PY") == "A")
 check("… et la regle reste posee, meme si elle ressemble a la base",
       g.colonnes.get("PY") == "A")
 g.appliquer([(("groupe", "Fam"), "YoY %")], "E")
@@ -642,6 +681,14 @@ check("la base copie son Reel ailleurs : ceux qui la suivaient suivent",
 check("… et le groupe, qui suivait SON gabarit, n'a pas bouge",
       g.source("C", "Réel") == "C" and g.source("D", "Réel") == "C"
       and not g.problemes()[0])
+gi = pc.Sources(CONNUS, V3, base="A")
+gi.creer_groupe("Fam", ["C", "D"])
+gi.rendre_independant("Fam")
+gi.appliquer([("A", "Réel")], "B")
+check("… un groupe INDEPENDANT, que « Tous les KPI » emporterait, est "
+      "epingle a son gabarit", gi.source("C", "Réel") == "C"
+      and gi.source("D", "Réel") == "C" and gi.source("E", "Réel") == "B"
+      and not gi.problemes()[0])
 g.mettre_dans("Fam", ["E"])
 check("un KPI qui entre dans le groupe copie son gabarit",
       g.source("E", "Réel") == "C")
@@ -651,9 +698,9 @@ notes = g.sortir_du_groupe(["C"])
 check("le gabarit quitte son groupe : le groupe n'a plus de gabarit, et on "
       "le dit", g.groupes["Fam"]["base"] is None
       and any("n'a plus de gabarit" in n for n in notes))
-check("… ce qui copiait C le copie toujours, et C le garde (il le donne)",
-      g.source("D", "Réel") == "C" and g.source("C", "Réel") == "C"
-      and not g.problemes()[0])
+check("… ses KPI suivent alors les regles generales : le Reel de la base, "
+      "qu'elle copie de B", g.source("D", "Réel") == "B"
+      and g.source("C", "Réel") == "B" and not g.problemes()[0])
 g.changer_gabarit_groupe("Fam", "D")
 check("un nouveau gabarit de groupe : ce qu'aucune regle plus precise ne "
       "decide vient de lui", g.groupes["Fam"]["base"] == "D"
@@ -678,8 +725,29 @@ g6.appliquer([(None, "PY")], "A")
 check("une regle « Tous les KPI » egale a la base, posee AVANT tout groupe, "
       "reste posee", g6.colonnes.get("PY") == "A")
 g6.creer_groupe("Tard", ["C", "D"])
-check("… et tient quand un groupe apparait : son PY vient de la base",
-      g6.source("D", "PY") == "A" and g6.source("D", "Réel") == "C")
+check("… et tient quand un groupe apparait : le PY de la base passe sous "
+      "le gabarit du groupe, que ses KPI copient", g6.colonnes.get("PY") == "A"
+      and g6.source("D", "PY") == "C" and g6.sous_couche("C", "PY") == "A"
+      and g6.source("D", "Réel") == "C")
+g8 = pc.Sources(CONNUS, V3, base="A")
+g8.appliquer([(None, "PY")], "B")
+g8.creer_groupe("Fam", ["C", "D"])
+check("un groupe neuf se pose PAR-DESSUS la base",
+      not g8.groupes["Fam"]["independant"] and g8.sous_couche("C", "Réel") == "A"
+      and g8.sous_couche("C", "PY") == "B" and g8.source("D", "PY") == "C")
+notes = g8.rendre_independant("Fam")
+check("rendu independant : son gabarit ne recoit plus rien, et « Tous les "
+      "KPI » passe avant lui", g8.sous_couche("C", "Réel") is None
+      and g8.source("D", "PY") == "B" and g8.source("D", "Réel") == "C"
+      and any("indépendant" in n for n in notes) and not g8.problemes()[0])
+relu = pc.Sources.depuis_regles(json.loads(json.dumps(g8.vers_regles())),
+                                CONNUS, V3)
+check("… ca s'ecrit, et ca se relit", relu.groupes["Fam"]["independant"]
+      and relu.source("D", "PY") == "B")
+g8.rendre_independant("Fam", False)
+check("… et ca se defait", g8.sous_couche("C", "Réel") == "A"
+      and g8.source("D", "PY") == "C" and not g8.problemes()[0]
+      and "independant" not in json.dumps(g8.vers_regles()))
 g7 = pc.Sources.depuis_regles({"base": "A", "groupes": [
     {"nom": "G", "kpis": ["D"], "base": "C"}]}, CONNUS, V3)
 check("le gabarit d'un groupe en est membre, meme absent de sa liste",
@@ -710,14 +778,18 @@ check("le gabarit du groupe donne a ses membres, et remplace leur ancien",
 check("… a eux seuls", not ({ENT + "." + k + " YoY %" for k in
                              (BASE, TOTAL, WEIGHT)} & porteurs(R, "sYoY")))
 check("les autres ont le YoY % de la base",
-      {ENT + "." + k + " YoY %" for k in (TOTAL, WEIGHT)} <= porteurs(R, "bYoY")
-      and not ({ENT + "." + k + " YoY %" for k in (SLEEP, FAT)}
-               & porteurs(R, "bYoY")))
-check("le PY « Tous les KPI » l'emporte sur le gabarit du groupe",
+      {ENT + "." + k + " YoY %" for k in (TOTAL, WEIGHT)} <= porteurs(R, "bYoY"))
+check("… et le groupe AUSSI, sous le sien : la base passe sous son gabarit",
+      {ENT + "." + k + " YoY %" for k in (SLEEP, FAT)} <= porteurs(R, "bYoY")
+      and {ENT + "." + k + " YoY %" for k in (SLEEP, FAT)} <= porteurs(R, "sYoY"))
+check("le PY « Tous les KPI » arrive a tout le monde — au groupe par son "
+      "gabarit, qui garde le sien par-dessus",
       {ENT + "." + k + " PY" for k in KPIS} <= porteurs(R, "bPY")
-      and not porteurs(R, "sPY"))
-check("le journal dit le groupe et son gabarit",
-      any(l.strip().startswith(f"Groupe Sommeil ← {SLEEP} :") for l in journal))
+      and {m for m in porteurs(R, "sPY") if " YTD " not in m}
+      == {ENT + "." + k + " PY" for k in (SLEEP, FAT)})
+check("le journal dit le groupe, son gabarit, et qu'il se pose par-dessus "
+      "la base", any(l.strip().startswith(
+          f"Groupe Sommeil ← {SLEEP}, par-dessus la base :") for l in journal))
 n2 = propager(R, REGLES)
 check(f"2e passe = 0 changement (obtenu {n2})", n2 == 0)
 rmtree(c)
@@ -798,12 +870,12 @@ def variation_de(cle, ident=None, avec=None):
     for e in objets.get(cle) or []:
         sel = e.get("selector") or {}
         if sel.get("id") == ident and (avec is None or avec in e.get("properties", {})):
-            return pc.variation_entree(e, WEIGHT, cl, emp, ENT)
+            return pc.variation_entree(e, WEIGHT, cl, emp, ENT, cle)
 
 
-check("… son titre et son detail la suivent (meme id)",
+check("… son titre la suit (meme id) ; son DETAIL a sa colonne, a cote",
       variation_de("referenceLabelTitle", PY_ID) == "PY"
-      and variation_de("referenceLabelDetail", PY_ID) == "PY")
+      and variation_de("referenceLabelDetail", PY_ID) == "PY — détail")
 check("le reglage de la carte entiere (sans id) reste au Reel",
       variation_de("referenceLabelDetail", None) == "Réel")
 check("l'image de la carte est de la variation qu'elle affiche (sparkline)",
@@ -859,6 +931,274 @@ check("… et le Δ 30d de Body Fat %, que rien ne lui donne, revient a la base"
       details and all(d == REF_SHOW for d in details))
 n2 = propager(R, REGLES)
 check(f"2e passe = 0 changement (obtenu {n2})", n2 == 0)
+rmtree(c)
+
+# ===================================================================== 15
+print("15. par-dessus : la base passe sous le gabarit d'un groupe, propriete "
+      "par propriete")
+
+
+def entree_props(md, props):
+    """Une entree a plusieurs proprietes (q…), valeurs litterales."""
+    return {"properties": {p: {"expr": {"Literal": {"Value": v}}}
+                           for p, v in props.items()},
+            "selector": {"metadata": ENT + "." + md,
+                         "data": [{"dataViewWildcard": {"matchingOption": 0}}]}}
+
+
+def props_de(vj, md):
+    """({propriete q…: valeur}, nombre d'entrees q…) de ce metadata."""
+    out, n = {}, 0
+    for liste in lire(vj)["visual"]["objects"].values():
+        for e in liste if isinstance(liste, list) else []:
+            props = e.get("properties") or {}
+            if (pc.entry_metadata(e) == ENT + "." + md
+                    and any(p.startswith("q") for p in props)):
+                n += 1
+                for p, v in props.items():
+                    out[p] = v["expr"]["Literal"]["Value"]
+    return out, n
+
+
+def retoucher(vj, md, **props):
+    """Change (valeur) ou retire (None) des proprietes q… de ce metadata —
+    ce que l'usager ferait dans Desktop."""
+    data = lire(vj)
+    for liste in data["visual"]["objects"].values():
+        for e in liste if isinstance(liste, list) else []:
+            if pc.entry_metadata(e) == ENT + "." + md:
+                for p, v in props.items():
+                    if v is None:
+                        (e.get("properties") or {}).pop(p, None)
+                    elif p in (e.get("properties") or {}) or any(
+                            q.startswith("q") for q in e.get("properties") or {}):
+                        e["properties"][p] = {"expr": {"Literal": {"Value": v}}}
+    ecrire(vj, data)
+
+
+c = copie("dessus")
+R = c / (PROJ + ".Report")
+V1, CLE = ou_poser(R, BASE)
+poser(V1, CLE, entree_props(BASE + " PY", {"qa": "'1'", "qb": "'2'"}),
+      entree_props(SLEEP + " PY", {"qa": "'9'"}),
+      entree_props(FAT + " PY", {"qz": "'0'"}),
+      entree_props(BASE + " YoY %", {"qy": "'1'"}),
+      entree_props(FAT + " YoY %", {"qx": "'2'"}))
+REGLES = {"base": BASE, "groupes": [{"nom": "Sommeil", "kpis": [SLEEP, FAT],
+                                     "base": SLEEP}]}
+analyse = pc.analyser(R, field_parameter=FP, branches=["YTD"],
+                      variations=VARIATIONS)
+grille = pc.Sources.depuis_regles(REGLES, analyse["kpis"], analyse["variations"])
+check("les pertes annoncees : rien pour le YoY % du groupe — son gabarit n'a "
+      "rien, mais il recevra celui de la base",
+      not [r for r in pc.retraits_prevus(analyse, grille)
+           if r[0] == FAT and r[1] == "YoY %"])
+journal = []
+n = propager(R, REGLES, log=journal.append)
+check("le gabarit garde le sien (qa) et recoit de la base ce qu'il n'a pas "
+      "(qb) — en UNE entree", props_de(V1, SLEEP + " PY")
+      == ({"qa": "'9'", "qb": "'2'"}, 1))
+check("ses KPI copient le tout (et perdent leur ancien)",
+      props_de(V1, FAT + " PY") == ({"qa": "'9'", "qb": "'2'"}, 1))
+check("hors du groupe : la base, telle quelle",
+      props_de(V1, TOTAL + " PY") == ({"qa": "'1'", "qb": "'2'"}, 1))
+check("le YoY % du groupe : celui de la base, par son gabarit",
+      props_de(V1, SLEEP + " YoY %") == ({"qy": "'1'"}, 1)
+      and props_de(V1, FAT + " YoY %") == ({"qy": "'1'"}, 1))
+check("les faces YTD du groupe suivent son Reel — une entree, pas deux",
+      props_de(V1, SLEEP + " YTD PY") == ({"qa": "'9'", "qb": "'2'"}, 1)
+      and props_de(V1, FAT + " YTD PY") == ({"qa": "'9'", "qb": "'2'"}, 1))
+check("le journal dit la passe par-dessous",
+      any("d'abord, sous le gabarit de groupe" in l and SLEEP in l
+          for l in journal))
+memo = pc.memoire_path(R)
+texte_memo = memo.read_text(encoding="utf-8") if memo.exists() else ""
+check("la memoire retient ce qu'on a pose (qb), pas ce qui est au gabarit "
+      "(qa)", memo.exists() and '"qb"' in texte_memo
+      and '"qa"' not in texte_memo and memo.parent.parent.name
+      == br.PARENT)
+n2 = propager(R, REGLES)
+check(f"2e passe = 0 changement (obtenu {n2})", n2 == 0)
+
+retoucher(V1, BASE + " PY", qb="'3'")
+propager(R, REGLES)
+check("la base change qb : le gabarit SUIT (on l'y avait pose), ses KPI aussi",
+      props_de(V1, SLEEP + " PY")[0] == {"qa": "'9'", "qb": "'3'"}
+      and props_de(V1, FAT + " PY")[0] == {"qa": "'9'", "qb": "'3'"}
+      and props_de(V1, TOTAL + " PY")[0] == {"qa": "'1'", "qb": "'3'"})
+retoucher(V1, SLEEP + " PY", qb="'7'")
+propager(R, REGLES)
+check("l'usager retouche qb sur le gabarit : la retouche est a lui, ses KPI "
+      "la prennent", props_de(V1, SLEEP + " PY")[0] == {"qa": "'9'", "qb": "'7'"}
+      and props_de(V1, FAT + " PY")[0] == {"qa": "'9'", "qb": "'7'"})
+retoucher(V1, BASE + " PY", qb="'4'", qa="'6'")
+propager(R, REGLES)
+check("… et la base peut bien changer qb et qa : le gabarit garde les siens",
+      props_de(V1, SLEEP + " PY")[0] == {"qa": "'9'", "qb": "'7'"}
+      and props_de(V1, TOTAL + " PY")[0] == {"qa": "'6'", "qb": "'4'"})
+retoucher(V1, BASE + " PY", qc="'5'")
+propager(R, REGLES)
+check("la base gagne qc : le gabarit et ses KPI le recoivent",
+      props_de(V1, SLEEP + " PY")[0].get("qc") == "'5'"
+      and props_de(V1, FAT + " PY")[0].get("qc") == "'5'")
+retoucher(V1, BASE + " PY", qc=None)
+memo_avant = memo.read_text(encoding="utf-8")
+etat_avant = etat(R)
+propager(R, REGLES, dry_run=True)
+check("a blanc : ni rapport ni memoire ecrits", etat(R) == etat_avant
+      and memo.read_text(encoding="utf-8") == memo_avant)
+propager(R, REGLES)
+check("la base perd qc : il s'en va du gabarit (on l'y avait pose), de ses "
+      "KPI et des autres", "qc" not in props_de(V1, SLEEP + " PY")[0]
+      and "qc" not in props_de(V1, FAT + " PY")[0]
+      and "qc" not in props_de(V1, TOTAL + " PY")[0])
+racine = br.backup_root(c, "_propagate_backups")
+derniere = br.sessions_of(racine)[0]
+br.restore_session(derniere, c)
+check("restaurer la derniere sauvegarde remet le rapport ET la memoire",
+      etat(R) == etat_avant and memo.read_text(encoding="utf-8") == memo_avant)
+REGLES_T = {"base": BASE, "colonnes": {"PY": WEIGHT},
+            "groupes": REGLES["groupes"]}
+retoucher(V1, WEIGHT + " PY", qa="'1'", qb=None, qc=None, qw="'8'")
+propager(R, REGLES_T)
+check("le PY change de maitre (« Tous les KPI » = Weight) : ce qu'on avait "
+      "pose depuis la base s'en va, le sien reste, Weight passe dessous",
+      props_de(V1, SLEEP + " PY")[0] == {"qa": "'9'", "qb": "'7'", "qw": "'8'"}
+      and props_de(V1, FAT + " PY")[0] == {"qa": "'9'", "qb": "'7'", "qw": "'8'"}
+      and props_de(V1, TOTAL + " PY")[0] == {"qa": "'1'", "qw": "'8'"})
+n2 = propager(R, REGLES_T)
+check(f"2e passe = 0 changement (obtenu {n2})", n2 == 0)
+rmtree(c)
+
+c = copie("dessous_indep")
+R = c / (PROJ + ".Report")
+V1, CLE = ou_poser(R, BASE)
+poser(V1, CLE, entree_props(BASE + " PY", {"qa": "'1'", "qb": "'2'"}),
+      entree_props(SLEEP + " PY", {"qa": "'9'"}))
+INDEP = {"base": BASE, "groupes": [{"nom": "Sommeil", "kpis": [SLEEP, FAT],
+                                    "base": SLEEP, "independant": True}]}
+propager(R, INDEP)
+check("un groupe INDEPENDANT : son gabarit ne recoit rien de la base, ses "
+      "KPI copient le sien seul", props_de(V1, SLEEP + " PY")[0] == {"qa": "'9'"}
+      and props_de(V1, FAT + " PY")[0] == {"qa": "'9'"}
+      and not pc.memoire_path(R).exists())
+rmtree(c)
+
+# ===================================================================== 16
+print("16. une face de branche suit son Reel, meme quand il change")
+c = copie("faces")
+R = c / (PROJ + ".Report")
+V1, CLE = ou_poser(R, BASE)
+poser(V1, CLE, entree_props(BASE + " PY", {"qa": "'1'"}))
+propager(R, {"base": BASE})
+retoucher(V1, BASE + " PY", qb="'2'")
+propager(R, {"base": BASE})
+check("le Reel gagne une propriete : chaque face YTD a UNE entree, a jour "
+      "(avant : l'ancienne restait a cote, et se propageait)",
+      all(props_de(V1, k + " YTD PY") == ({"qa": "'1'", "qb": "'2'"}, 1)
+          for k in KPIS))
+retoucher(V1, BASE + " PY", qa=None)
+propager(R, {"base": BASE})
+check("… il en perd une : les faces la perdent aussi",
+      all(props_de(V1, k + " YTD PY") == ({"qb": "'2'"}, 1) for k in KPIS))
+n2 = propager(R, {"base": BASE})
+check(f"2e passe = 0 changement (obtenu {n2})", n2 == 0)
+rmtree(c)
+
+# ===================================================================== 17
+print("17. le detail d'une etiquette a sa colonne : il se regle a part")
+c = copie("detail")
+R = c / (PROJ + ".Report")
+carte = next(vj for vj in visuels(R)
+             if (lire(vj).get("visual") or {}).get("visualType") == "cardVisual")
+propager(R, {"base": WEIGHT})                 # chaque KPI a la carte de Weight
+
+
+def du_py(cle, kpi, prop):
+    """L'entree `cle` de l'etiquette PY de ce KPI qui porte `prop`."""
+    for e in lire(carte)["visual"]["objects"].get(cle) or []:
+        if ((e.get("selector") or {}).get("id") == PY_ID
+                and pc.entry_metadata(e) == ENT + "." + kpi
+                and prop in (e.get("properties") or {})):
+            return e
+
+
+def detail_de(kpi):
+    """La mesure que montre le detail de l'etiquette PY de ce KPI."""
+    e = du_py("referenceLabelDetail", kpi, "detailValue")
+    return pc._premiere_mesure(e["properties"]["detailValue"]) if e else None
+
+
+def titre_de(kpi):
+    e = du_py("referenceLabelTitle", kpi, "titleText")
+    return e["properties"]["titleText"]["expr"]["Literal"]["Value"] if e else None
+
+
+def retoucher_carte(kpi, titre=None, detail=None):
+    """Ce que l'usager ferait dans Desktop : le titre de l'etiquette PY, la
+    mesure de son detail (un ecart en valeur plutot qu'en %)."""
+    data = lire(carte)
+    objets = data["visual"]["objects"]
+    for e in objets["referenceLabelTitle"]:
+        if (titre and (e.get("selector") or {}).get("id") == PY_ID
+                and pc.entry_metadata(e) == ENT + "." + kpi
+                and "titleText" in e.get("properties", {})):
+            e["properties"]["titleText"] = {"expr": {"Literal": {"Value": titre}}}
+    for e in objets["referenceLabelDetail"]:
+        if (detail and (e.get("selector") or {}).get("id") == PY_ID
+                and pc.entry_metadata(e) == ENT + "." + kpi
+                and "detailValue" in e.get("properties", {})):
+            e["properties"]["detailValue"]["expr"]["Measure"]["Property"] = detail
+    ecrire(carte, data)
+
+
+check("au depart, le detail du PY montre le YoY % de chacun",
+      detail_de(FAT) == FAT + " YoY %" and detail_de(TOTAL) == TOTAL + " YoY %")
+retoucher_carte(FAT, titre="'PY de BF'", detail=FAT + " Δ 30d")
+a = pc.analyser(R, field_parameter=FP, branches=["YTD"], variations=VARIATIONS)
+check("la grille a une colonne « PY — détail », juste apres « PY »",
+      "PY — détail" in a["variations"] and a["variations"].index("PY — détail")
+      == a["variations"].index("PY") + 1)
+check("… chaque KPI qui a le PY a son detail (pas « pas de mesure »)",
+      all((k, "PY — détail") in a["mesures"] for k in KPIS))
+g = pc.Sources.depuis_regles({"base": WEIGHT, "colonnes": {"PY": TOTAL}},
+                             KPIS, a["variations"])
+check("sans regle a lui, le detail suit son etiquette (ici, le PY de "
+      "Total Steps)", all(g.source(k, "PY — détail") == g.source(k, "PY")
+                          for k in KPIS)
+      and g.source(FAT, "PY — détail") == TOTAL
+      and g.suit_son_etiquette(FAT, "PY — détail")
+      and not g.suit_son_etiquette(FAT, "PY") and not g.problemes()[0])
+
+# l'etiquette du PY depuis Weight, mais chacun garde SON detail
+REGLES = {"base": WEIGHT, "colonnes": {"PY": WEIGHT, "PY — détail": pc.MANUEL}}
+propager(R, REGLES)
+check("l'etiquette se propage (le titre de Weight chez Body Fat %)…",
+      titre_de(FAT) == titre_de(WEIGHT) and titre_de(FAT) != "'PY de BF'")
+check("… sans emporter le detail : Body Fat % garde son Δ 30d",
+      detail_de(FAT) == FAT + " Δ 30d" and detail_de(TOTAL) == TOTAL + " YoY %")
+n2 = propager(R, REGLES)
+check(f"2e passe = 0 changement (obtenu {n2})", n2 == 0)
+
+# l'inverse : l'etiquette a la main, le detail depuis Body Fat %
+retoucher_carte(FAT, titre="'PY de BF'")
+REGLES = {"base": WEIGHT, "colonnes": {"PY — détail": FAT},
+          "exceptions": [{"source": pc.MANUEL, "kpis": [FAT],
+                          "variations": ["PY"]}]}
+g = pc.Sources.depuis_regles(REGLES, KPIS, a["variations"])
+check("une regle sur le detail ne touche pas l'etiquette",
+      g.source(TOTAL, "PY") == WEIGHT and g.source(TOTAL, "PY — détail") == FAT
+      and g.source(FAT, "PY") == FAT and not g.problemes()[0])
+propager(R, REGLES)
+check("le detail se propage depuis Body Fat % (un Δ 30d chez tous)…",
+      detail_de(TOTAL) == TOTAL + " Δ 30d" and detail_de(WEIGHT) == WEIGHT + " Δ 30d")
+check("… et Body Fat % garde son etiquette, a la main",
+      titre_de(FAT) == "'PY de BF'" and titre_de(TOTAL) == titre_de(WEIGHT))
+n2 = propager(R, REGLES)
+check(f"2e passe = 0 changement (obtenu {n2})", n2 == 0)
+g.appliquer([(None, "PY")], TOTAL)
+check("repeindre l'etiquette repare aussi son detail : aucune copie de copie",
+      not g.problemes()[0])
 rmtree(c)
 
 print("\n" + ("TOUT OK" if _ok else "*** DES ECHECS ***"))

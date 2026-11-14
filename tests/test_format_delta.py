@@ -220,6 +220,91 @@ gm.generate(modele, conf, dry_run=False, log=lambda *_: None)
 check("… et le fichier est identique au caractere",
       mesures.read_text(encoding="utf-8") == avant)
 
+# ===================================================================== 7
+print("7. {baseFormatString} : le format de la base, ecrit en dur dans le DAX")
+check("une chaine DAX : entre guillemets, ceux du dedans doubles",
+      gm.chaine_dax(SECONDES) == Q + "#,0 " + Q + Q + "s" + Q + Q + Q
+      and gm.chaine_dax("#,0") == Q + "#,0" + Q
+      and gm.chaine_dax(None) == Q + Q)
+# une base SANS format : le jeton rend "" et le journal le dit
+texte = mesures.read_text(encoding="utf-8")
+m = re.search(r"(\tmeasure " + ref_mesure("Body Fat %") + r" =.*?\n)"
+              r"(\t\tformatString: [^\n]*\n)", texte, re.S)
+assert m, "Body Fat % introuvable"
+mesures.write_text(texte[:m.start(2)] + texte[m.end(2):], encoding="utf-8")
+conf["variations"]["étiquette"] = {
+    "namePattern": "{base} étiquette",
+    "dax": "FORMAT({baseRef}, {baseFormatString}) & " + Q + " pas" + Q,
+    "formatString": "text", "inFieldParameter": False}
+journal: list = []
+gm.generate(modele, conf, dry_run=False, log=journal.append)
+existantes, _bases = gm.read_measures(modele, conf)
+
+
+def dax_de(nom):
+    return " ".join((existantes.get(nom) or {}).get("dax", "").split())
+
+
+print("   " + dax_de("Total Steps étiquette"))
+check("la valeur mise en texte AU FORMAT de sa base",
+      dax_de("Total Steps étiquette")
+      == "FORMAT([Total Steps], " + gm.chaine_dax(SECONDES) + ") & " + Q + " pas" + Q)
+check("chaque KPI avec SON format (une base signee garde ses trois sections)",
+      gm.chaine_dax(SECONDES_SIGNE) in dax_de("Weight étiquette"))
+check("en branche, le format de la base de branche",
+      dax_de("Total Steps YTD étiquette")
+      == "FORMAT([Total Steps YTD], " + gm.chaine_dax(SECONDES) + ") & " + Q + " pas" + Q)
+check("une base sans format : \"\" (le nombre brut)…",
+      "FORMAT([Body Fat %], " + Q + Q + ")" in dax_de("Body Fat % étiquette"))
+check("… et le journal le dit, en nommant la base",
+      any("Body Fat %" in l and "baseFormatString" in l for l in journal))
+check("aucun jeton n'est reste dans le DAX ecrit",
+      "{baseFormatString}" not in mesures.read_text(encoding="utf-8"))
+check("la variation rend du texte : pas de format a elle",
+      (existantes.get("Total Steps étiquette") or {}).get("format") is None)
+st = gm.generate(modele, conf, dry_run=True, log=lambda *_: None)
+check("regenerer ne change rien (idempotent)",
+      not st["created"] and not st["updated"])
+
+# ===================================================================== 8
+print("8. {branch} : la branche courante — en Reel, rien, ni son espace")
+check("au milieu : l'espace d'AVANT part avec lui",
+      gm.remplacer_branche("[{kpi} {branch} PY]", None) == "[{kpi} PY]"
+      and gm.remplacer_branche("[{kpi} {branch} PY]", "YTD") == "[{kpi} YTD PY]")
+check("a la fin : idem", gm.remplacer_branche("[{kpi} cible {branch}]", "")
+      == "[{kpi} cible]")
+check("au debut : l'espace d'APRES", gm.remplacer_branche("[{branch} {kpi}]", None)
+      == "[{kpi}]")
+check("seul dans une chaine : la chaine vide",
+      gm.remplacer_branche(Q + "{branch}" + Q, None) == Q + Q)
+conf["variations"]["cbr"] = {
+    "namePattern": "{base} cbr",
+    "dax": "[{kpi} {branch} PY] + [{kpi} cible {branch}] + LEN("
+           + Q + "{branch}" + Q + ")",
+    "description": "{kpi} {branch} : essai",
+    "formatString": "inherit", "inFieldParameter": False}
+gm.generate(modele, conf, dry_run=False, log=lambda *_: None)
+existantes, _bases = gm.read_measures(modele, conf)
+print("   " + dax_de("Weight cbr"))
+print("   " + dax_de("Weight YTD cbr"))
+check("dans le DAX, en Reel : [Weight PY] et [Weight cible] — pas d'espace "
+      "en trop", dax_de("Weight cbr") == "[Weight PY] + [Weight cible] + LEN("
+      + Q + Q + ")")
+check("… en branche : [Weight YTD PY] et [Weight cible YTD]",
+      dax_de("Weight YTD cbr") == "[Weight YTD PY] + [Weight cible YTD] + LEN("
+      + Q + "YTD" + Q + ")")
+check("aucun {branch} n'est reste dans le fichier ecrit",
+      "{branch}" not in mesures.read_text(encoding="utf-8"))
+os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+import tabs.tab_config as tc                                      # noqa: E402
+segs = tc.segments_nom("{kpi} {branch} cbr", [("Weight", "r")],
+                       {"kpi": ("Weight", "r"), "branch": ("", "b")}, "v")
+segs_b = tc.segments_nom("{kpi} {branch} cbr", [("Weight", "r")],
+                         {"kpi": ("Weight", "r"), "branch": ("YTD", "b")}, "v")
+check("l'apercu des noms dit la meme chose que la generation",
+      "".join(t for t, _ in segs) == "Weight cbr"
+      and "".join(t for t, _ in segs_b) == "Weight YTD cbr")
+
 rmtree(c)
 print("\n" + ("TOUT OK" if _ok else "*** DES ECHECS ***"))
 sys.exit(0 if _ok else 1)
