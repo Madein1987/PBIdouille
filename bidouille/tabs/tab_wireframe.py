@@ -47,7 +47,7 @@ from qtpy.QtWidgets import (
     QWidget,
 )
 
-from core import report_reader, template_import
+from core import edition, report_reader, template_import
 from core.journal import Journal
 from core.project import Project, ecrire_reglage, lire_reglage, reglages
 from core.theme import (ACCENT, ACCENT_DIM, BG_DARKEST, BG_WINDOW, BORDER,
@@ -298,6 +298,9 @@ class WireframeTab(QWidget):
         self._selected_id = None
         self._syncing = False
         self._dividers: list = []      # poignées de bordure partagée
+        # PRODUCTION : plan en lecture seule (cf. core/edition.py). Posé en
+        # tête : toutes les méthodes qui écrivent le consultent.
+        self.lecture_seule = edition.production()
         self._grips: list = []         # indicateurs de redimensionnement (sélection)
         self._multi_ids: list = []     # sélection MULTIPLE (Ctrl+clic / lasso)
         self._dirty: set = set()       # ids déplacés (non sauvegardés)
@@ -460,6 +463,15 @@ class WireframeTab(QWidget):
         split.addWidget(right)
         split.setStretchFactor(0, 3)
         split.setStretchFactor(1, 2)
+
+        if self.lecture_seule:
+            # rien qui écrive dans les visual.json n'est offert ; la
+            # navigation (sélection, entrer dans un groupe, détails) reste
+            for w in (self.btn_cancel, self.btn_save, self.btn_group,
+                      self.btn_ungroup, self.btn_distribute, self.grp_tpl):
+                w.setVisible(False)
+            hint.setText("Lecture seule · clic : détails d'un visuel · "
+                         "double-clic sur un groupe : entrer (Échap : remonter).")
 
     # ---- projet ----------------------------------------------------------------
 
@@ -764,7 +776,7 @@ class WireframeTab(QWidget):
             if tier == "active":
                 rect.setAcceptedMouseButtons(Qt.AllButtons)
                 rect.setFlag(QGraphicsItem.ItemIsSelectable, True)
-                rect.setFlag(QGraphicsItem.ItemIsMovable, True)
+                rect.setFlag(QGraphicsItem.ItemIsMovable, not self.lecture_seule)
                 # resynchronise le point de référence AVANT d'activer le suivi
                 # (groupes : sous-arbre ; tous : poignées pendant le drag)
                 rect._last_pos = rect.pos()
@@ -841,6 +853,8 @@ class WireframeTab(QWidget):
         """Crée un visualGroup PBIR contenant la sélection multiple (frères du
         niveau actif). Écriture IMMÉDIATE (backup + manifeste), rechargement,
         sélection posée sur le nouveau groupe."""
+        if self.lecture_seule:
+            return
         ids = [i for i in self._multi_ids
                if i in self._data and self._tier(self._data[i]) == "active"]
         page = self.cmb_pages.currentData()
@@ -911,6 +925,8 @@ class WireframeTab(QWidget):
         pleine largeur). Une seule rangée/colonne = le cas simple. La zone
         vient de `_distribute_target` (sélection / groupe / niveau). Un groupe
         posé dans une cellule rééchelonne son contenu. En mémoire (Ctrl+Z)."""
+        if self.lecture_seule:
+            return
         ids, zone, label = self._distribute_target()
         if len(ids) < 2:
             return
@@ -966,6 +982,8 @@ class WireframeTab(QWidget):
     def _ungroup_selection(self):
         """Dissout le groupe sélectionné : ses enfants remontent d'un niveau
         (rien ne bouge à l'écran). Sans confirmation : backup + Ctrl+Z."""
+        if self.lecture_seule:
+            return
         d = self._data.get(self._selected_id)
         page = self.cmb_pages.currentData()
         if not d or not d["is_group"] or not page or not self.project:
@@ -1372,6 +1390,8 @@ class WireframeTab(QWidget):
         """Une poignée par ligne-frontière du niveau actif — visuels ET groupes
         (glisser une frontière rééchelonne le contenu des groupes bordants,
         comme Desktop en ScaleMode). Poignées SEULEMENT au niveau actif."""
+        if self.lecture_seule:
+            return
         sibs = [d for d in self._data.values() if self._parent_of(d) == self._scope]
         for vertical in (True, False):
             for line in self._border_lines(sibs, vertical):
@@ -1629,6 +1649,8 @@ class WireframeTab(QWidget):
     def _save_positions(self):
         """Écrit les positions modifiées — sans confirmation : backup
         systématique + annulable (Ctrl+Z)."""
+        if self.lecture_seule:
+            return
         if not self._dirty or not self.project:
             return
         updates = {}
@@ -1694,6 +1716,8 @@ class WireframeTab(QWidget):
     def _undo_last(self):
         """Ctrl+Z : annule le dernier geste (géométrie en mémoire) ou la
         dernière action fichiers (import / groupement / enregistrement…)."""
+        if self.lecture_seule:
+            return
         if not self._undo:
             return
         entry = self._undo.pop()
@@ -1831,6 +1855,8 @@ class WireframeTab(QWidget):
             and self.cmb_pages.currentData()))
 
     def _tpl_import(self):
+        if self.lecture_seule:
+            return
         sel = self.lst_models.selectedItems()
         page = self.cmb_pages.currentData()
         if not sel or not page or self._tpl_project is None or not self.project:

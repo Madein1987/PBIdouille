@@ -65,3 +65,10 @@ Thumbs.db
 
 # --- temporaires OneDrive ---
 .tmp.drive*/
+
+# --- édition dev : sa PRÉSENCE donne l'édition dev (cf. bidouille/core/edition.py).
+# Jamais versionné, jamais zippé : un dossier sans lui est en production.
+.dev
+
+# --- paquets construits par empaqueter.py ---
+dist/

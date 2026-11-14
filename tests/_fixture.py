@@ -76,3 +76,24 @@ def ajouter_cibles(semantic_dir, kpis, field_parameter="P_Indicateurs_parCalcul"
     fp.write_text(ftexte[:m.start()] + ",\n" + ",\n".join(lignes) + "\n"
                   + ftexte[m.start():], encoding="utf-8")
     return crees
+
+
+def reglages_jetables(nom: str):
+    """Pointe l'app sur un magasin de réglages JETABLE, vidé avant et après.
+
+    À appeler avant de construire la fenêtre : ouvrir un projet l'inscrit dans
+    les récents et comme « dernier projet ». Sans ça, une suite qui ouvre la
+    copie temporaire d'un projet laissait l'app de l'usager rouvrir ce dossier
+    temporaire (disparu) au lancement suivant."""
+    import atexit
+    from qtpy.QtCore import QSettings
+    from core import project as prj
+    prj.ORG_REGLAGES = "ChopChop"
+    prj.APP_REGLAGES = "BIdouille_TEST_" + nom
+    prj._ANCIEN_MAGASIN = ("PBIdouille_TEST_" + nom,) * 2
+
+    def vider():
+        prj.reglages().clear()
+        QSettings(*prj._ANCIEN_MAGASIN).clear()
+    vider()
+    atexit.register(vider)

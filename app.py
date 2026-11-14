@@ -44,6 +44,7 @@ from core.journal import Journal  # noqa: E402
 from core.project import (Project, load_recents, push_recent,  # noqa: E402
                           reglages)
 from core.theme import Separateur, apply_app_theme  # noqa: E402
+from core import edition  # noqa: E402  (production / dev)
 
 import backup_restore as br  # noqa: E402  (rangement des sauvegardes)
 from tabs.tab_report import ReportTab  # noqa: E402
@@ -76,6 +77,9 @@ class BidouilleWindow(QMainWindow):
         self.settings = reglages()      # magasin unique (cf. core/project.py)
         self.project = None
         self.resize(1340, 800)
+        # la version (et « (dev) » hors production) dans le titre : la
+        # première chose à demander quand quelqu'un signale un problème
+        self.setWindowTitle(APP_NAME + " " + edition.libelle())
 
         # Le journal est construit AVANT les onglets : chacun le reçoit et
         # écrit dedans, aucun n'a plus sa propre bande de log en bas
@@ -405,7 +409,7 @@ class BidouilleWindow(QMainWindow):
         # journal
         self.project_label.setText("Projet : " + project.name)
         self.project_label.setToolTip(str(project.pbip))
-        self.setWindowTitle(APP_NAME + " — " + project.name)
+        self.setWindowTitle(APP_NAME + " " + edition.libelle() + " — " + project.name)
         self._update_config_label()
         for t in self._tabs:
             t.set_project(project)

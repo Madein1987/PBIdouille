@@ -1958,6 +1958,43 @@ rangée « Portée » de l'éditeur de variations réclamait 1424 px à elle seu
 le libellé du projet 984 (chemin complet, désormais en infobulle) — la
 fenêtre descend de ~2300 px de large à ~1860, journal compris.
 
+### Édition production / dev — la version qu'on partage
+
+La version partagée au travail est l'édition **production** : ce qui n'est
+pas encore assez éprouvé pour être confié à d'autres y est **masqué** (le code
+reste, il n'est pas offert) :
+
+| | production | dev |
+|---|---|---|
+| Mesures, Rapport, Réglages, Bibliothèque | ✔ | ✔ |
+| Wireframe | **lecture seule** : plan, structure, détails d'un visuel | + déplacer, redimensionner, grouper, importer un gabarit, enregistrer |
+| ChopChop | analyse, export, restauration des sauvegardes | + suppression |
+
+**La production est le défaut.** L'édition dev ne s'obtient qu'en posant un
+fichier **`.dev`** à côté de `app.py` (ou `PBIDOUILLE_DEV=1`) — jamais versionné,
+jamais zippé. Un dossier sans lui est en production : impossible de partager
+la version dev par mégarde, alors que l'inverse (oublier de « passer en
+production » avant de zipper) l'aurait permis. Le titre de la fenêtre porte
+la version, et « (dev) » hors production. Voir `bidouille/core/edition.py`.
+
+Les méthodes qui écrivent refusent aussi d'elles-mêmes en production — pas
+seulement leurs boutons : un raccourci (Ctrl+Z) ou un appel oublié ne passe
+pas. `tests/test_edition.py` force chacune et vérifie que rien n'est écrit.
+
+**Construire le zip** :
+
+```
+py empaqueter.py              -> dist\PBIdouille_<version>_<date>.zip
+py empaqueter.py --verifier   -> les vérifications seules
+```
+
+Le zip ne prend que les fichiers **suivis par git** (jamais un projet, un
+Excel, une sauvegarde ou une bibliothèque personnelle), sans les tests, plus
+le guide de `docs\`. Avant d'écrire, il vérifie que chaque module se lit en
+**Python 3.8** et porte `from __future__ import annotations`, qu'aucune
+fonction postérieure à 3.8 n'est appelée (`removeprefix`…), et que le paquet,
+extrait ailleurs, démarre bien en production. Un échec n'écrit rien.
+
 ### Architecture
 
 ```

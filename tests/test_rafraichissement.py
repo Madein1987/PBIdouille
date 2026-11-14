@@ -25,9 +25,10 @@ sys.path.insert(0, str(FIT))
 sys.path.insert(0, str(FIT / "bidouille"))
 sys.path.insert(0, str(FIT / "bidouille" / "moteurs"))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from _fixture import exiger_projet, PROJET_DEMO   # noqa: E402
+from _fixture import exiger_projet, reglages_jetables, PROJET_DEMO   # noqa: E402
 
 exiger_projet(FIT, PROJET_DEMO, "TD_Indicateurs.xlsx", "measures_config.json")
+reglages_jetables('rafraichissement')   # jamais les reglages reels
 
 PROJ = PROJET_DEMO
 _ok = True
