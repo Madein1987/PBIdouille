@@ -39,13 +39,17 @@ from pathlib import Path
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 FIT = Path(__file__).resolve().parent.parent
+# les projets Power BI vivent HORS de l'outil (cf. moteurs/chemins.py)
+PBI = FIT.parent / "PowerBI"
+if os.environ.get("PBIDOUILLE_PROJETS", "").strip():
+    PBI = Path(os.environ["PBIDOUILLE_PROJETS"].strip())
 sys.path.insert(0, str(FIT))
 sys.path.insert(0, str(FIT / "bidouille"))
 sys.path.insert(0, str(FIT / "bidouille" / "moteurs"))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from _fixture import exiger_projet, PROJET_DEMO   # noqa: E402
 
-exiger_projet(FIT, PROJET_DEMO, "measures_config.json")
+exiger_projet(PBI, PROJET_DEMO, "measures_config.json")
 
 import generate_measures as gm                    # noqa: E402
 
@@ -70,8 +74,8 @@ def projet(nom):
     rmtree(c)
     c.mkdir(parents=True)
     for s in (".Report", ".SemanticModel"):
-        shutil.copytree(FIT / (PROJ + s), c / (PROJ + s))
-    shutil.copy2(FIT / "measures_config.json", c / "measures_config.json")
+        shutil.copytree(PBI / (PROJ + s), c / (PROJ + s))
+    shutil.copy2(PBI / "measures_config.json", c / "measures_config.json")
     return c
 
 

@@ -31,13 +31,17 @@ from pathlib import Path
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 FIT = Path(__file__).resolve().parent.parent
+# les projets Power BI vivent HORS de l'outil (cf. moteurs/chemins.py)
+PBI = FIT.parent / "PowerBI"
+if os.environ.get("PBIDOUILLE_PROJETS", "").strip():
+    PBI = Path(os.environ["PBIDOUILLE_PROJETS"].strip())
 sys.path.insert(0, str(FIT))
 sys.path.insert(0, str(FIT / "bidouille"))
 sys.path.insert(0, str(FIT / "bidouille" / "moteurs"))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from _fixture import exiger_projet, reglages_jetables, PROJET_DEMO   # noqa: E402
 
-exiger_projet(FIT, PROJET_DEMO, "TD_Indicateurs.xlsx", "measures_config.json")
+exiger_projet(PBI, PROJET_DEMO, "TD_Indicateurs.xlsx", "measures_config.json")
 reglages_jetables('excel_partage')   # jamais les reglages reels
 
 import openpyxl                                   # noqa: E402
@@ -112,9 +116,9 @@ c = Path(tempfile.gettempdir()) / "pbidouille_partage"
 rmtree(c)
 c.mkdir(parents=True)
 for suffixe in (".Report", ".SemanticModel"):
-    shutil.copytree(FIT / (PROJ + suffixe), c / (PROJ + suffixe))
+    shutil.copytree(PBI / (PROJ + suffixe), c / (PROJ + suffixe))
 for f in ((PROJ + ".pbip"), "TD_Indicateurs.xlsx", "measures_config.json"):
-    shutil.copy2(FIT / f, c / f)
+    shutil.copy2(PBI / f, c / f)
 XLSX = c / "TD_Indicateurs.xlsx"
 
 
@@ -225,11 +229,37 @@ for _ in range(4):                       # rouvrir « Reglages globaux »
 for i in range(fen.tabs.count()):        # se promener dans les onglets
     fen.tabs.setCurrentIndex(i)
     qapp.processEvents()
+from tabs.tab_config import IDX_ARBRE                       # noqa: E402
 for i in range(tc.inner.count()):        # et dans les sous-onglets
-    tc.inner.setCurrentIndex(i)
-    qapp.processEvents()
+    if i != IDX_ARBRE:                   # (l'arbre a sa regle, ci-dessous)
+        tc.inner.setCurrentIndex(i)
+        qapp.processEvents()
 check("se promener dans l'outil ne le rouvre PAS",
       len(lectures) == apres_demarrage)
+
+print("   l'arbre des mesures : une lecture au plus, puis plus aucune")
+tc.inner.setCurrentIndex(0)
+# un attribut lu dans l'Excel : sans lui, le config de demo n'y lit rien
+tc._config["hardcodedAttributes"] = {"tokens": {"fond": "couleur_fill"}}
+avant_arbre = len(lectures)
+for _ in range(3):                       # l'ouvrir, en sortir, y revenir
+    tc.inner.setCurrentIndex(IDX_ARBRE)
+    qapp.processEvents()
+    tc.inner.setCurrentIndex(0)
+    qapp.processEvents()
+check("trois ouvertures de l'arbre : UNE lecture du classeur",
+      len(lectures) - avant_arbre == 1)
+check("… et l'arbre est bien rempli", tc.arbre_mesures.arbre.topLevelItemCount() > 0)
+import os as _os                                             # noqa: E402
+xlsx_copie = Path(tc._td_path_resolu())
+st_x = xlsx_copie.stat()
+_os.utime(xlsx_copie, ns=(st_x.st_atime_ns, st_x.st_mtime_ns + 2_000_000_000))
+avant_arbre = len(lectures)
+tc.inner.setCurrentIndex(IDX_ARBRE)
+qapp.processEvents()
+tc.inner.setCurrentIndex(0)
+check("un classeur enregistre depuis (date changee) est relu",
+      len(lectures) - avant_arbre >= 1)
 check("les combos sont tout de meme peuplees",
       tc.g_td_key.count() > 0 and "mesure" in
       [tc.g_td_key.itemText(i) for i in range(tc.g_td_key.count())])

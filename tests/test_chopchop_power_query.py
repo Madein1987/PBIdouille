@@ -28,12 +28,16 @@ import tempfile
 from pathlib import Path
 
 FIT = Path(__file__).resolve().parent.parent
+# les projets Power BI vivent HORS de l'outil (cf. moteurs/chemins.py)
+PBI = FIT.parent / "PowerBI"
+if os.environ.get("PBIDOUILLE_PROJETS", "").strip():
+    PBI = Path(os.environ["PBIDOUILLE_PROJETS"].strip())
 sys.path.insert(0, str(FIT / "bidouille"))
 sys.path.insert(0, str(FIT / "bidouille" / "moteurs"))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from _fixture import exiger_projet, PROJET_DEMO   # noqa: E402
 
-exiger_projet(FIT, PROJET_DEMO)
+exiger_projet(PBI, PROJET_DEMO)
 
 import unused_measures as um                         # noqa: E402
 
@@ -61,8 +65,8 @@ def projet_neuf():
     rmtree(c)
     c.mkdir(parents=True)
     for s in (".Report", ".SemanticModel"):
-        shutil.copytree(FIT / (PROJ + s), c / (PROJ + s))
-    shutil.copy2(FIT / (PROJ + ".pbip"), c / (PROJ + ".pbip"))
+        shutil.copytree(PBI / (PROJ + s), c / (PROJ + s))
+    shutil.copy2(PBI / (PROJ + ".pbip"), c / (PROJ + ".pbip"))
 
 
 def requete_non_chargee(m: str):

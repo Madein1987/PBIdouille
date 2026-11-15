@@ -18,6 +18,7 @@ if str(_FITBIT_DIR) not in sys.path:
 import propagate_cf as _pcf              # noqa: E402
 import color_matrix_by_kpi as _cmx       # noqa: E402
 import xlsx_lecture as _xl               # noqa: E402  (relâche le classeur)
+import generate_measures as _gm          # noqa: E402  (fp_table_names)
 
 DEFAULT_FIELD_PARAMETER = "P_Indicateurs_parCalcul"
 DEFAULT_ENTITY = "_mesures"
@@ -35,16 +36,17 @@ def read_config(project) -> dict:
 
 
 def candidate_parameters(project) -> list:
-    """Noms de tables paramètre où chercher la liste des KPI, dans l'ordre :
-    toutes celles du config (tableNames, puis baseKPI, puis byKpi), sinon le
-    nom par défaut."""
+    """Noms de tables paramètre où chercher la liste des KPI : celles du
+    config, dans son ordre (fieldParameter.tables, ou l'ancien format relu par
+    generate_measures.fp_table_names), sinon le nom par défaut."""
     fp = read_config(project).get("fieldParameter") or {}
-    names: list = []
-    for key in ("tableNames", "tableNamesKpiBase", "tableNamesByKpi"):
-        v = fp.get(key)
-        if isinstance(v, list):
-            names.extend(x for x in v if isinstance(x, str) and x and x not in names)
-    return names or [DEFAULT_FIELD_PARAMETER]
+    # sans liste explicite, l'ancien format retomberait sur « P_Indicateurs » :
+    # ici on garde le défaut historique de l'onglet Rapport
+    if not fp.get("tables") and not any(
+            fp.get(k) for k in ("tableNames", "tableName", "tableNamesKpiBase",
+                                "tableNamesByKpi")):
+        return [DEFAULT_FIELD_PARAMETER]
+    return _gm.fp_table_names(fp) or [DEFAULT_FIELD_PARAMETER]
 
 
 def _scan_field_parameter(project):
@@ -106,7 +108,7 @@ def kpis(project) -> list:
             + (f" (config : {cfg})" if cfg.exists()
                else f" (AUCUN config chargé — attendu : {cfg})")
             + ". Clique « Config… » pour choisir le measures_config.json de CE rapport, "
-              "ou vérifie fieldParameter.tableNames dedans."
+              "ou vérifie ses tables paramètre (⚙ Réglages)."
         )
     try:
         return _pcf.kpis_from_parameter(project.model_dir, name)

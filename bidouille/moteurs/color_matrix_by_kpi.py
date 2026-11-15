@@ -36,10 +36,11 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))   # moteurs\ voisins
 import xlsx_lecture as _xl                  # relâche toujours le classeur
+import chemins                              # où sont les projets
 
 # ---------------------------------------------------------------------------
-PBIP_DIR     = Path(r"C:\OneDrive - PJ\Data Cooler\_Power BI\Fitbit")
-PROJECT      = "Fitbit for random devs"
+PBIP_DIR     = chemins.PROJETS   # ligne de commande ; l'app passe le sien
+PROJECT      = chemins.PROJET_DEMO
 TD_XLSX      = PBIP_DIR / "TD_Indicateurs.xlsx"
 TD_SHEET     = None              # None = première feuille
 TD_KEY_COL   = "mesure"          # colonne = nom de la mesure de base (= KPI)

@@ -59,12 +59,15 @@ from core.theme import (ACCENT, BLUE, RED, YELLOW, TEXT_DIM, TEXT_MUTED,
                         checkable_list_stylesheet, police_code,
                         rangee_transparente)
 from tabs.tab_model import ModelTab
+from tabs.fp_tables import EditeurTablesParametre
+from tabs.dialog_guide import bouton_schema
+from tabs.arbre_mesures import ArbreMesures
 
 import generate_measures as gm   # scan_cibles : mêmes règles que la génération
 
 # index des sous-onglets de l'onglet « Mesures » (la génération n'a plus
 # d'onglet : son panneau est posé en tête du journal)
-IDX_VARIATIONS, IDX_RAW = 0, 1
+IDX_VARIATIONS, IDX_ARBRE, IDX_RAW = 0, 1, 2
 
 # largeur d'une TABULATION dans l'éditeur DAX, en caractères (cf. DaxEdit)
 # — au lieu des 80 px de Qt, une dizaine de caractères
@@ -445,6 +448,10 @@ class ConfigTab(QWidget):
         self._inner_prev = IDX_VARIATIONS
         self.inner = QTabWidget()
         self.inner.addTab(self._build_variations_tab(), "Variations")
+        # ce que la génération produira, en arbre (aperçu, rien n'est écrit)
+        self.arbre_mesures = ArbreMesures()
+        self._cache_excel: dict = {}     # l'arbre ne relit l'Excel que s'il change
+        self.inner.addTab(self.arbre_mesures, "Arbre des mesures")
         self.inner.addTab(self._build_raw_tab(), "JSON brut")
         # les réglages globaux ont LEUR fenêtre (⚙ Réglages, barre du haut) :
         # l'onglet Rapport s'en sert aussi (Excel des indicateurs, dossier
@@ -455,6 +462,8 @@ class ConfigTab(QWidget):
         # tant que l'onglet Mesures l'est (cf. showEvent / hideEvent).
         self.model_panel = ModelTab(self.journal)
         self.model_panel.sauver = self._save      # « Enregistrer puis générer »
+        # après une génération, « nouvelle / modifiée » ne sont plus vrais
+        self.model_panel.modele_genere.connect(self._arbre_si_visible)
         self.model_panel.hide()
         self.journal.poser_actions(self.model_panel)
         self.inner.currentChanged.connect(self._on_view_switch)
@@ -504,6 +513,7 @@ class ConfigTab(QWidget):
             "Ce qui est importé entre dans le config de CE rapport.")
         b_biblio.clicked.connect(self._ouvrir_biblio)
         biblio.addWidget(b_biblio)
+        biblio.addWidget(bouton_schema(self, "variations"))
         biblio.addWidget(self._help("Bibliothèque de variations", (
             "Un fichier GLOBAL, hors projet, où tu gardes les variations que\n"
             "tu réutilises d'un rapport à l'autre.\n\n"
@@ -782,7 +792,11 @@ class ConfigTab(QWidget):
         police_code(lbl_tokens, petit=True)   # ses colonnes s'alignent
         lbl_tokens.setStyleSheet(f"color:{TEXT_DIM};")
         lbl_tokens.setTextInteractionFlags(Qt.TextSelectableByMouse)
-        dv.addWidget(self._collapsible("Jetons disponibles", lbl_tokens))
+        rang_jetons = QHBoxLayout()
+        rang_jetons.addWidget(self._collapsible("Jetons disponibles", lbl_tokens))
+        rang_jetons.addWidget(bouton_schema(self, "jetons"))
+        rang_jetons.addStretch()
+        dv.addLayout(rang_jetons)
         dv.addWidget(lbl_tokens)
         droite.addWidget(gb_dax)
 
@@ -1128,109 +1142,76 @@ class ConfigTab(QWidget):
         dv.addWidget(self.lbl_delta_preview)
         outer.addWidget(gb_d)
 
-        # -- fieldParameter --
-        self.g_fp_enabled = check("fieldParameter activé — générer les tables paramètre de champ")
-        self.g_fp_tableNames = multiline("Tables « par calcul » (une par ligne) — copies identiques pour sélections indépendantes.")
-        self.g_fp_tableNamesByKpi = multiline("Tables « par KPI » — une par ligne. C'est le KPI qu'on y choisit ;\nl'affichage suit la case « libellé » ci-dessous.")
-        self.g_fp_byKpiUsesLabel = check(
-            "byKpiUsesLabel — tables « par KPI » : afficher le LIBELLÉ du KPI")
-        self.g_fp_byKpiUsesLabel.setToolTip(
-            "Coché : l'affichage vient de la colonne « lookup — labelColumn »\n"
-            "(LOOKUPVALUE sur la table de correspondance) — un libellé lisible.\n"
-            "Décoché : le nom brut de la mesure (la colonne clé).\n"
-            "Sans la table de correspondance dans le modèle, on retombe\n"
-            "automatiquement sur le nom brut (avertissement au journal).")
-        self.g_fp_tableNamesKpiBase = multiline("Tables « base = libellé KPI » (LOOKUPVALUE). Une par ligne.")
+        # -- paramètres de champ : une LISTE de tables, chacune ses réglages --
+        self.g_fp_enabled = check("Générer les tables paramètre de champ")
+        self.g_fp_tables = EditeurTablesParametre()
+        self.g_fp_tables.changed.connect(self._mark_dirty)
         self.g_fp_kpiColumn = line("Colonne KPI (défaut Indicateur).")
         self.g_fp_calcColumn = line("Colonne Calcul (défaut Calcul).")
         self.g_fp_branchColumn = line("Colonne Branche (défaut Branche).")
         self.g_fp_baseLabel = line("Libellé de la rangée « base » (ex. Réel).")
+        self.g_fp_baseLabel.textChanged.connect(
+            lambda t: self.g_fp_tables.set_base_label(t.strip()))
         self.g_fp_noBranchLabel = line("Valeur Branche hors branche (ex. Réel).")
-        self.g_fp_includeBase = check("includeBase — inclure la mesure de base comme rangée")
         self.g_lkp_table = line("Table du LOOKUPVALUE des libellés (ex. TD_Indicateurs).")
         self.g_lkp_key = line("Colonne clé = nom de la mesure (ex. mesure).")
         self.g_lkp_label = line("Colonne du libellé affiché (ex. libelle_indicateur).")
-        outer.addWidget(self._form_group("Paramètres de champ (fieldParameter)", [
+        gb_fp = self._form_group("Paramètres de champ", [
             (None, self.g_fp_enabled,
-             "Coché : les tables listées ici sont créées ou mises à jour à\n"
+             "Coché : les tables de la liste sont créées ou mises à jour à\n"
              "chaque génération.\n"
              "Décoché : le générateur n'y touche plus — elles restent dans le\n"
              "modèle telles quelles."),
-            ("tableNames :", self.g_fp_tableNames,
-             "Tables « PAR CALCUL » : on y choisit un CALCUL — Réel, PY, 7d avg,\n"
-             "YTD… Chaque rangée affiche le nom du calcul.\n\n"
-             "Usage : UN KPI × plusieurs calculs. Le KPI vient d'ailleurs (un\n"
-             "segment sur TD_KPI, relié à la colonne Indicateur) ; la table met\n"
-             "les calculs en colonnes d'une matrice, en séries d'un graphique.\n\n"
-             "Une table par ligne. Plusieurs noms = copies IDENTIQUES, pour deux\n"
-             "sélections indépendantes sur une même page :\n"
-             "   P_Indicateurs_parCalcul\n"
-             "   P_Indicateurs_parCalcul_2"),
-            ("tableNamesByKpi :", self.g_fp_tableNamesByKpi,
-             "Tables « PAR KPI » : on y choisit un KPI. Chaque rangée affiche\n"
-             "le KPI — son libellé, ou le nom de sa mesure (case suivante).\n\n"
-             "Usage : UN calcul × plusieurs KPI. Le calcul vient d'un segment\n"
-             "sur la colonne Calcul, en sélection simple : « PY » montre le PY\n"
-             "de chaque KPI.\n\n"
-             "Une table par ligne."),
-            (None, self.g_fp_byKpiUsesLabel,
-             "Dans les tables « par KPI », afficher le LIBELLÉ du KPI\n"
-             "(« Poids ») plutôt que le nom de sa mesure (« Weight »).\n\n"
-             "Le libellé vient de la table de correspondance (« lookup », en\n"
-             "bas de ce groupe). Si elle manque au modèle, on retombe sur le\n"
-             "nom de la mesure — et le journal le dit."),
-            ("tableNamesKpiBase :", self.g_fp_tableNamesKpiBase,
-             "Tables « MIXTES » : KPI et calculs dans une même liste. La rangée\n"
-             "de base affiche le libellé du KPI (« Poids »), les variations le\n"
-             "nom du calcul (« 7d avg »).\n\n"
-             "Usage : un segment UNIQUE où l'on choisit à la fois le KPI et ses\n"
-             "calculs. Le libellé vient de la table de correspondance\n"
-             "(« lookup »).\n\n"
-             "Une table par ligne."),
-            ("kpiColumn :", self.g_fp_kpiColumn,
+            (None, self.g_fp_tables, None),
+        ], resume="Les tables qu'un segment utilise pour choisir ce qu'un visuel "
+                  "affiche. Autant de tables qu'il en faut, chacune avec ses "
+                  "réglages : ce qu'affichent ses rangées, et ce qu'elle garde.")
+        communs = self._form_group("Réglages communs à toutes les tables", [
+            ("Colonne KPI :", self.g_fp_kpiColumn,
              "Nom de la colonne (cachée) qui porte le KPI dans chaque table\n"
              "paramètre : le nom de sa mesure de base. C'est la CLÉ — relie-la à\n"
              "TD_KPI pour filtrer par KPI :\n"
              "   TD_KPI[mesure] → P_Indicateurs_…[Indicateur]\n\n"
              "Défaut : Indicateur."),
-            ("calcColumn :", self.g_fp_calcColumn,
+            ("Colonne Calcul :", self.g_fp_calcColumn,
              "Nom de la colonne qui porte le CALCUL (Réel, PY, 7d avg…) —\n"
              "celle que filtre un segment « calcul ».\n\n"
              "Défaut : Calcul."),
-            ("branchColumn :", self.g_fp_branchColumn,
+            ("Colonne Branche :", self.g_fp_branchColumn,
              "Nom de la colonne qui porte la BRANCHE (Réel, YTD…) — pour\n"
              "filtrer une branche, ou mettre Réel et YTD côte à côte.\n\n"
              "Défaut : Branche."),
-            ("baseLabel :", self.g_fp_baseLabel,
+            ("Libellé de la base :", self.g_fp_baseLabel,
              "Libellé, dans la colonne Calcul, de la rangée de la mesure de\n"
-             "BASE — le KPI lui-même, sans variation (cf. includeBase).\n\n"
+             "BASE — le KPI lui-même, sans variation (case « Garder : la rangée de base »).\n\n"
              "Ex. Réel → le segment Calcul propose Réel, PY, 7d avg…\n"
              "Vide = Base."),
-            ("noBranchLabel :", self.g_fp_noBranchLabel,
+            ("Branche « hors branche » :", self.g_fp_noBranchLabel,
              "Valeur de la colonne Branche pour tout ce qui n'est PAS dans une\n"
              "branche.\n\n"
              "Ex. Réel → un segment Branche propose Réel et YTD.\n"
              "Vide = Base."),
-            (None, self.g_fp_includeBase,
-             "Coché : la mesure de base (le KPI tel quel) est une rangée de\n"
-             "chaque table, sous le libellé baseLabel.\n"
-             "Décoché : seules les variations y figurent."),
-            ("lookup — table :", self.g_lkp_table,
+            ("Libellés — table :", self.g_lkp_table,
              "Table de CORRESPONDANCE KPI → libellé, pour les tables « par KPI »\n"
              "(case libellé) et « mixtes ». Le libellé y est lu par\n"
              "LOOKUPVALUE, dans le DAX des tables paramètre.\n\n"
              "Ex. TD_Indicateurs"),
-            ("lookup — keyColumn :", self.g_lkp_key,
+            ("Libellés — colonne clé :", self.g_lkp_key,
              "Colonne de cette table qui contient le NOM DE LA MESURE du KPI —\n"
              "la clé de recherche.\n\n"
              "Ex. mesure"),
-            ("lookup — labelColumn :", self.g_lkp_label,
+            ("Libellés — colonne affichée :", self.g_lkp_label,
              "Colonne de cette table qui contient le LIBELLÉ affiché.\n\n"
              "Ex. libelle_indicateur → « Poids » pour Weight"),
-        ], resume="Les tables de paramètres de champ écrites à chaque "
-                  "génération : elles listent tes mesures pour qu'un segment "
-                  "choisisse ce qu'un visuel affiche. Trois familles, selon ce "
-                  "qu'on y choisit — un CALCUL, un KPI, ou les deux mélangés."))
+        ])
+        rang_communs = QHBoxLayout()
+        rang_communs.addWidget(
+            self._collapsible("Réglages communs (noms de colonnes, libellés)", communs))
+        rang_communs.addStretch()
+        rang_communs.addWidget(bouton_schema(self, "parametres"))
+        gb_fp.layout().addLayout(rang_communs, gb_fp.layout().rowCount(), 0, 1, 3)
+        gb_fp.layout().addWidget(communs, gb_fp.layout().rowCount(), 0, 1, 3)
+        outer.addWidget(gb_fp)
 
         # -- mesures cibles (dossier dédié : bases supplémentaires) --
         gb_c = QGroupBox("Mesures cibles (dossier dédié)")
@@ -1471,7 +1452,7 @@ class ConfigTab(QWidget):
                 QMessageBox.warning(self, "JSON invalide",
                                     f"{e}\n\nCorrige le JSON brut d'abord.")
                 return False
-        else:
+        elif self.inner.currentIndex() == IDX_VARIATIONS:
             self._commit_form()
         return True
 
@@ -1484,8 +1465,40 @@ class ConfigTab(QWidget):
             self.ed_raw.setPlainText(
                 json.dumps(self._config, indent=2, ensure_ascii=False))
             self.ed_raw.blockSignals(False)
+        elif self.inner.currentIndex() == IDX_ARBRE:
+            self._rafraichir_arbre()
         else:
             self._populate_list(select=self._current)
+
+    def _arbre_si_visible(self, *_):
+        if self.inner.currentIndex() == IDX_ARBRE:
+            self._rafraichir_arbre()
+
+    def _rafraichir_arbre(self) -> None:
+        """L'arbre = la génération en APERÇU sur le config EN MÉMOIRE (sur une
+        copie : le générateur ne doit rien y laisser). Rien n'est écrit."""
+        import copy
+        if not self.project or not self.project.model_dir.exists():
+            self.arbre_mesures.erreur("Aucun modèle : ouvre un projet .pbip.")
+            return
+        avis: list = []
+
+        def log(ligne=""):
+            ligne = str(ligne)
+            if ligne.lstrip().startswith("⚠"):
+                avis.append(ligne.strip())
+
+        try:
+            st = gm.generate(self.project.model_dir, copy.deepcopy(self._config),
+                             dry_run=True, remove_orphans=False, log=log,
+                             cache_excel=self._cache_excel)
+        except SystemExit as e:
+            self.arbre_mesures.erreur("Aperçu impossible : " + str(e))
+            return
+        except Exception as e:          # un config en cours d'écriture
+            self.arbre_mesures.erreur(f"Aperçu impossible : {type(e).__name__} : {e}")
+            return
+        self.arbre_mesures.afficher(st.get("arbre") or [], avis)
 
     def _load_global(self):
         """Peuple les widgets globaux depuis le config (à l'ouverture de l'onglet)."""
@@ -1511,16 +1524,15 @@ class ConfigTab(QWidget):
         fp = self._config.get("fieldParameter") or {}
         # bloc absent = désactivé (comme le csx : fpConfig null -> off)
         self.g_fp_enabled.setChecked(bool(fp.get("enabled", True)) if "fieldParameter" in self._config else False)
-        self.g_fp_tableNames.setPlainText(list_to_lines(fp.get("tableNames")))
-        self.g_fp_tableNamesByKpi.setPlainText(list_to_lines(fp.get("tableNamesByKpi")))
-        self.g_fp_byKpiUsesLabel.setChecked(bool(fp.get("byKpiUsesLabel", True)))
-        self.g_fp_tableNamesKpiBase.setPlainText(list_to_lines(fp.get("tableNamesKpiBase")))
+        self.g_fp_tables.set_vocab(**self._fp_vocabulaire())
+        self.g_fp_tables.load(gm.fp_table_specs(fp) if "fieldParameter" in self._config
+                              else [])
         self.g_fp_kpiColumn.setText(fp.get("kpiColumn", "") or "")
         self.g_fp_calcColumn.setText(fp.get("calcColumn", "") or "")
         self.g_fp_branchColumn.setText(fp.get("branchColumn", "") or "")
         self.g_fp_baseLabel.setText(fp.get("baseLabel", "") or "")
+        self.g_fp_tables.set_base_label(fp.get("baseLabel", "") or "")
         self.g_fp_noBranchLabel.setText(fp.get("noBranchLabel", "") or "")
-        self.g_fp_includeBase.setChecked(bool(fp.get("includeBase", True)))
         lkp = fp.get("kpiLabelLookup") or {}
         self.g_lkp_table.setText(lkp.get("table", "") or "")
         self.g_lkp_key.setText(lkp.get("keyColumn", "") or "")
@@ -1748,23 +1760,17 @@ class ConfigTab(QWidget):
                 else:
                     fp.pop(key, None)
 
-            def fset_list(key, text):
-                lst = lines_to_list(text)
-                if lst:
-                    fp[key] = lst
-                else:
-                    fp.pop(key, None)
-
-            fset_list("tableNames", self.g_fp_tableNames.toPlainText())
-            fset_list("tableNamesByKpi", self.g_fp_tableNamesByKpi.toPlainText())
-            fp["byKpiUsesLabel"] = self.g_fp_byKpiUsesLabel.isChecked()
-            fset_list("tableNamesKpiBase", self.g_fp_tableNamesKpiBase.toPlainText())
+            # la liste fait foi : l'ancien format (trois familles aux options
+            # communes) est relu par fp_table_specs puis remplacé
+            fp["tables"] = [gm.fp_spec_compacte(t) for t in self.g_fp_tables.specs()]
+            for vieux in ("tableName", "tableNames", "tableNamesByKpi",
+                          "tableNamesKpiBase", "includeBase", "byKpiUsesLabel"):
+                fp.pop(vieux, None)
             fset("kpiColumn", self.g_fp_kpiColumn.text().strip())
             fset("calcColumn", self.g_fp_calcColumn.text().strip())
             fset("branchColumn", self.g_fp_branchColumn.text().strip())
             fset("baseLabel", self.g_fp_baseLabel.text().strip())
             fset("noBranchLabel", self.g_fp_noBranchLabel.text().strip())
-            fp["includeBase"] = self.g_fp_includeBase.isChecked()
             lkp = {}
             for key, w in (("table", self.g_lkp_table), ("keyColumn", self.g_lkp_key),
                            ("labelColumn", self.g_lkp_label)):
@@ -1854,6 +1860,21 @@ class ConfigTab(QWidget):
             self._config["branches"] = new_branches
         else:
             self._config.pop("branches", None)
+
+    def _fp_vocabulaire(self) -> dict:
+        """Ce que les filtres d'une table paramètre proposent : les KPI du
+        modèle, les variations au paramètre (hors branches), les branches."""
+        branches = list((self._config.get("branches") or {}).keys())
+        variations = [vid for vid, tpl in (self._config.get("variations") or {}).items()
+                      if isinstance(tpl, dict) and tpl.get("inFieldParameter")
+                      and vid not in branches]
+        kpis: list = []
+        if self.project:
+            try:
+                _, kpis = gm.read_measures(self.project.model_dir, self._config)
+            except Exception:
+                kpis = []
+        return {"kpis": kpis, "variations": variations, "branches": branches}
 
     def _mark_dirty(self, *_):
         if self._loading:
@@ -2007,8 +2028,10 @@ class ConfigTab(QWidget):
         qu'on partage entre rapports, et il ne bouge pas quand on change de
         rapport. Une fois choisi, il est retrouvé à chaque lancement.
 
-        À défaut, celui posé à côté de app.py (le paquet en fournit un)."""
-        defaut = str(Path(__file__).resolve().parents[2] / gm.BIBLIO_DEFAUT)
+        À défaut, celui du dossier des projets Power BI (cf. chemins) : c'est
+        une donnée qu'on partage entre rapports, pas une pièce de l'outil."""
+        import chemins
+        defaut = str(chemins.PROJETS / gm.BIBLIO_DEFAUT)
         return str(lire_reglage(self.CLE_BIBLIO, defaut) or defaut)
 
     def _memoriser_biblio(self, chemin):
@@ -2580,6 +2603,8 @@ class ConfigTab(QWidget):
         # 2) charger l'onglet que l'on OUVRE (depuis le config en mémoire)
         if index == IDX_VARIATIONS:
             self._populate_list(select=self._current)
+        elif index == IDX_ARBRE:
+            self._rafraichir_arbre()
         elif index == IDX_RAW:
             self.ed_raw.blockSignals(True)
             self.ed_raw.setPlainText(json.dumps(self._config, indent=2, ensure_ascii=False))

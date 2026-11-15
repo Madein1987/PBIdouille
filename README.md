@@ -527,37 +527,78 @@ qu'aucun visuel ne s'en sert. (Le `.csx` de secours, lui, les génère encore.)
 
 ### fieldParameter
 
+Une **liste** de tables paramètre de champ, aussi longue qu'il faut — une
+seule, ou dix — et **chacune avec ses réglages**. C'est la page « Paramètres
+de champ » de **⚙ Réglages** : la liste à gauche (Ajouter, Dupliquer,
+Retirer), les réglages de la table choisie à droite.
+
 ```json
 "fieldParameter": {
-  "tableNames": ["P_Indicateurs_parCalcul", "P_Indicateurs_parCalcul_2"],
-  "tableNamesByKpi": ["P_Indicateurs_parKPI"],
-  "byKpiUsesLabel": true,
-  "tableNamesKpiBase": ["P_Indicateurs_base"],
+  "enabled": true,
+  "tables": [
+    { "name": "P_Indicateurs_parCalcul" },
+    { "name": "P_Indicateurs_parCalcul_2" },
+    { "name": "P_Indicateurs_mixte", "baseRow": "kpi" },
+    { "name": "P_Indicateurs_parKPI", "rows": "kpi" },
+    { "name": "P_YTD_seul", "excludeBranches": [""], "includeTargets": false }
+  ],
   "kpiLabelLookup": {
     "table": "TD_Indicateurs", "keyColumn": "mesure",
     "labelColumn": "libelle_indicateur"
   },
   "kpiColumn": "Indicateur", "calcColumn": "Calcul", "branchColumn": "Branche",
-  "noBranchLabel": "Réel", "includeBase": true, "baseLabel": "Réel"
+  "noBranchLabel": "Réel", "baseLabel": "Réel"
 }
 ```
 
-Trois familles de tables, qui diffèrent par ce qu'on y **affiche** :
+Une table n'écrit que ce qui **s'écarte des défauts** : `{ "name": … }` seul
+est la table « par calcul » complète.
 
-| Clé | Ce qu'on y choisit | Affichage |
+| Réglage | Défaut | Effet |
 |---|---|---|
-| `tableNames` | le **calcul** (Réel, PY, Cible, YTD…) | le libellé du calcul |
-| `tableNamesByKpi` | le **KPI** | son libellé (`byKpiUsesLabel`, défaut `true`) sinon le nom brut de la mesure |
-| `tableNamesKpiBase` | KPI **et** calculs mélangés | libellé du KPI sur la rangée de base, libellé du calcul sur les variations |
+| `rows` | `"calcul"` | ce qu'affiche chaque rangée : le **calcul** (Réel, 7d avg, PY…) ou le **KPI** (`"kpi"` — rangées alors triées par KPI) |
+| `baseRow` | `"calcul"` | (`rows` = calcul) la rangée de **base** affiche `baseLabel`, ou le KPI (`"kpi"`) : un segment unique où l'on choisit le KPI *et* ses calculs |
+| `kpiLabel` | `true` | là où le KPI s'affiche : son **libellé** (`LOOKUPVALUE` sur `kpiLabelLookup`) plutôt que le nom de sa mesure |
+| `includeBase` | `true` | garder la rangée de la mesure de base (hors branche — la base d'une branche, « YTD », est un calcul de la branche et reste) |
+| `includeTargets` | `true` | garder les rangées des cibles |
+| `excludeKpis` | `[]` | KPI écartés (noms de mesure) |
+| `excludeVariations` | `[]` | variations écartées — partout, branches comprises |
+| `excludeBranches` | `[]` | branches écartées ; `""` = les rangées **hors branche** |
 
-`byKpiUsesLabel` : dans une table « par KPI », c'est le KPI qu'on sélectionne —
-autant y lire `Poids` que `Weight`. Coché (défaut), l'affichage vient de
-`kpiLabelLookup.labelColumn` via un `LOOKUPVALUE` ; décoché, c'est la colonne
-clé (le nom de la mesure). Case dans **⚙ Réglages**.
+Les filtres sont des **exclusions** : un KPI, une variation ou une branche
+ajoutés plus tard entrent d'eux-mêmes dans chaque table, comme avant. À
+l'écran ce sont des cases cochées = gardé. Une exclusion qui ne correspond plus
+à rien (KPI renommé) est **conservée**, jamais perdue en silence.
+
+Toutes les tables gardent les **six mêmes colonnes** (affichage, Fields, Ordre,
+`kpiColumn`, `calcColumn`, `branchColumn`) et le **même rang de tri** pour une
+même mesure : une table filtrée est un sous-ensemble exact de la complète. Les
+réglages communs (noms de colonnes, libellés, table de correspondance) sont
+repliés sous « Réglages communs » dans la même page.
+
+Ce que le générateur fait d'une table :
+
+- **absente du modèle** → créée (penser à la relation `TD → Indicateur`, une
+  fois, dans Desktop) ;
+- **présente** → seule son expression `source =` est réécrite ;
+- **vidée par ses filtres** → laissée telle quelle, avec un avertissement
+  (`{}` n'est pas une table DAX valide) ;
+- **retirée de la liste, ou renommée** → l'ancienne table **reste** dans le
+  modèle avec les visuels qui s'en servent : la supprimer dans Desktop.
 
 Si la table de `kpiLabelLookup` est **absente du modèle**, le `LOOKUPVALUE`
 rendrait la table paramètre invalide : la génération retombe alors sur le nom
 brut et l'écrit au journal, plutôt que d'émettre un DAX cassé.
+
+#### L'ancien format se relit tel quel
+
+Les trois familles d'avant — `tableNames` (par calcul), `tableNamesKpiBase`
+(base = libellé du KPI) et `tableNamesByKpi` (par KPI, `byKpiUsesLabel`), avec
+un `includeBase` commun — sont relues comme les trois cas particuliers de la
+liste qu'elles étaient, et génèrent **exactement** les mêmes tables
+(`tests/test_parametres_champ.py`). Le premier enregistrement des Réglages
+réécrit le bloc sous la forme `tables` et retire les anciennes clés. Le `.csx`
+de secours, lui, ne lit que l'ancien format.
 
 Voir §5.
 
@@ -1773,8 +1814,9 @@ racine (voir la liste ci-dessus).
 - [ ] `measures_config.json` : `dateColumn`, `sourceTable`/`sourceFolder`,
       noms des tables paramètre, libellés (`Réel`...)
 - [ ] `.csx` : le chemin codé en dur (ou laisser la boîte de dialogue)
-- [ ] `propagate_cf.py` : `REPORT_DIR`, `TEMPLATE_KPI`, `FIELD_PARAMETER`
-- [ ] `unused_measures.py` : `PBIP_DIR`, `PROJECT`
+- [ ] lignes de commande des moteurs : le dossier des projets vient de
+      `chemins.py` (ou `PBIDOUILLE_PROJETS`) ; `propagate_cf.py` :
+      `TEMPLATE_KPI`, `FIELD_PARAMETER`
 - [ ] `scan_lineage.py` : `ROOT`
 - [ ] La table dimension (équivalent TD_KPI) avec une colonne = noms de mesures
 - [ ] Vérifier que Python 3.8+ est disponible (`py --version` ou `python --version`)
@@ -1806,17 +1848,83 @@ où l'image simple, agrandie, redevenait floue — donc ronde.
 ### Lancement
 
 ```
-py app.py
+py PBIdouille\app.py
 ```
 
 Dépendances : `qtpy` + PySide6 (maison) ou PyQt5 (travail). L'app rouvre le
-dernier projet utilisé (mémorisé), sinon « Fitbit for random devs.pbip ».
+dernier projet utilisé (mémorisé), sinon « Fitbit for random devs.pbip » dans
+le dossier des projets.
+
+### Mesures → Arbre des mesures
+
+Tout ce que « Générer » produira, rangé comme cela se dérive : chaque KPI
+(en gras, écrit à la main) porte ses variations et sa **mesure de branche**
+(en bleu, « Weight YTD »), qui porte à son tour ses variations en branche ; la
+**cible racine** (orange) est sous son KPI, avec ses propres variations.
+
+- **◆** : la mesure est dans au moins une table paramètre de champ — le
+  chiffre dit dans combien, l'infobulle lesquelles. Il suit les filtres de
+  chaque table (une variation écartée d'une table n'y est pas comptée).
+- **À la génération** : *nouvelle*, *modifiée* ou *inchangée* — exactement
+  ce que le générateur annoncerait.
+- Un filtre texte (nom, variation, branche), « ◆ seulement », tout
+  déplier / replier ; les avertissements du générateur s'affichent en bas.
+
+L'arbre **est** la génération en aperçu (`generate_measures.generate`, qui
+rend `stats["arbre"]`), lancée sur le config **en mémoire** : une variation
+ajoutée ou une table filtrée s'y voit avant d'enregistrer, et rien n'est
+écrit. Il se recalcule à chaque affichage et après chaque génération (≈ 20 ms).
+L'Excel des indicateurs n'est relu que s'il a changé depuis la dernière fois
+(date et taille du fichier : `generate(cache_excel=…)`), pour ne pas rouvrir
+le classeur à chaque coup d'œil.
+
+### Le guide, dans l'app
+
+Le bouton **Guide** de la barre du haut ouvre les schémas du guide
+PowerPoint : comment les variations se ramifient, les paramètres de champ, les
+jetons du DAX, la propagation du formatage. La fenêtre n'est pas modale (on la
+garde ouverte à côté) et il n'y en a qu'une. Des liens **▣ Schéma** l'ouvrent
+directement sur la bonne page, là où la notion sert : à côté de
+« Bibliothèque… » et de « Jetons disponibles » (Mesures), de « Grille des
+sources… » (Rapport) et dans ⚙ Réglages → Paramètres de champ.
+
+Les images (`bidouilleide\*.png`) **sont** les diapos du guide, exportées
+par `docs\sources\exporter_aide.ps1` (PowerPoint requis) — une seule source,
+le guide et l'app montrent le même dessin. Les diapos y sont retrouvées par
+leur titre. Le guide lui-même se reconstruit avec `docs\sourcesuild_deck.py`
+(captures : `docs\sources\capture.py`).
+
+### Disposition : l'outil d'un côté, les projets de l'autre
+
+```
+<dossier de travail>\
+  PBIdouille\        l'outil — ce dépôt git : app.py, bidouille\, tests\,
+                     docs\, dist\, README.md, empaqueter.py, .dev
+  PowerBI\           les projets : *.pbip (+ .Report / .SemanticModel),
+                     TD_Indicateurs.xlsx, measures_config.json,
+                     propagation.json, catalogue_variations.json,
+                     _backupsPBIdouille\
+  Autres outils\     scripts Tabular Editor (.csx), recettes SVG, scripts
+                     autonomes — hors de l'app
+  Archives\          anciens paquets
+```
+
+Les deux dossiers sont **frères** : l'outil ne pose plus rien à côté de lui,
+et un dossier de projets ne contient plus de code. `bidouille\moteurs\chemins.py`
+est le **seul** endroit qui connaît cette disposition — le projet ouvert par
+défaut, le point de départ des boîtes de dialogue, la bibliothèque de
+variations par défaut, les lignes de commande des moteurs et les tests passent
+tous par lui. Les projets ailleurs ? `PBIDOUILLE_PROJETS=<dossier>`.
+
+Les sauvegardes (`_backupsPBIdouille\`) vivent avec **leur projet** et leurs
+manifestes stockent des chemins relatifs au projet : déplacer un projet avec
+son dossier de sauvegardes les garde restaurables.
 
 **measures_config.json** : par défaut, celui à côté du `.pbip` ; sinon le
 bouton **« Config… »** de la barre permet d'en choisir un autre (mémorisé PAR
 projet — utile au travail si le config ne vit pas avec le rapport). La table
 paramètre des KPI est résolue dans l'ordre : celles du config
-(`fieldParameter.tableNames`, puis `KpiBase`, puis `ByKpi`) → la première qui
+(`fieldParameter.tables`, dans l'ordre de la liste) → la première qui
 existe dans le modèle → sinon **scan du modèle** (première table contenant
 `NAMEOF` + `parameterMetadata` avec des KPI extractibles). Sans config, seul
 l'onglet « Mesures » est inactif (bandeau explicatif) — l'onglet
@@ -2003,6 +2111,7 @@ extrait ailleurs, démarre bien en production. Un échec n'écrit rien.
 ```
 app.py              coquille : barre projet partagée + onglets + thème
 bidouille\
+  moteurs\chemins.py   l'outil ici, les projets dans ..\PowerBI (seul endroit qui le sait)
   core\
     project.py      .pbip -> .Report / .SemanticModel + projets récents
     model_reader.py KPI, branches, entité (délègue à propagate_cf / color_matrix / config)

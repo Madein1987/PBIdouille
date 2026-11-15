@@ -38,10 +38,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))   # moteurs\ voisins
 from unused_measures import MEMBER_RE, MEASURE_NAME_RE, _first_group
 import backup_restore as br                                # sauvegardes + manifeste
 import xlsx_lecture as _xl                                 # relâche le classeur
+import chemins                                             # où sont les projets
 
 # ---------------------------------------------------------------------------
-PBIP_DIR    = Path(r"C:\OneDrive - PJ\Data Cooler\_Power BI\Fitbit")
-PROJECT     = "Fitbit for random devs"
+# lancement en ligne de commande seulement ; l'app passe toujours le sien
+PBIP_DIR    = chemins.PROJETS
+PROJECT     = chemins.PROJET_DEMO
 CONFIG_PATH = PBIP_DIR / "measures_config.json"
 # ---------------------------------------------------------------------------
 
@@ -783,6 +785,120 @@ def param_table_file(table, expr, kpi_col, calc_col, branch_col, lineages) -> st
     )
 
 
+# ---- les tables paramètre : UNE liste, chacune avec ses réglages -------------
+# Autrefois trois familles figées (tableNames / tableNamesByKpi /
+# tableNamesKpiBase) partageant les mêmes options : une table « par calcul »
+# ne pouvait pas, par exemple, garder la base et une autre l'écarter. Chaque
+# table porte maintenant ses propres réglages ; les trois anciennes listes se
+# relisent comme les trois cas particuliers qu'elles étaient.
+#
+# Les filtres sont des EXCLUSIONS : un KPI, une variation ou une branche
+# ajoutés plus tard entrent d'eux-mêmes dans chaque table, comme avant. Dans
+# excludeBranches, "" désigne les rangées hors branche.
+FP_TABLE_DEFAUT = {
+    "rows": "calcul",          # chaque rangée affiche : "calcul" | "kpi"
+    "baseRow": "calcul",       # (rows = calcul) la base affiche : "calcul" | "kpi"
+    "kpiLabel": True,          # KPI affiché par son libellé (lookup), sinon le nom
+    "includeBase": True,       # la rangée de la mesure de base
+    "includeTargets": True,    # les rangées des cibles
+    "excludeKpis": [],
+    "excludeVariations": [],
+    "excludeBranches": [],
+}
+
+
+def _fp_liste(v) -> list:
+    if not isinstance(v, list):
+        return []
+    return [str(x) for x in v if isinstance(x, (str, int, float))]
+
+
+def fp_table_specs(fp) -> list:
+    """Réglages normalisés de chaque table paramètre, dans l'ordre du config :
+    [{name, rows, baseRow, kpiLabel, includeBase, includeTargets,
+    excludeKpis, excludeVariations, excludeBranches}].
+
+    `fieldParameter.tables` fait foi dès qu'il existe (une liste vide = aucune
+    table). Sinon on relit l'ancien format : tableNames (par calcul),
+    tableNamesKpiBase (base = libellé du KPI) et tableNamesByKpi (par KPI),
+    avec l'includeBase et le byKpiUsesLabel communs d'alors. Un nom en double
+    n'est gardé qu'une fois (le premier)."""
+    if not isinstance(fp, dict) or not fp:
+        return []
+    commun_base = bool(fp.get("includeBase", True))
+    commun_lbl = bool(fp.get("byKpiUsesLabel", True))
+    brut: list = []
+    if isinstance(fp.get("tables"), list):
+        for t in fp["tables"]:
+            brut.append({"name": t} if isinstance(t, str) else t)
+    else:
+        noms = fp.get("tableNames") or (
+            [fp["tableName"]] if fp.get("tableName") else ["P_Indicateurs"])
+        brut += [{"name": n} for n in _fp_liste(noms)]
+        # l'ancienne table « base = libellé » faisait TOUJOURS le LOOKUPVALUE
+        brut += [{"name": n, "baseRow": "kpi", "kpiLabel": True}
+                 for n in _fp_liste(fp.get("tableNamesKpiBase"))]
+        brut += [{"name": n, "rows": "kpi", "kpiLabel": commun_lbl}
+                 for n in _fp_liste(fp.get("tableNamesByKpi"))]
+    out, vus = [], set()
+    for t in brut:
+        if not isinstance(t, dict):
+            continue
+        nom = str(t.get("name") or "").strip()
+        if not nom or nom.lower() in vus:
+            continue
+        vus.add(nom.lower())
+        s = dict(FP_TABLE_DEFAUT, includeBase=commun_base, kpiLabel=commun_lbl)
+        s.update({k: t[k] for k in FP_TABLE_DEFAUT if k in t})
+        s["name"] = nom
+        s["rows"] = "kpi" if s["rows"] == "kpi" else "calcul"
+        s["baseRow"] = "kpi" if s["baseRow"] == "kpi" else "calcul"
+        for k in ("kpiLabel", "includeBase", "includeTargets"):
+            s[k] = bool(s[k])
+        for k in ("excludeKpis", "excludeVariations", "excludeBranches"):
+            s[k] = _fp_liste(s[k])
+        out.append(s)
+    return out
+
+
+def fp_table_names(fp) -> list:
+    """Noms des tables paramètre du config, dans l'ordre."""
+    return [s["name"] for s in fp_table_specs(fp)]
+
+
+def fp_spec_compacte(spec) -> dict:
+    """La forme à ÉCRIRE dans le config : le nom, plus ce qui s'écarte des
+    défauts — un config lisible, où chaque table dit en quoi elle diffère."""
+    out = {"name": spec["name"]}
+    for k, d in FP_TABLE_DEFAUT.items():
+        v = spec.get(k, d)
+        if v != d:
+            out[k] = v
+    return out
+
+
+def fp_rows_pour(spec, rows) -> list:
+    """Les rangées que garde UNE table. `rows` : la liste complète, chaque
+    rangée [affichage, réf, rang, KPI, calcul, branche, variation | None,
+    cible?, base?, clé de branche ("" = hors branche)]."""
+    ex_k = set(spec["excludeKpis"])
+    ex_v = set(spec["excludeVariations"])
+    ex_b = set(spec["excludeBranches"])
+    garde = []
+    for r in rows:
+        kpi, vid, cible, base, bcle = r[3], r[6], r[7], r[8], r[9]
+        if kpi in ex_k or bcle in ex_b:
+            continue
+        if base and not spec["includeBase"]:
+            continue
+        if cible and not spec["includeTargets"]:
+            continue
+        if vid is not None and vid in ex_v:
+            continue
+        garde.append(r)
+    return garde
+
+
 # ======================= le générateur =======================================
 
 def _fmt_attr(v) -> str:
@@ -921,6 +1037,29 @@ def indicateurs_xlsx(config, project_dir=None) -> dict:
     return spec
 
 
+# Cache des lignes d'Excel, PRÊTÉ par l'appelant le temps d'un generate()
+# (cf. son argument cache_excel) — l'arbre des mesures se recalcule à chaque
+# affichage et ne doit pas rouvrir le classeur à chaque fois. Clé : chemin,
+# date et taille du fichier ; un os.stat ne tient pas le classeur, et un
+# fichier enregistré depuis Excel change de clé, donc est relu. Sans cache
+# prêté (la génération, les lignes de commande), chaque lecture va au disque.
+_CACHE_LIGNES = None
+
+
+def _lignes_excel(xlsx: Path) -> list:
+    cache = _CACHE_LIGNES
+    if cache is None:
+        return _xl.lire_lignes(xlsx)      # referme le classeur quoi qu'il arrive
+    st = xlsx.stat()
+    chemin = str(xlsx.resolve())
+    cle = (chemin, st.st_mtime_ns, st.st_size)
+    if cle not in cache:
+        for k in [k for k in cache if k[0] == chemin]:
+            del cache[k]                  # l'ancienne version de ce fichier
+        cache[cle] = _xl.lire_lignes(xlsx)
+    return cache[cle]
+
+
 def read_attribute_map(xlsx, key_col, attr_col) -> dict:
     """{ valeur_clé : valeur_attribut_formatée } depuis la 1re feuille de l'Excel
     (openpyxl puis pandas) — pour figer un attribut du KPI dans le DAX."""
@@ -930,7 +1069,7 @@ def read_attribute_map(xlsx, key_col, attr_col) -> dict:
     kl, al = key_col.lower(), attr_col.lower()
     out = {}
     try:
-        rows = _xl.lire_lignes(xlsx)      # referme le classeur quoi qu'il arrive
+        rows = _lignes_excel(xlsx)
     except ImportError:
         rows = None
     if rows is not None:
@@ -1103,7 +1242,23 @@ def scan_cibles(model_dir, config) -> list:
     return out
 
 
-def generate(model_dir, config, *, dry_run=None, remove_orphans=None, log=print) -> dict:
+def generate(model_dir, config, *, dry_run=None, remove_orphans=None, log=print,
+             cache_excel=None) -> dict:
+    """Génère les mesures et les tables paramètre (cf. _generate).
+
+    `cache_excel` : un dict que l'appelant garde d'un appel à l'autre pour ne
+    relire l'Excel des indicateurs que s'il a changé (cf. _lignes_excel)."""
+    global _CACHE_LIGNES
+    avant = _CACHE_LIGNES
+    _CACHE_LIGNES = cache_excel
+    try:
+        return _generate(model_dir, config, dry_run=dry_run,
+                         remove_orphans=remove_orphans, log=log)
+    finally:
+        _CACHE_LIGNES = avant
+
+
+def _generate(model_dir, config, *, dry_run=None, remove_orphans=None, log=print) -> dict:
     """Génère mesures + tables paramètre dans les TMDL de `model_dir`
     d'après `config` (dict du measures_config.json). Retourne les stats.
     dry_run / remove_orphans None = valeurs du config (settings)."""
@@ -1132,29 +1287,25 @@ def generate(model_dir, config, *, dry_run=None, remove_orphans=None, log=print)
 
     fp = config.get("fieldParameter") or {}
     fp_enabled = fp.get("enabled", True) if fp else False
-    fp_tables = fp.get("tableNames") or ([fp["tableName"]] if fp.get("tableName") else ["P_Indicateurs"])
-    fp_tables_kpi  = fp.get("tableNamesByKpi") or []
-    fp_tables_base = fp.get("tableNamesKpiBase") or []
+    # chaque table paramètre avec SES réglages (cf. fp_table_specs)
+    fp_specs = fp_table_specs(fp) if fp_enabled else []
     lkp = fp.get("kpiLabelLookup") or {}
     lkp_table = lkp.get("table") or "TD_Indicateurs"
     lkp_key   = lkp.get("keyColumn") or "mesure"
     lkp_lbl   = lkp.get("labelColumn") or "libelle_indicateur"
     lkp_key_ref = "'" + lkp_table.replace("'", "''") + "'" + bracket(lkp_key)
     lkp_lbl_ref = "'" + lkp_table.replace("'", "''") + "'" + bracket(lkp_lbl)
-    # Tables « par KPI » : afficher le LIBELLÉ du KPI (colonne labelColumn) au
-    # lieu du nom de la mesure. C'est un choix d'affichage — d'où l'option.
-    fp_kpi_label = fp.get("byKpiUsesLabel", True)
     # Garde-fou : sans la table de correspondance dans le modèle, le
     # LOOKUPVALUE rendrait la table paramètre invalide. On retombe alors sur le
     # nom brut plutôt que de casser la génération.
     lkp_ok = (tables_dir / (lkp_table + ".tmdl")).exists()
-    if not lkp_ok and (fp_kpi_label and fp_tables_kpi or fp_tables_base):
+    if not lkp_ok and any(s_["kpiLabel"] and "kpi" in (s_["rows"], s_["baseRow"])
+                          for s_ in fp_specs):
         log(f"⚠ table de correspondance « {lkp_table} » absente du modèle — "
             f"les tables paramètre afficheront le nom brut du KPI. "
             f"Corrige fieldParameter.kpiLabelLookup.table.")
     fp_kpi_col    = fp.get("kpiColumn") or "Indicateur"
     fp_calc_col   = fp.get("calcColumn") or "Calcul"
-    fp_incl_base  = fp.get("includeBase", True)
     fp_base_lbl   = fp.get("baseLabel") or "Base"
     fp_branch_col = fp.get("branchColumn") or "Branche"
     fp_nobranch   = fp.get("noBranchLabel") or "Base"
@@ -1198,7 +1349,7 @@ def generate(model_dir, config, *, dry_run=None, remove_orphans=None, log=print)
 
     # index de tri par variation (constant par libellé — exigence SortByColumn)
     var_order: dict = {}
-    idx = 1 if fp_incl_base else 0
+    idx = 1                  # 0 : la base (le rang final est recalculé plus bas)
     for vid, tpl in variations.items():
         if isinstance(tpl, dict) and tpl.get("inFieldParameter"):
             var_order[vid] = idx
@@ -1241,7 +1392,16 @@ def generate(model_dir, config, *, dry_run=None, remove_orphans=None, log=print)
     created, updated, unchanged, skipped, removed = [], [], [], [], []
     planned: dict = {}       # tag -> spec {name, dax, fmt, folder, desc, data_cat}
     planned_names: dict = {} # nom de mesure -> tag propriétaire (dédup par NOM)
-    fp_rows: list = []       # [affichage, réf DAX, tri, KPI, calcul, branche]
+    # [affichage, réf DAX, tri, KPI, calcul, branche, variation | None, cible?,
+    #  base?, clé de branche ("" = hors branche)] — TOUTES les rangées ; chaque
+    # table garde les siennes (fp_rows_pour)
+    fp_rows: list = []
+    # l'ARBRE de ce qui est généré (vue « Arbre des mesures » de l'onglet
+    # Mesures) : nom -> {name, parent, type, kpi, variation, branche, cible}.
+    # Le parent est la mesure DONT celle-ci est dérivée : la base pour une
+    # variation ou une mesure de branche, la mesure de branche pour une
+    # variation en branche, le KPI pour une cible racine.
+    arbre: dict = {}
     # (KPI, branche) -> nom RÉEL de la mesure du KPI dans cette branche, tel que
     # la 1re passe l'a générée. C'est ce que {kpiRef} rend en branche : on ne
     # suppose PAS « <KPI> <branche> », car le namePattern d'une branche est
@@ -1350,7 +1510,8 @@ def generate(model_dir, config, *, dry_run=None, remove_orphans=None, log=print)
         # toutes les branches (voir le tri « rang KPI-puis-calcul » plus bas).
         if tpl.get("inFieldParameter") and fp_label is not None:
             fp_rows.append([fp_label, bracket(name), (fp_group, var_order[vid]),
-                            kpi_lbl, fp_label, fp_branch])
+                            kpi_lbl, fp_label, fp_branch, vid, fp_group == 1,
+                            False, "" if fp_branch == fp_nobranch else fp_branch])
 
         prev = existing.get(name)
         if prev is not None and not prev["annotation"]:
@@ -1381,6 +1542,10 @@ def generate(model_dir, config, *, dry_run=None, remove_orphans=None, log=print)
             "desc": desc, "data_cat": tpl.get("dataCategory") or None,
         }
         planned_names[name] = tag
+        arbre[name] = {"name": name, "parent": base_name,
+                       "type": "branche" if branch_id == vid else "variation",
+                       "kpi": kpi_lbl, "variation": vid,
+                       "branche": branch_id, "cible": fp_group == 1}
         return (name, fmt, folder)
 
     # -- 1re passe : bases × variations (KPI, puis cibles) --
@@ -1414,10 +1579,16 @@ def generate(model_dir, config, *, dry_run=None, remove_orphans=None, log=print)
         # du KPI = 2 -> la cible se range en 2e, avant les variations, partout.
         is_cible = bool(calc_prefix)
         base_group = 1 if is_cible else 0
+        arbre[base_name] = {"name": base_name,
+                            "parent": kpi_lbl if is_cible else None,
+                            "type": "cible" if is_cible else "base",
+                            "kpi": kpi_lbl, "variation": None, "branche": None,
+                            "cible": is_cible}
         var_group  = 1 if is_cible else 2
-        if fp_incl_base:
-            fp_rows.append([base_calcul, bracket(base_name), (base_group, 0),
-                            kpi_lbl, base_calcul, fp_nobranch])
+        # toujours produite : c'est chaque table qui la garde ou non
+        fp_rows.append([base_calcul, bracket(base_name), (base_group, 0),
+                        kpi_lbl, base_calcul, fp_nobranch, None, is_cible,
+                        True, ""])
         for vid in allowed_vids:
             tpl = variations.get(vid)
             if not isinstance(tpl, dict):
@@ -1441,7 +1612,8 @@ def generate(model_dir, config, *, dry_run=None, remove_orphans=None, log=print)
                     kpi_branch_ref[(kpi_lbl, vid)] = result[0]
                 if tpl.get("inFieldParameter"):
                     fp_rows.append([base_calcul, bracket(result[0]), (base_group, 0),
-                                    kpi_lbl, base_calcul, vid])
+                                    kpi_lbl, base_calcul, vid, None, is_cible,
+                                    False, vid])
                 branch_bases.append((result[0], result[1], result[2],
                                      kpi_lbl, vid, False, calc_prefix,
                                      allowed_vids, base_name))
@@ -1635,11 +1807,10 @@ def generate(model_dir, config, *, dry_run=None, remove_orphans=None, log=print)
     fp_statuses: list = []
     fp_writes: list = []      # (path, contenu)
     model_refs_needed: list = []
-    if fp_enabled and fp_rows:
+    if fp_specs and fp_rows:
         # ordre des KPI : la colonne d'ordre de TD_Indicateurs si elle est
         # configurée, sinon le tri alphabétique de Power BI
         kpi_order = kpi_ranks(bases, read_kpi_order(td, log), log)
-        fp_rows_kpi = [[r[3], r[1], kpi_order[r[3]], r[3], r[4], r[5]] for r in fp_rows]
 
         # rang unique KPI-puis-(groupe, sous-rang) : chaque rangée porte en
         # position 2 une clé (groupe, sous-rang) — base=0, cible=1, variations
@@ -1652,17 +1823,26 @@ def generate(model_dir, config, *, dry_run=None, remove_orphans=None, log=print)
         for rank, i in enumerate(order_idx):
             fp_rows[i][2] = rank
 
-        def build_expr(rows, kpi_base_display, kpi_label=False):
-            """`kpi_base_display` : la rangée de BASE porte le libellé du KPI
-            (table « base = libellé »). `kpi_label` : TOUTES les rangées le
-            portent (table « par KPI » — c'est le KPI qu'on y choisit, donc on
-            affiche son libellé lisible, pas le nom de la mesure)."""
+        def build_expr(spec, rows):
+            """Le DAX de la table `spec`. rows = « kpi » : chaque rangée affiche
+            le KPI (c'est lui qu'on y choisit) et se range à son rang de KPI.
+            baseRow = « kpi » : seule la rangée de BASE l'affiche, les
+            variations gardant le nom du calcul. Le KPI s'affiche par son
+            libellé (LOOKUPVALUE) si kpiLabel et que la table de
+            correspondance existe, sinon par le nom de sa mesure."""
+            par_kpi = spec["rows"] == "kpi"
             lines = []
-            for disp0, ref, order, kpi, calc, branch in rows:
-                if (kpi_label or (kpi_base_display and calc == fp_base_lbl)) \
-                        and lkp_ok:
+            for r in rows:
+                disp0, ref, order, kpi, calc, branch = r[:6]
+                if par_kpi:
+                    order = kpi_order[kpi]
+                montre_kpi = par_kpi or (spec["baseRow"] == "kpi"
+                                         and calc == fp_base_lbl)
+                if montre_kpi and spec["kpiLabel"] and lkp_ok:
                     disp = ("LOOKUPVALUE(" + lkp_lbl_ref + ", " + lkp_key_ref
                             + ', "' + dax_str(kpi) + '")')
+                elif montre_kpi:
+                    disp = '"' + dax_str(kpi) + '"'
                 else:
                     disp = '"' + dax_str(disp0) + '"'
                 lines.append('    (' + disp + ", NAMEOF(" + ref + "), " + str(order)
@@ -1670,12 +1850,25 @@ def generate(model_dir, config, *, dry_run=None, remove_orphans=None, log=print)
                              + '", "' + dax_str(branch) + '")')
             return "{\n" + ",\n".join(lines) + "\n}"
 
-        targets = ([(n, build_expr(fp_rows, False)) for n in fp_tables]
-                   + [(n, build_expr(fp_rows_kpi, False, kpi_label=fp_kpi_label))
-                      for n in fp_tables_kpi]
-                   + [(n, build_expr(fp_rows, True)) for n in fp_tables_base])
+        targets = []
+        for spec in fp_specs:
+            rows = fp_rows_pour(spec, fp_rows)
+            if not rows:
+                # {} n'est pas une table DAX valide : on n'y touche pas
+                fp_statuses.append(f"⚠ {spec['name']} : aucune rangée après ses "
+                                   f"filtres — non modifiée")
+                continue
+            targets.append((spec["name"], build_expr(spec, rows), len(rows)))
 
-        for tname, expr in targets:
+        # tables où se trouve chaque mesure (le marqueur de l'arbre)
+        par_ref = {bracket(n): n for n in arbre}
+        for spec in fp_specs:
+            for r in fp_rows_pour(spec, fp_rows):
+                n = par_ref.get(r[1])
+                if n is not None:
+                    arbre[n].setdefault("tables", []).append(spec["name"])
+
+        for tname, expr, n_rows in targets:
             tpath = tables_dir / (tname + ".tmdl")
             indented = "\n".join("\t\t\t\t" + l for l in expr.split("\n"))
             if tpath.exists():
@@ -1688,15 +1881,15 @@ def generate(model_dir, config, *, dry_run=None, remove_orphans=None, log=print)
                 new_ttext = re.sub(r"\n{3,}", "\n\n", new_ttext)
                 if new_ttext != ttext:
                     fp_writes.append((tpath, new_ttext))
-                    fp_statuses.append(f"{tname} — expression mise à jour ({len(fp_rows)} rangées)")
+                    fp_statuses.append(f"{tname} — expression mise à jour ({n_rows} rangées)")
                 else:
-                    fp_statuses.append(f"{tname} — inchangée ({len(fp_rows)} rangées)")
+                    fp_statuses.append(f"{tname} — inchangée ({n_rows} rangées)")
             else:
                 content = param_table_file(tname, expr, fp_kpi_col, fp_calc_col,
                                            fp_branch_col, {})
                 fp_writes.append((tpath, content))
                 model_refs_needed.append(tname)
-                fp_statuses.append(f"{tname} — CRÉÉE ({len(fp_rows)} rangées) — penser à la "
+                fp_statuses.append(f"{tname} — CRÉÉE ({n_rows} rangées) — penser à la "
                                    f"relation TD → {fp_kpi_col} à créer une fois dans Desktop)")
 
     # ---- résumé / écriture -----------------------------------------------------
@@ -1713,9 +1906,19 @@ def generate(model_dir, config, *, dry_run=None, remove_orphans=None, log=print)
     for n in removed:
         log("  - " + n)
 
+    etat = {}
+    for lst, mot in ((created, "nouvelle"), (updated, "modifiée"),
+                     (unchanged, "inchangée")):
+        for n in lst:
+            etat[n] = mot
+    for n, noeud in arbre.items():
+        noeud.setdefault("tables", [])
+        noeud["etat"] = etat.get(n, "à la main" if noeud["type"] in ("base", "cible")
+                                 else "")
     stats = {"bases": bases, "created": created, "updated": updated,
              "unchanged": unchanged, "skipped": skipped, "removed": removed,
-             "fp_statuses": fp_statuses, "dry_run": bool(dry_run)}
+             "fp_statuses": fp_statuses, "dry_run": bool(dry_run),
+             "arbre": list(arbre.values())}
 
     if dry_run:
         log("*** DRY_RUN : aucun fichier modifié ***")

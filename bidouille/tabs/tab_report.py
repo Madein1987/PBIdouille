@@ -31,6 +31,7 @@ from qtpy.QtWidgets import (
 from core import model_reader
 from core.journal import Journal
 from core.runner import ToolRunner
+from tabs.dialog_guide import bouton_schema
 from core.theme import (TEXT, TEXT_DIM, TEXT_MUTED, YELLOW,
                         checkable_list_stylesheet)
 
@@ -96,6 +97,7 @@ class ReportTab(QWidget):
             "KPI, un gabarit par variation, et des règles case par case.")
         self.btn_sources.clicked.connect(self._open_sources_dialog)
         ligne.addWidget(self.btn_sources)
+        ligne.addWidget(bouton_schema(self, "propagation"))
         ligne.addStretch()
         grid.addLayout(ligne, 1, 1)
 

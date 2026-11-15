@@ -1,6 +1,6 @@
-# Ce dépôt ne contient que l'OUTIL. Le dossier de travail, lui, héberge aussi
-# des projets Power BI, leurs sauvegardes et les livrables — rien de tout ça
-# n'a sa place ici.
+# Ce dépôt ne contient que l'OUTIL (le dossier PBIdouille\). Les projets Power
+# BI vivent dans le dossier frère PowerBI\ (cf. bidouille/moteurs/chemins.py) ;
+# les règles ci-dessous restent comme garde-fou si l'un d'eux atterrit ici.
 
 # --- projets Power BI (données) ---
 *.pbip

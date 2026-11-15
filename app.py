@@ -18,12 +18,14 @@ from pathlib import Path
 _RACINE = Path(__file__).resolve().parent
 _APP_DIR = _RACINE / "bidouille"
 _MOTEURS = _APP_DIR / "moteurs"
-# point de départ des boîtes de dialogue, et endroit où l'on cherche un projet
-# à défaut d'en avoir mémorisé un
-_DOSSIER_PARENT = _RACINE
 for _p in (str(_APP_DIR), str(_MOTEURS)):
     if _p not in sys.path:
         sys.path.insert(0, _p)
+import chemins  # noqa: E402
+# point de départ des boîtes de dialogue, et endroit où l'on cherche un projet
+# à défaut d'en avoir mémorisé un : le dossier des projets Power BI, FRÈRE
+# de celui de l'outil (cf. moteurs/chemins.py) — plus jamais l'outil lui-même
+_DOSSIER_PARENT = chemins.PROJETS
 
 from qtpy.QtCore import Qt  # noqa: E402
 from qtpy.QtWidgets import (  # noqa: E402
@@ -48,13 +50,14 @@ from core import edition  # noqa: E402  (production / dev)
 
 import backup_restore as br  # noqa: E402  (rangement des sauvegardes)
 from tabs.tab_report import ReportTab  # noqa: E402
+from tabs.dialog_guide import ouvrir_guide  # noqa: E402
 from tabs.tab_wireframe import WireframeTab  # noqa: E402
 from tabs.tab_config import ConfigTab  # noqa: E402
 from tabs.tab_chopchop import ChopChopTab  # noqa: E402
 
 APP_NAME = "PBIdouille"          # PBI + bidouille ; réglages QSettings gardés sous « BIdouille »
 APP_EMOJI = "🔧"
-DEFAULT_PBIP = "Fitbit for random devs.pbip"
+DEFAULT_PBIP = chemins.PROJET_DEMO + ".pbip"
 # colonne du journal : largeur de départ et plancher (en dessous, une ligne de
 # log revient à la ligne tous les trois mots et ne se lit plus)
 JOURNAL_LARGEUR, JOURNAL_MINI = 440, 240
@@ -128,6 +131,14 @@ class BidouilleWindow(QMainWindow):
             "Excel des indicateurs, génération, paramètres de champ,\n"
             "attributs, branches… — ce qui sert à plusieurs onglets.")
         btn_reglages.clicked.connect(self._ouvrir_reglages)
+        # les schémas du guide, dans l'app (fenêtre non modale : on la
+        # garde ouverte à côté) — aussi ouverts par les liens « ▣ Schéma »
+        btn_guide = QPushButton("Guide")
+        btn_guide.setToolTip(
+            "Les schémas du guide : comment les variations se ramifient,\n"
+            "les paramètres de champ, les jetons du DAX, la propagation\n"
+            "du formatage.")
+        btn_guide.clicked.connect(lambda: ouvrir_guide(self))
         btn_reload_all = QPushButton("↻ Tout recharger")
         btn_reload_all.setToolTip(
             "Relit TOUTES les sources sans fermer l'app :\n"
@@ -151,6 +162,7 @@ class BidouilleWindow(QMainWindow):
         bar.addWidget(self.cmb_recents)
         bar.addWidget(btn_change)
         bar.addWidget(btn_reglages)
+        bar.addWidget(btn_guide)
         bar.addWidget(btn_reload_all)
         bar.addWidget(self.btn_journal)
         v.addLayout(bar)

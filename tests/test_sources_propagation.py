@@ -59,12 +59,16 @@ import tempfile
 from pathlib import Path
 
 FIT = Path(__file__).resolve().parent.parent
+# les projets Power BI vivent HORS de l'outil (cf. moteurs/chemins.py)
+PBI = FIT.parent / "PowerBI"
+if os.environ.get("PBIDOUILLE_PROJETS", "").strip():
+    PBI = Path(os.environ["PBIDOUILLE_PROJETS"].strip())
 sys.path.insert(0, str(FIT / "bidouille"))
 sys.path.insert(0, str(FIT / "bidouille" / "moteurs"))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from _fixture import exiger_projet, PROJET_DEMO, ajouter_cibles   # noqa: E402
 
-exiger_projet(FIT, PROJET_DEMO, "measures_config.json")
+exiger_projet(PBI, PROJET_DEMO, "measures_config.json")
 
 import backup_restore as br                       # noqa: E402
 import propagate_cf as pc                         # noqa: E402
@@ -72,7 +76,7 @@ import propagate_cf as pc                         # noqa: E402
 PROJ = PROJET_DEMO
 ENT = "_mesures"
 FP = "P_Indicateurs_parCalcul"
-CFG = json.loads((FIT / "measures_config.json").read_text(encoding="utf-8"))
+CFG = json.loads((PBI / "measures_config.json").read_text(encoding="utf-8"))
 VARIATIONS = pc.variations_du_config(CFG)
 _ok = True
 
@@ -93,7 +97,7 @@ def copie(nom):
     rmtree(c)
     c.mkdir(parents=True)
     for s in (".Report", ".SemanticModel"):
-        shutil.copytree(FIT / (PROJ + s), c / (PROJ + s))
+        shutil.copytree(PBI / (PROJ + s), c / (PROJ + s))
     return c
 
 
@@ -162,7 +166,7 @@ def propager(R, regles=None, log=None, **kw):
                                log=log or (lambda *_: None), **kw)
 
 
-M = FIT / (PROJ + ".SemanticModel")
+M = PBI / (PROJ + ".SemanticModel")
 KPIS = pc.kpis_from_parameter(M, FP)
 print("   KPI du modele :", KPIS)
 SLEEP, BASE, FAT, TOTAL, WEIGHT = KPIS      # ordre du parametre de champ
@@ -207,7 +211,7 @@ check("le KPI le plus LONG gagne (« Total Steps Goal » n'est pas du Total "
                           ["Total Steps Goal", "Total Steps"]) == "Total Steps Goal")
 check("le Reel porte le nom que lui donne le parametre de champ",
       pc.libelle_reel(rev) == "Réel")
-colonnes = pc.analyser(FIT / (PROJ + ".Report"), field_parameter=FP,
+colonnes = pc.analyser(PBI / (PROJ + ".Report"), field_parameter=FP,
                        branches=["YTD"], variations=VARIATIONS)["variations"]
 print("   colonnes de la grille :", colonnes)
 check("la grille montre TOUTES les variations du config, dans le parametre "

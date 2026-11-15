@@ -31,13 +31,17 @@ from pathlib import Path
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 FIT = Path(__file__).resolve().parent.parent
+# les projets Power BI vivent HORS de l'outil (cf. moteurs/chemins.py)
+PBI = FIT.parent / "PowerBI"
+if os.environ.get("PBIDOUILLE_PROJETS", "").strip():
+    PBI = Path(os.environ["PBIDOUILLE_PROJETS"].strip())
 sys.path.insert(0, str(FIT))
 sys.path.insert(0, str(FIT / "bidouille"))
 sys.path.insert(0, str(FIT / "bidouille" / "moteurs"))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from _fixture import exiger_projet, PROJET_DEMO   # noqa: E402
 
-exiger_projet(FIT, PROJET_DEMO, "measures_config.json")
+exiger_projet(PBI, PROJET_DEMO, "measures_config.json")
 
 from qtpy.QtCore import QSettings                 # noqa: E402
 from core import project as prj                   # noqa: E402
@@ -96,9 +100,9 @@ rmtree(c)
 (c / "projetB").mkdir(parents=True)
 for dossier in ("projetA", "projetB"):
     for suffixe in (".Report", ".SemanticModel"):
-        shutil.copytree(FIT / (PROJ + suffixe), c / dossier / (PROJ + suffixe))
+        shutil.copytree(PBI / (PROJ + suffixe), c / dossier / (PROJ + suffixe))
     for f in ((PROJ + ".pbip"), "measures_config.json"):
-        shutil.copy2(FIT / f, c / dossier / f)
+        shutil.copy2(PBI / f, c / dossier / f)
 
 # une bibliotheque « globale », hors des deux projets
 biblio = c / "quelque_part" / "catalogue_variations.json"
@@ -116,9 +120,9 @@ check("l'etiquette est remplie AVANT tout projet (la biblio n'en depend pas)",
 
 onglet.set_project(Project(c / "projetA" / (PROJ + ".pbip")))
 defaut = onglet._chemin_biblio()
-check("sans rien de memorise : le fichier a cote de app.py",
+check("sans rien de memorise : celui du dossier des projets Power BI",
       Path(defaut).name == "catalogue_variations.json"
-      and Path(defaut).parent == FIT)
+      and Path(defaut).parent == PBI)
 check("le defaut n'est PAS dans le dossier du projet",
       Path(defaut).parent != (c / "projetA"))
 

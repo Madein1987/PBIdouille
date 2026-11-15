@@ -50,6 +50,10 @@ from pathlib import Path
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 FIT = Path(__file__).resolve().parent.parent
+# les projets Power BI vivent HORS de l'outil (cf. moteurs/chemins.py)
+PBI = FIT.parent / "PowerBI"
+if os.environ.get("PBIDOUILLE_PROJETS", "").strip():
+    PBI = Path(os.environ["PBIDOUILLE_PROJETS"].strip())
 sys.path.insert(0, str(FIT))
 sys.path.insert(0, str(FIT / "bidouille"))
 sys.path.insert(0, str(FIT / "bidouille" / "moteurs"))
@@ -384,10 +388,11 @@ check("l'apercu n'est plus plafonne a 110 px",
       fen.tab_config.ed_preview.maximumHeight() > 1000)
 
 inner = fen.tab_config.inner
-check("Mesures : Variations et JSON brut (ni Generer, ni Reglages)",
+from tabs.tab_config import IDX_RAW as _IDX_RAW                  # noqa: E402
+check("Mesures : Variations, Arbre et JSON brut (ni Generer, ni Reglages)",
       [inner.tabText(i) for i in range(inner.count())]
-      == ["Variations", "JSON brut"])
-inner.setCurrentIndex(1)                       # « JSON brut »
+      == ["Variations", "Arbre des mesures", "JSON brut"])
+inner.setCurrentIndex(_IDX_RAW)                # « JSON brut »
 app.processEvents()
 check("JSON brut : le journal revient", not fen.journal.isHidden())
 inner.setCurrentIndex(0)
@@ -411,7 +416,7 @@ fen.btn_journal.click()
 app.processEvents()
 check("le refermer dans Variations le referme LA", fen.journal.isHidden())
 
-inner.setCurrentIndex(1)                       # JSON brut : journal visible
+inner.setCurrentIndex(_IDX_RAW)                # JSON brut : journal visible
 app.processEvents()
 fen.tab_config._reload()     # revient sur Variations SIGNAUX BLOQUES
 app.processEvents()
@@ -776,7 +781,7 @@ from core.project import Project                                  # noqa: E402
 copie = Path(tempfile.gettempdir()) / "pbid_journal_sauver"
 shutil.rmtree(copie, ignore_errors=True)
 copie.mkdir(parents=True)
-shutil.copy2(FIT / "measures_config.json", copie / "measures_config.json")
+shutil.copy2(PBI / "measures_config.json", copie / "measures_config.json")
 ct = tc.ConfigTab()
 ct.set_project(Project(copie / "Essai.pbip"))
 check("le panneau de generation sait enregistrer (Enregistrer puis generer)",
@@ -1147,7 +1152,9 @@ check("la case est moins arrondie (rayon 3 px)",
 
 print("   les Reglages globaux s'expliquent")
 glob = onglet._dlg_reglages                     # la fenetre ⚙ Reglages
-for titre, n_min in (("Paramètres de champ (fieldParameter)", 14),
+# Paramètres de champ : 1 ⓘ (la case) + 8 réglages communs ; les réglages
+# PAR TABLE sont dans l'éditeur de liste, avec leurs infobulles
+for titre, n_min in (("Paramètres de champ", 9),
                      ("Génération (settings)", 9)):
     gbx = [g for g in glob.findChildren(QGroupBox) if g.title() == titre]
     aides = [b for b in gbx[0].findChildren(QToolButton)
@@ -1210,7 +1217,7 @@ from core.project import Project as _Projet                       # noqa: E402
 copie_r = Path(_tf3.gettempdir()) / "pbid_reglages_fenetre"
 _sh.rmtree(copie_r, ignore_errors=True)
 copie_r.mkdir(parents=True)
-_sh.copy2(FIT / "measures_config.json", copie_r / "measures_config.json")
+_sh.copy2(PBI / "measures_config.json", copie_r / "measures_config.json")
 ct = tc.ConfigTab()
 ct.set_project(_Projet(copie_r / "Essai.pbip"))
 dlg = ct._dlg_reglages
@@ -1247,7 +1254,7 @@ check("Enregistrer : le config est ecrit, avec le reglage change",
 check("… et le bouton Sauvegarder ne reste pas allume", ct._dirty is False)
 
 print("   depuis le JSON brut : le texte a l'ecran ne reecrit pas l'ancien reglage")
-ct.inner.setCurrentIndex(1)                        # JSON brut
+ct.inner.setCurrentIndex(tc.IDX_RAW)                 # JSON brut
 app.processEvents()
 fenetre(_QDialog.Accepted, lambda: ct.g_sourceTable.setText("_depuis_le_brut"))
 ct.ouvrir_reglages()

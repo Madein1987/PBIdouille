@@ -20,13 +20,17 @@ from pathlib import Path
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 FIT = Path(__file__).resolve().parent.parent
+# les projets Power BI vivent HORS de l'outil (cf. moteurs/chemins.py)
+PBI = FIT.parent / "PowerBI"
+if os.environ.get("PBIDOUILLE_PROJETS", "").strip():
+    PBI = Path(os.environ["PBIDOUILLE_PROJETS"].strip())
 sys.path.insert(0, str(FIT / "bidouille"))
 sys.path.insert(0, str(FIT / "bidouille" / "moteurs"))
 import generate_measures as gm                               # noqa: E402
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from _fixture import exiger_projet, PROJET_DEMO   # noqa: E402
 
-exiger_projet(FIT, PROJET_DEMO, "TD_Indicateurs.xlsx",
+exiger_projet(PBI, PROJET_DEMO, "TD_Indicateurs.xlsx",
               "measures_config.json")
 
 
@@ -73,11 +77,11 @@ c = Path(tempfile.gettempdir()) / "pbidouille_td"
 rmtree(c)
 c.mkdir(parents=True)
 for suffixe in (".Report", ".SemanticModel"):
-    shutil.copytree(FIT / (PROJ + suffixe), c / (PROJ + suffixe))
-shutil.copy2(FIT / (PROJ + ".pbip"), c / (PROJ + ".pbip"))
-shutil.copy2(FIT / "TD_Indicateurs.xlsx", c / "Indicateurs perso.xlsx")
+    shutil.copytree(PBI / (PROJ + suffixe), c / (PROJ + suffixe))
+shutil.copy2(PBI / (PROJ + ".pbip"), c / (PROJ + ".pbip"))
+shutil.copy2(PBI / "TD_Indicateurs.xlsx", c / "Indicateurs perso.xlsx")
 
-cfg = json.loads((FIT / "measures_config.json").read_text(encoding="utf-8"))
+cfg = json.loads((PBI / "measures_config.json").read_text(encoding="utf-8"))
 cfg["indicateursXlsx"] = {"path": "Indicateurs perso.xlsx", "keyColumn": "mesure",
                           "fillColumn": "teinte", "textColumn": "encre"}
 (c / "measures_config.json").write_text(

@@ -37,13 +37,17 @@ from pathlib import Path
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 FIT = Path(__file__).resolve().parent.parent
+# les projets Power BI vivent HORS de l'outil (cf. moteurs/chemins.py)
+PBI = FIT.parent / "PowerBI"
+if os.environ.get("PBIDOUILLE_PROJETS", "").strip():
+    PBI = Path(os.environ["PBIDOUILLE_PROJETS"].strip())
 sys.path.insert(0, str(FIT))
 sys.path.insert(0, str(FIT / "bidouille"))
 sys.path.insert(0, str(FIT / "bidouille" / "moteurs"))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from _fixture import exiger_projet, PROJET_DEMO, ajouter_cibles   # noqa: E402
 
-exiger_projet(FIT, PROJET_DEMO, "TD_Indicateurs.xlsx", "measures_config.json")
+exiger_projet(PBI, PROJET_DEMO, "TD_Indicateurs.xlsx", "measures_config.json")
 
 PROJ = PROJET_DEMO
 ENT = "_mesures"
@@ -65,9 +69,9 @@ c = Path(tempfile.gettempdir()) / "pbid_grille_ui"
 rmtree(c)
 c.mkdir(parents=True)
 for s in (".Report", ".SemanticModel"):
-    shutil.copytree(FIT / (PROJ + s), c / (PROJ + s))
+    shutil.copytree(PBI / (PROJ + s), c / (PROJ + s))
 for f in (PROJ + ".pbip", "TD_Indicateurs.xlsx", "measures_config.json"):
-    shutil.copy2(FIT / f, c / f)
+    shutil.copy2(PBI / f, c / f)
 R = c / (PROJ + ".Report")
 
 from qtpy.QtWidgets import QApplication, QMessageBox          # noqa: E402

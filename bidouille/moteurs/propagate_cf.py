@@ -52,9 +52,11 @@ from pathlib import Path
 # backup_restore.py est le voisin de ce fichier (sauvegardes + manifeste)
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import backup_restore as br
+import chemins                    # où sont les projets
 
 # ---------------------------------------------------------------------------
-REPORT_DIR      = Path(r"C:\OneDrive - PJ\Data Cooler\_Power BI\Fitbit\Fitbit for random devs.Report")
+# ligne de commande seulement ; l'app passe toujours le rapport ouvert
+REPORT_DIR      = chemins.PROJETS / (chemins.PROJET_DEMO + ".Report")
 TEMPLATE_KPI    = "Total Steps"
 TARGET_KPIS     = None            # None = auto via <FIELD_PARAMETER>.tmdl ; sinon ["Weight", ...]
 ENTITY          = "_mesures"      # table qui héberge les mesures

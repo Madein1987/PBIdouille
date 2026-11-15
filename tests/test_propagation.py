@@ -22,13 +22,17 @@ import tempfile
 from pathlib import Path
 
 FIT = Path(__file__).resolve().parent.parent
+# les projets Power BI vivent HORS de l'outil (cf. moteurs/chemins.py)
+PBI = FIT.parent / "PowerBI"
+if os.environ.get("PBIDOUILLE_PROJETS", "").strip():
+    PBI = Path(os.environ["PBIDOUILLE_PROJETS"].strip())
 sys.path.insert(0, str(FIT / "bidouille"))
 sys.path.insert(0, str(FIT / "bidouille" / "moteurs"))
 import propagate_cf as pc                                    # noqa: E402
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from _fixture import exiger_projet, PROJET_DEMO   # noqa: E402
 
-exiger_projet(FIT)
+exiger_projet(PBI)
 
 
 PROJ = "Fitbit for random devs"
@@ -54,7 +58,7 @@ def projet_copie(nom):
     rmtree(c)
     c.mkdir(parents=True)
     for suffixe in (".Report", ".SemanticModel"):
-        shutil.copytree(FIT / (PROJ + suffixe), c / (PROJ + suffixe))
+        shutil.copytree(PBI / (PROJ + suffixe), c / (PROJ + suffixe))
     return c
 
 
@@ -191,7 +195,7 @@ rmtree(c)
 
 # ===================================================================== 5
 print("5. cibles : la branche se place via le paramètre de champ")
-fwd, rev = pc.read_fp_maps(FIT / (PROJ + ".SemanticModel"), "P_Indicateurs_parCalcul")
+fwd, rev = pc.read_fp_maps(PBI / (PROJ + ".SemanticModel"), "P_Indicateurs_parCalcul")
 check("le paramètre de champ est lisible", len(rev) > 0)
 
 

@@ -61,10 +61,12 @@ from pathlib import Path
 # même si le module est importé depuis un autre dossier de travail
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import backup_restore as br
+import chemins                    # où sont les projets
 
 # ---------------------------------------------------------------------------
-PBIP_DIR = Path(r"C:\OneDrive - PJ\Data Cooler\_Power BI\Fitbit")
-PROJECT  = "Fitbit for random devs"
+# défauts de la ligne de commande ; l'app appelle set_project()
+PBIP_DIR = chemins.PROJETS
+PROJECT  = chemins.PROJET_DEMO
 WRITE_DELETE_SCRIPT = True
 # ---------------------------------------------------------------------------
 

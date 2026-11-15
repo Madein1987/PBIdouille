@@ -26,11 +26,15 @@ import tempfile
 from pathlib import Path
 
 FIT = Path(__file__).resolve().parent.parent
+# les projets Power BI vivent HORS de l'outil (cf. moteurs/chemins.py)
+PBI = FIT.parent / "PowerBI"
+if os.environ.get("PBIDOUILLE_PROJETS", "").strip():
+    PBI = Path(os.environ["PBIDOUILLE_PROJETS"].strip())
 sys.path.insert(0, str(FIT / "bidouille" / "moteurs"))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from _fixture import exiger_projet, PROJET_DEMO   # noqa: E402
 
-exiger_projet(FIT, PROJET_DEMO, "measures_config.json")
+exiger_projet(PBI, PROJET_DEMO, "measures_config.json")
 
 import generate_measures as gm                      # noqa: E402
 
@@ -53,7 +57,7 @@ def copie(nom):
     c = Path(tempfile.gettempdir()) / nom
     rmtree(c)
     c.mkdir(parents=True)
-    shutil.copytree(FIT / (PROJ + ".SemanticModel"), c / (PROJ + ".SemanticModel"))
+    shutil.copytree(PBI / (PROJ + ".SemanticModel"), c / (PROJ + ".SemanticModel"))
     return c
 
 
@@ -63,7 +67,7 @@ def mesures_switch(c):
     return re.findall(r"annotation MeasureVariation = (switch\|.*|Switch KPI[^\n]*)", t)
 
 
-conf = json.loads((FIT / "measures_config.json").read_text(encoding="utf-8"))
+conf = json.loads((PBI / "measures_config.json").read_text(encoding="utf-8"))
 # un config d'une version précédente, avec son bloc switch ACTIVÉ
 conf["switch"] = {"enabled": True, "name": "Switch KPI",
                   "selector": "'TD_KPI'[mesure]", "displayFolder": "_switch"}

@@ -120,8 +120,7 @@ class ModelTab(QWidget):
         variations = cfg.get("variations") or {}
         branches = list((cfg.get("branches") or {}).keys())
         fp = cfg.get("fieldParameter") or {}
-        tables = ((fp.get("tableNames") or []) + (fp.get("tableNamesByKpi") or [])
-                  + (fp.get("tableNamesKpiBase") or []))
+        tables = generate_measures.fp_table_names(fp)
         self.chk_orphans.setChecked(bool(settings.get("removeOrphans", False)))
         self.lbl_recap.setText(
             f"{len(variations)} variation(s) · branches : "

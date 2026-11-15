@@ -15,7 +15,12 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-PROJET_DEMO = "Fitbit for random devs"
+# le dossier des projets Power BI, frère de l'outil (cf. moteurs/chemins.py)
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "bidouille" / "moteurs"))
+import chemins                                      # noqa: E402
+
+PROJETS = chemins.PROJETS
+PROJET_DEMO = chemins.PROJET_DEMO
 
 
 def exiger_projet(racine, nom: str = PROJET_DEMO, *fichiers):
@@ -31,7 +36,7 @@ def exiger_projet(racine, nom: str = PROJET_DEMO, *fichiers):
     print("   manque : " + ", ".join(manque))
     print("   Ces suites travaillent sur une COPIE d'un projet PBIP reel ; il")
     print("   n'est pas versionne (le depot ne porte que l'outil). Pose un")
-    print("   projet PBIP a la racine et nomme-le « " + nom + " »,")
+    print("   projet PBIP dans " + str(PROJETS) + ", nomme « " + nom + " »,")
     print("   ou lance les tests depuis ton dossier de travail.")
     sys.exit(0)
 

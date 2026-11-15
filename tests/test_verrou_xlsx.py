@@ -31,13 +31,17 @@ from pathlib import Path
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 FIT = Path(__file__).resolve().parent.parent
+# les projets Power BI vivent HORS de l'outil (cf. moteurs/chemins.py)
+PBI = FIT.parent / "PowerBI"
+if os.environ.get("PBIDOUILLE_PROJETS", "").strip():
+    PBI = Path(os.environ["PBIDOUILLE_PROJETS"].strip())
 sys.path.insert(0, str(FIT))
 sys.path.insert(0, str(FIT / "bidouille"))
 sys.path.insert(0, str(FIT / "bidouille" / "moteurs"))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from _fixture import exiger_projet, PROJET_DEMO   # noqa: E402
 
-exiger_projet(FIT, PROJET_DEMO, "TD_Indicateurs.xlsx", "measures_config.json")
+exiger_projet(PBI, PROJET_DEMO, "TD_Indicateurs.xlsx", "measures_config.json")
 
 import openpyxl                                   # noqa: E402
 import color_matrix_by_kpi as cmx                 # noqa: E402
@@ -63,9 +67,9 @@ c = Path(tempfile.gettempdir()) / "pbidouille_verrou"
 rmtree(c)
 c.mkdir(parents=True)
 for suffixe in (".Report", ".SemanticModel"):
-    shutil.copytree(FIT / (PROJ + suffixe), c / (PROJ + suffixe))
+    shutil.copytree(PBI / (PROJ + suffixe), c / (PROJ + suffixe))
 for f in ((PROJ + ".pbip"), "TD_Indicateurs.xlsx", "measures_config.json"):
-    shutil.copy2(FIT / f, c / f)
+    shutil.copy2(PBI / f, c / f)
 XLSX = c / "TD_Indicateurs.xlsx"
 
 # le classeur du bureau porte des colonnes de couleurs ; celui de demo non

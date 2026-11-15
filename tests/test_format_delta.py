@@ -32,12 +32,16 @@ import tempfile
 from pathlib import Path
 
 FIT = Path(__file__).resolve().parent.parent
+# les projets Power BI vivent HORS de l'outil (cf. moteurs/chemins.py)
+PBI = FIT.parent / "PowerBI"
+if os.environ.get("PBIDOUILLE_PROJETS", "").strip():
+    PBI = Path(os.environ["PBIDOUILLE_PROJETS"].strip())
 sys.path.insert(0, str(FIT / "bidouille"))
 sys.path.insert(0, str(FIT / "bidouille" / "moteurs"))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from _fixture import exiger_projet, PROJET_DEMO   # noqa: E402
 
-exiger_projet(FIT, PROJET_DEMO, "measures_config.json")
+exiger_projet(PBI, PROJET_DEMO, "measures_config.json")
 
 import generate_measures as gm                    # noqa: E402
 
@@ -151,9 +155,9 @@ c = Path(tempfile.gettempdir()) / "pbidouille_fmt"
 rmtree(c)
 c.mkdir(parents=True)
 for suffixe in (".Report", ".SemanticModel"):
-    shutil.copytree(FIT / (PROJ + suffixe), c / (PROJ + suffixe))
+    shutil.copytree(PBI / (PROJ + suffixe), c / (PROJ + suffixe))
 for f in ((PROJ + ".pbip"), "measures_config.json"):
-    shutil.copy2(FIT / f, c / f)
+    shutil.copy2(PBI / f, c / f)
 
 modele = c / (PROJ + ".SemanticModel")
 mesures = modele / "definition" / "tables" / "_mesures.tmdl"
