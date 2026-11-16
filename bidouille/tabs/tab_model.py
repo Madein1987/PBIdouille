@@ -131,7 +131,7 @@ class ModelTab(QWidget):
             f"(dossier '{settings.get('sourceFolder', '')}')\n"
             f"{len(variations)} variation(s) · branches : {', '.join(branches) or '—'}\n"
             f"tables paramètre : {', '.join(tables) or '—'}\n\n"
-            f"⚠ Écriture réelle : Power BI Desktop FERMÉ, backup automatique sous\n"
+            f"Écriture réelle : backup automatique sous\n"
             f"_backupsPBIdouille\\_tmdl_backups\\, puis rouvrir le .pbip.")
 
     # ---- exécution ---------------------------------------------------------------
@@ -145,8 +145,7 @@ class ModelTab(QWidget):
         if not dry:
             if QMessageBox.question(
                 self, "Écriture réelle",
-                "Les fichiers TMDL du modèle vont être MODIFIÉS.\n"
-                "⚠ Power BI Desktop doit être FERMÉ (sinon il écrasera tout).\n\n"
+                "Les fichiers TMDL du modèle vont être MODIFIÉS.\n\n"
                 "Un backup sera créé sous _backupsPBIdouille\\_tmdl_backups\\. Continuer ?",
                 QMessageBox.Yes | QMessageBox.Cancel, QMessageBox.Cancel,
             ) != QMessageBox.Yes:

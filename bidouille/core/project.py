@@ -17,7 +17,7 @@ class Project:
         self.pbip = Path(pbip_path)
         self.folder = self.pbip.parent
         self.name = self.pbip.stem
-        # measures_config.json choisi explicitement (bouton « Config… ») —
+        # measures_config.json choisi explicitement (bouton 📄 du config) —
         # None = convention : <dossier du .pbip>\measures_config.json
         self.config_override = Path(config_override) if config_override else None
 

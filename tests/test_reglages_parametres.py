@@ -13,7 +13,9 @@ Vérifie, dans la vraie fenêtre (hors écran) :
   5. Enregistrer écrit la liste sous forme compacte, sans les anciennes clés,
      et la génération suit ce qui a été réglé ;
   6. une exclusion hors vocabulaire (KPI renommé) survit à une édition ;
-  7. Annuler n'écrit rien.
+  7. Annuler n'écrit rien ;
+  8. la barre latérale : une page par sujet, ouverture sur une page donnée,
+     et la page vue en dernier est celle qui revient.
 
 Travaille sur une COPIE du projet de démonstration, magasin de réglages jetable.
 """
@@ -245,6 +247,54 @@ avant = (copie / "measures_config.json").read_bytes()
 fenetre(QDialog.Rejected, lambda: ed.chk_cibles.setChecked(False))
 check("Annuler rend False", ct.ouvrir_reglages() is False)
 check("… et le fichier n'a pas bougé", (copie / "measures_config.json").read_bytes() == avant)
+
+print("8. la barre latérale")
+from qtpy.QtWidgets import QGroupBox                             # noqa: E402
+nav, pages = ct.reglages_nav, ct.reglages_pages
+cles = [nav.item(i).data(tc.Qt.UserRole) for i in range(nav.count())]
+check(f"une entrée par page ({len(cles)})",
+      cles == [c for c, _ in tc.ConfigTab.PAGES_REGLAGES] and pages.count() == len(cles))
+def groupes_de(i):
+    pg = pages.widget(i).widget()
+    return [g.title() for g in pg.findChildren(QGroupBox) if g.parent() is pg]
+
+
+check("chaque page porte ses groupes (un seul, sauf l'Excel)",
+      all(len(groupes_de(i)) == len(tc.ConfigTab.GROUPES_PAGE.get(c, (c,)))
+          for i, c in enumerate(cles)))
+excel = groupes_de(cles.index("excel"))
+check(f"la page Excel porte aussi les attributs et la portée ({len(excel)} groupes)",
+      excel[0].startswith("Excel des indicateurs")
+      and any(t.startswith("Attributs codés en dur") for t in excel)
+      and any(t.startswith("Portée par KPI") for t in excel))
+check("plus de page à part pour les attributs ni la portée",
+      "attributs" not in cles and "portee" not in cles)
+
+
+def groupe_montre():
+    return groupes_de(pages.currentIndex())[0]
+
+
+check("aller_reglages('excel') montre l'Excel",
+      ct.aller_reglages("excel") and groupe_montre().startswith("Excel des indicateurs"))
+ct.aller_reglages("branches")
+ct._dlg_reglages.resize(1040, 700)
+ct._dlg_reglages.show()
+app.processEvents()
+check(f"la page Branches donne de la hauteur à ses listes "
+      f"({ct.g_branches.height()} / {ct.g_branch_restrict.height()} px)",
+      ct.g_branches.height() >= 300 and ct.g_branch_restrict.height() >= 250)
+ct._dlg_reglages.hide()
+check("cliquer dans la barre change la page",
+      (nav.setCurrentRow(cles.index("branches")), groupe_montre())[1].startswith("Branches"))
+check("une clé inconnue ne change rien",
+      ct.aller_reglages("nulle_part") is False and groupe_montre().startswith("Branches"))
+vu = []
+fenetre(QDialog.Rejected, lambda: vu.append(groupe_montre()))
+ct.ouvrir_reglages(page="parametres")
+check("ouvrir_reglages(page=…) ouvre sur cette page", vu == ["Paramètres de champ"])
+ct.ouvrir_reglages()
+check("… et sans page, on retrouve la dernière vue", vu[-1] == "Paramètres de champ")
 
 ct.deleteLater()
 rmtree(copie)

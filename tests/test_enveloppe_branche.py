@@ -1,29 +1,30 @@
 # -*- coding: utf-8 -*-
-"""Enveloppe de branche : la branche ENTOURE la variation Reel.
+"""Enveloppe de branche : la branche ENTOURE la variation Reel — par defaut.
 
     py tests\\test_enveloppe_branche.py
 
 Deux facons de deriver une variation en branche :
 
-  SUBSTITUTION (d'origine) : le DAX de la variation est re-emis avec la mesure
-  de branche a l'interieur —
-      Weight YTD PY = CALCULATE([Weight YTD], SAMEPERIODLASTYEAR(dates))
-
-  ENVELOPPE (nouveau) : la branche entoure la variation Reel —
+  ENVELOPPE (defaut) : la branche entoure la variation Reel —
       Weight YTD PY = CALCULATE([Weight PY], DATESYTD(dates))
 
-Interet : toutes les mesures de la branche se ressemblent, donc un ecart se
-debogue forcement dans la variation Reel — et un correctif apporte a celle-ci se
-repercute SANS regenerer, puisque la mesure est REFERENCEE et non recopiee.
+  SUBSTITUTION : le DAX de la variation est recopie avec la mesure de branche
+  a l'interieur —
+      Weight YTD PY = CALCULATE([Weight YTD], SAMEPERIODLASTYEAR(dates))
 
-Mais ce n'est PAS toujours equivalent, et c'est tout l'enjeu de ce fichier :
+Interet de l'enveloppe : toutes les mesures de la branche se lisent pareil,
+donc un ecart se debogue dans la variation Reel — et un correctif apporte a
+celle-ci se repercute SANS regenerer.
 
-  · equivalent quand la variation DECALE le contexte (SAMEPERIODLASTYEAR) ;
-  · faux quand elle EPINGLE une fenetre sur la borne du contexte
-    (MAX({date}), DATEADD) — « 7d avg » enveloppe redevient le 7d avg ordinaire.
+Le PATRON vient du DAX de la branche elle-meme : YTD =
+CALCULATE({baseRef}, DATESYTD({date})), sa base devient {variationRef}. Il n'y
+a donc rien a ecrire — c'est ce qui manquait : avant, il fallait cocher la
+variation ET taper un patron dans la branche, et sans le patron la case ne
+faisait rien.
 
-D'ou l'activation par variation (`wrapInBranch`), la branche ne fournissant que
-le patron (`wrap`).
+Ce n'est PAS toujours equivalent (une variation qui EPINGLE une fenetre sur la
+borne du contexte change de sens), d'ou deux portes de sortie : la branche
+(`substitution`) ou la variation (`wrapInBranch: false`).
 """
 
 from __future__ import annotations
@@ -47,14 +48,16 @@ sys.path.insert(0, str(FIT))
 sys.path.insert(0, str(FIT / "bidouille"))
 sys.path.insert(0, str(FIT / "bidouille" / "moteurs"))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from _fixture import exiger_projet, PROJET_DEMO   # noqa: E402
+from _fixture import exiger_projet, reglages_jetables, PROJET_DEMO   # noqa: E402
 
 exiger_projet(PBI, PROJET_DEMO, "measures_config.json")
+reglages_jetables("enveloppe")
 
 import generate_measures as gm                    # noqa: E402
 
 PROJ = PROJET_DEMO
 WRAP = "CALCULATE({variationRef}, DATESYTD({date}))"
+DATES = "'dim_Date'[Date]"
 _ok = True
 
 
@@ -75,6 +78,7 @@ def projet(nom):
     c.mkdir(parents=True)
     for s in (".Report", ".SemanticModel"):
         shutil.copytree(PBI / (PROJ + s), c / (PROJ + s))
+    shutil.copy2(PBI / (PROJ + ".pbip"), c / (PROJ + ".pbip"))
     shutil.copy2(PBI / "measures_config.json", c / "measures_config.json")
     return c
 
@@ -88,68 +92,61 @@ def dax_de(modele, nom):
     return " ".join(l.strip() for l in m.group(1).strip().splitlines()) if m else None
 
 
-def generer(c, wrap=None, enveloppables=()):
+def generer(c, branche=None, sorties=(), retouche=None):
+    """`branche` : la definition de YTD ({} par defaut) ; `sorties` : les
+    variations qui refusent l'enveloppe."""
     conf = json.loads((c / "measures_config.json").read_text(encoding="utf-8"))
-    conf["branches"]["YTD"] = {"wrap": wrap} if wrap else {}
-    for vid in enveloppables:
-        conf["variations"][vid]["wrapInBranch"] = True
+    conf["branches"]["YTD"] = dict(branche or {})
+    for vid in sorties:
+        conf["variations"][vid]["wrapInBranch"] = False
+    if retouche:
+        retouche(conf)
     logs: list = []
-    gm.generate(c / (PROJ + ".SemanticModel"), conf, dry_run=False,
-                log=logs.append)
+    gm.generate(c / (PROJ + ".SemanticModel"), conf, dry_run=False, log=logs.append)
     return conf, logs
 
 
+def enveloppe(vid):
+    return f"CALCULATE([Weight {vid}], DATESYTD({DATES}))"
+
+
+# ===================================================================== 0
+print("0. le patron")
+V = json.loads((PBI / "measures_config.json").read_text(encoding="utf-8"))["variations"]
+check("tire du DAX de la branche : sa base devient {variationRef}",
+      gm.patron_enveloppe("YTD", {}, V) == WRAP)
+check("[{base}] marche aussi",
+      gm.patron_enveloppe("X", {}, {"X": {"dax": "TOTALYTD([{base}], {date})"}})
+      == "TOTALYTD({variationRef}, {date})")
+check("un patron ecrit l'emporte",
+      gm.patron_enveloppe("YTD", {"wrap": "F({variationRef})"}, V) == "F({variationRef})")
+check("substitution : pas de patron", gm.patron_enveloppe("YTD", {"substitution": True}, V) is None)
+check("un DAX qui ne cite pas sa base ne peut pas envelopper",
+      gm.patron_enveloppe("X", {}, {"X": {"dax": "BLANK()"}}) is None)
+check("une variation s'enveloppe sauf si elle dit non",
+      gm.enveloppable({}) and gm.enveloppable({"wrapInBranch": True})
+      and not gm.enveloppable({"wrapInBranch": False}))
+check("… ou si son DAX cite {branch} (ecrite POUR la branche) : recopiee",
+      gm.enveloppable({"dax": "[{kpi} {branch} PY]"})
+      and not gm.s_enveloppe({"dax": "[{kpi} {branch} PY]"})
+      and gm.s_enveloppe({"dax": "CALCULATE({baseRef}, SAMEPERIODLASTYEAR({date}))"}))
+
 # ===================================================================== 1
-print("1. sans enveloppe declaree : rien ne change")
-c = projet("sans")
+print("1. par defaut, sans rien ecrire : tout est enveloppe")
+c = projet("defaut")
 M = c / (PROJ + ".SemanticModel")
-_, logs = generer(c, wrap=None, enveloppables=("PY", "YoY %"))
-check("aucune mesure enveloppee", not any("ENVELOPPENT" in l for l in logs))
-check("substitution, comme avant",
-      dax_de(M, "Weight YTD PY")
-      == "CALCULATE([Weight YTD], SAMEPERIODLASTYEAR('dim_Date'[Date]))")
-temoin_substitution = {n: dax_de(M, n) for n in
-                       ("Weight YTD PY", "Weight YTD YoY %",
-                        "Weight YTD 7d avg", "Weight YTD Δ 7d")}
-rmtree(c)
-
-# ===================================================================== 2
-print("2. enveloppe declaree, mais AUCUNE variation cochee")
-c = projet("aucune")
-M = c / (PROJ + ".SemanticModel")
-_, logs = generer(c, wrap=WRAP, enveloppables=())
-check("le patron seul ne suffit pas",
-      not any("ENVELOPPENT" in l for l in logs))
-check("les mesures sont identiques au cas 1",
-      {n: dax_de(M, n) for n in temoin_substitution} == temoin_substitution)
-rmtree(c)
-
-# ===================================================================== 3
-print("3. enveloppe active sur les variations de DECALAGE")
-c = projet("decalage")
-M = c / (PROJ + ".SemanticModel")
-_, logs = generer(c, wrap=WRAP, enveloppables=("PY", "YoY %"))
-check("le journal compte les mesures enveloppees",
-      any("ENVELOPPENT" in l for l in logs))
-
-for vid in ("PY", "YoY %"):
+_, logs = generer(c)
+check("le journal compte les mesures enveloppees", any("ENVELOPPENT" in l for l in logs))
+for vid in ("PY", "YoY %", "7d avg", "Δ 7d"):
     obtenu = dax_de(M, "Weight YTD " + vid)
-    attendu = "CALCULATE([Weight " + vid + "], DATESYTD('dim_Date'[Date]))"
-    check(f"« Weight YTD {vid} » enveloppe la mesure Reel", obtenu == attendu)
-    if obtenu != attendu:
+    check(f"« Weight YTD {vid} » enveloppe [Weight {vid}]", obtenu == enveloppe(vid))
+    if obtenu != enveloppe(vid):
         print("      obtenu  :", obtenu)
 
-print("   les NON cochees restent en substitution")
-for n in ("Weight YTD 7d avg", "Weight YTD Δ 7d"):
-    check("inchangee : " + n, dax_de(M, n) == temoin_substitution[n])
-
-print("   ce qui n'est PAS une branche ne bouge pas")
+print("   ce qui n'est PAS une variation de branche ne bouge pas")
 check("la variation Reel elle-meme",
-      dax_de(M, "Weight PY")
-      == "CALCULATE([Weight], SAMEPERIODLASTYEAR('dim_Date'[Date]))")
-check("la base de branche",
-      dax_de(M, "Weight YTD")
-      == "CALCULATE([Weight], DATESYTD('dim_Date'[Date]))")
+      dax_de(M, "Weight PY") == f"CALCULATE([Weight], SAMEPERIODLASTYEAR({DATES}))")
+check("la base de branche", dax_de(M, "Weight YTD") == f"CALCULATE([Weight], DATESYTD({DATES}))")
 
 print("   tout le reste de la mesure est inchange")
 txt = (M / "definition" / "tables" / "_mesures.tmdl").read_text(encoding="utf-8")
@@ -159,54 +156,65 @@ check("l'annotation reste « base de branche|variation »",
       bloc and bloc.group(1).splitlines()[0].strip() == "Weight YTD|PY")
 check("la mesure existe dans le parametre de champ",
       "NAMEOF([Weight YTD PY])" in
-      (M / "definition" / "tables" / "P_Indicateurs_parCalcul.tmdl")
-      .read_text(encoding="utf-8"))
+      (M / "definition" / "tables" / "P_Indicateurs_parCalcul.tmdl").read_text(encoding="utf-8"))
 
 print("   idempotence")
 conf = json.loads((c / "measures_config.json").read_text(encoding="utf-8"))
-conf["branches"]["YTD"] = {"wrap": WRAP}
-for vid in ("PY", "YoY %"):
-    conf["variations"][vid]["wrapInBranch"] = True
+conf["branches"]["YTD"] = {}
 st = gm.generate(M, conf, dry_run=True, log=lambda *_: None)
-check("2e passe : rien a creer ni a mettre a jour",
-      not st["created"] and not st["updated"])
+check("2e passe : rien a creer ni a mettre a jour", not st["created"] and not st["updated"])
 rmtree(c)
 
-# ===================================================================== 4
-print("4. garde-fous")
+# ===================================================================== 2
+print("2. les portes de sortie")
+c = projet("sorties")
+M = c / (PROJ + ".SemanticModel")
+_, logs = generer(c, branche={"substitution": True})
+check("branche en substitution : tout est recopie, comme avant",
+      dax_de(M, "Weight YTD PY")
+      == f"CALCULATE([Weight YTD], SAMEPERIODLASTYEAR({DATES}))"
+      and not any("ENVELOPPENT" in l for l in logs))
+temoin = {n: dax_de(M, n) for n in ("Weight YTD 7d avg", "Weight YTD Δ 7d")}
+generer(c, sorties=("7d avg", "Δ 7d"))
+check("une variation qui dit non est recopiee, elle seule",
+      {n: dax_de(M, n) for n in temoin} == temoin
+      and dax_de(M, "Weight YTD PY") == enveloppe("PY"))
+generer(c, branche={"wrap": "TOTALYTD({variationRef}, {date})"})
+check("un patron ecrit sur la branche est utilise",
+      dax_de(M, "Weight YTD PY") == f"TOTALYTD([Weight PY], {DATES})")
+
+
+def ytd_sans_base(conf):
+    conf["variations"]["YTD"]["dax"] = "CALCULATE([Weight], DATESYTD({date}))"
+
+
+_, logs = generer(c, retouche=ytd_sans_base)
+check("une branche dont le DAX ne cite pas sa base : substitution, dite UNE fois",
+      dax_de(M, "Weight YTD PY") == f"CALCULATE([Weight YTD], SAMEPERIODLASTYEAR({DATES}))"
+      and sum("ne cite pas sa base" in l for l in logs) == 1)
+rmtree(c)
+
+# ===================================================================== 3
+print("3. garde-fou")
 c = projet("garde")
 M = c / (PROJ + ".SemanticModel")
-# Une variation enveloppable qui ne s'applique PAS aux KPI n'est generee ni en
-# Reel ni en branche : la 2e passe l'ecarte AVANT l'enveloppe (allowed_set).
-# C'est le bon comportement — et ca montre que le repli « mesure Reel absente »
-# du moteur est un filet defensif, sans chemin atteignable par le config : les
-# deux passes appliquent les MEMES filtres, donc si la Reel est ecartee la
-# branche l'est aussi.
-conf = json.loads((c / "measures_config.json").read_text(encoding="utf-8"))
-conf["branches"]["YTD"] = {"wrap": WRAP}
-conf["variations"]["PY"]["wrapInBranch"] = True
-conf["variations"]["PY"]["appliesToKpi"] = False
-logs = []
-gm.generate(M, conf, dry_run=False, log=logs.append)
+# une variation qui ne s'applique PAS aux KPI n'est generee ni en Reel ni en
+# branche : la 2e passe l'ecarte AVANT l'enveloppe (allowed_set)
+
+
+def py_hors_kpi(conf):
+    conf["variations"]["PY"]["appliesToKpi"] = False
+
+
+_, logs = generer(c, retouche=py_hors_kpi)
 check("variation hors KPI : ni Reel ni branche",
       dax_de(M, "Weight PY") is None and dax_de(M, "Weight YTD PY") is None)
 check("… et aucun repli n'a eu a etre annonce",
       not any("repli sur la substitution" in l for l in logs))
-check("les autres variations sont intactes",
-      dax_de(M, "Weight YTD Δ 7d") is not None)
-
-# enveloppable coche mais la branche ne declare PAS de patron -> substitution
-c2 = projet("garde2")
-M2 = c2 / (PROJ + ".SemanticModel")
-generer(c2, wrap=None, enveloppables=("PY",))
-check("coche sans patron de branche = substitution",
-      dax_de(M2, "Weight YTD PY")
-      == "CALCULATE([Weight YTD], SAMEPERIODLASTYEAR('dim_Date'[Date]))")
-rmtree(c2)
 rmtree(c)
 
-# ===================================================================== 5
-print("5. l'UI : patron par branche, case par variation")
+# ===================================================================== 4
+print("4. l'UI : case par branche, case par variation")
 from qtpy.QtWidgets import QApplication                     # noqa: E402
 from core.project import Project                            # noqa: E402
 import tabs.tab_config as tc                                # noqa: E402
@@ -215,33 +223,40 @@ app = QApplication.instance() or QApplication([])
 c = projet("ui")
 onglet = tc.ConfigTab()
 onglet.set_project(Project(c / (PROJ + ".pbip")))
+onglet._config["branches"]["YTD"] = {}
 onglet._load_global()
-check("le champ « Enveloppe » existe", hasattr(onglet, "g_branch_wrap"))
-check("la case « enveloppable » existe", hasattr(onglet, "chk_wrap"))
-check("vide au depart (substitution)", onglet.g_branch_wrap.text().strip() == "")
+check("« Envelopper » coche par defaut", onglet.g_branch_envelopper.isChecked())
+check("le patron est vide, et dit ce qu'il tire du DAX de YTD",
+      onglet.g_branch_wrap.text() == "" and WRAP in onglet.g_branch_wrap.placeholderText())
+onglet._commit_global()
+check("rien n'est ecrit pour le defaut", onglet._config["branches"]["YTD"] == {})
 
-onglet.g_branch_wrap.setText(WRAP)
+onglet.g_branch_envelopper.setChecked(False)
+check("decocher grise le patron", not onglet.g_branch_wrap.isEnabled())
 onglet._commit_global()
-check("le patron est ecrit sur la branche",
-      (onglet._config["branches"]["YTD"] or {}).get("wrap") == WRAP)
+check("… et ecrit « substitution »", onglet._config["branches"]["YTD"].get("substitution") is True)
 onglet._load_global()
-check("… et relu a l'affichage", onglet.g_branch_wrap.text() == WRAP)
-onglet.g_branch_wrap.setText("")
+check("… relu decoche", not onglet.g_branch_envelopper.isChecked())
+onglet.g_branch_envelopper.setChecked(True)
+onglet.g_branch_wrap.setText("TOTALYTD({variationRef}, {date})")
 onglet._commit_global()
-check("vider retire la cle (retour a la substitution)",
-      "wrap" not in (onglet._config["branches"]["YTD"] or {}))
+check("recocher retire la cle, un patron ecrit est garde",
+      onglet._config["branches"]["YTD"] == {"wrap": "TOTALYTD({variationRef}, {date})"})
 
 onglet._populate_list(select="PY")
-onglet.chk_wrap.setChecked(True)
-onglet._commit_form()
-check("cocher ecrit wrapInBranch",
-      onglet._config["variations"]["PY"].get("wrapInBranch") is True)
+check("« envelopper en branche » coche par defaut", onglet.chk_wrap.isChecked())
 onglet.chk_wrap.setChecked(False)
 onglet._commit_form()
-check("decocher retire la cle (on n'ecrit que le non-defaut)",
+check("decocher ecrit wrapInBranch: false",
+      onglet._config["variations"]["PY"].get("wrapInBranch") is False)
+onglet.chk_wrap.setChecked(True)
+onglet._commit_form()
+check("recocher retire la cle (on n'ecrit que le non-defaut)",
       "wrapInBranch" not in onglet._config["variations"]["PY"])
-check("le jeton {variationRef} est connu du lint",
-      "variationRef" in tc.KNOWN_PLACEHOLDERS)
+onglet._config["variations"]["PY"]["wrapInBranch"] = True     # ancien format
+onglet._populate_list(select="PY")
+check("l'ancien « wrapInBranch: true » s'affiche coche", onglet.chk_wrap.isChecked())
+check("le jeton {variationRef} est connu du lint", "variationRef" in tc.KNOWN_PLACEHOLDERS)
 
 onglet.deleteLater()
 app.processEvents()

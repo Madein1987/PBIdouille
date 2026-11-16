@@ -549,8 +549,7 @@ class ReportTab(QWidget):
     def _confirm_write(self) -> bool:
         return QMessageBox.question(
             self, "Confirmer l'écriture",
-            "Des fichiers du rapport vont être modifiés.\n"
-            "⚠ Power BI Desktop doit être FERMÉ (sinon les changements seront écrasés).\n\n"
+            "Des fichiers du rapport vont être modifiés.\n\n"
             "Continuer ?",
             QMessageBox.Yes | QMessageBox.Cancel, QMessageBox.Cancel,
         ) == QMessageBox.Yes

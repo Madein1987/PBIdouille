@@ -29,6 +29,7 @@ from qtpy.QtWidgets import (
     QComboBox,
     QDialog,
     QFileDialog,
+    QFrame,
     QGridLayout,
     QGroupBox,
     QHBoxLayout,
@@ -43,6 +44,7 @@ from qtpy.QtWidgets import (
     QPushButton,
     QScrollArea,
     QSplitter,
+    QStackedWidget,
     QTableWidget,
     QTableWidgetItem,
     QToolButton,
@@ -428,8 +430,11 @@ class ConfigTab(QWidget):
         self._current: str | None = None   # id de la variation affichée
         self._loading = False              # évite les signaux pendant le peuplement
         self._dirty = False
-        self._branch_restrict: dict = {}   # branche -> set des variations qu'elle applique
-        self._branch_wrap: dict = {}       # branche -> DAX d'enveloppe ("" = substitution)
+        # branche -> set des variations qu'elle N'applique PAS : une variation
+        # absente de l'ensemble (ajoutée plus tard comprise) est appliquée
+        self._branch_exclu: dict = {}
+        self._branch_wrap: dict = {}       # branche -> patron écrit ("" = tiré de son DAX)
+        self._branch_subst: dict = {}      # branche -> True si elle recopie (substitution)
         self._branch_pick_current = None   # branche affichée dans l'éditeur de restriction
         # en-têtes de TD_Indicateurs : lus une fois, gardés en mémoire, pour ne
         # plus toucher au classeur hors action explicite (cf. _td_entetes)
@@ -635,13 +640,17 @@ class ConfigTab(QWidget):
         add_row("displayFolder :", self.ed_folder,
                 "Dossier d'affichage des mesures générées.\n"
                 "Vide = le displayFolderPattern des settings. Placeholders : "
-                "{folder} {baseFolder} {variation} {kpi} {branch}.")
+                "{folder} {baseFolder} {variation} {kpi} {branch}.\n"
+                "Dossiers rangés PAR KPI (⚙ Réglages → Génération) : {baseFolder}\n"
+                "y est le dossier du KPI (_indicateurs\\Weight), pour que la\n"
+                "mesure reste avec son KPI."),
         self.cmb_folder_var = QComboBox()   # non éditable : ids existants
         add_row("folderVariation :", self.cmb_folder_var,
                 "Dossier HÔTE : range les mesures générées dans le DOSSIER d'une\n"
                 "AUTRE variation.\n"
                 "Ex. « CF Δ 30d » vit dans le dossier de « Δ 30d » (la couleur à côté\n"
-                "de la mesure qu'elle met en forme). Vide = son propre dossier.")
+                "de la mesure qu'elle met en forme). Vide = son propre dossier.\n"
+                "Sans effet quand les dossiers sont rangés PAR KPI.")
         self.cmb_datacat = QComboBox()
         self.cmb_datacat.setEditable(True)
         self.cmb_datacat.addItems(["", "ImageUrl", "WebUrl"])
@@ -680,24 +689,24 @@ class ConfigTab(QWidget):
         self.cmb_kinds = CheckCombo()
         self.cmb_kinds.setMinimumWidth(190)
         self.cmb_kinds.changed.connect(self._on_edit)
-        self.chk_wrap = QCheckBox("enveloppable en branche")
+        self.chk_wrap = QCheckBox("envelopper en branche")
         self.chk_wrap.setToolTip(
             "En branche, cette variation est ENVELOPPÉE au lieu d'être" + chr(10) +
-            " ré-émise :" + chr(10) +
+            " recopiée (défaut : cochée) :" + chr(10) +
             "   Weight YTD PY = CALCULATE([Weight PY], DATESYTD(…))" + chr(10) +
             "au lieu de" + chr(10) +
             "   Weight YTD PY = CALCULATE([Weight YTD], SAMEPERIODLASTYEAR(…))"
             + chr(10) + chr(10) +
-            "À cocher quand le DAX ne fait que DÉCALER le contexte" + chr(10) +
-            "(SAMEPERIODLASTYEAR, DATESYTD) : le résultat est identique, le" + chr(10) +
-            "DAX généré devient trivial, et un correctif ici se répercute" + chr(10) +
+            "Toutes les mesures de la branche se lisent alors pareil, le" + chr(10) +
+            "DAX généré est trivial, et un correctif ici se répercute" + chr(10) +
             "sans régénérer." + chr(10) + chr(10) +
-            "⚠ À NE PAS cocher si le DAX ÉPINGLE une fenêtre sur la borne" + chr(10) +
-            "du contexte (MAX, DATEADD, DATESINPERIOD) : « 7d avg »" + chr(10) +
-            "enveloppé redeviendrait le 7d avg ordinaire, et « Δ 7d »" + chr(10) +
-            "changerait de sens." + chr(10) + chr(10) +
-            "Sans effet si la branche ne déclare pas d'enveloppe" + chr(10) +
-            "(⚙ Réglages → Branches → « Enveloppe »). Défaut : décoché.")
+            "⚠ DÉCOCHE si le DAX ÉPINGLE une fenêtre sur la borne du" + chr(10) +
+            "contexte (MAX, DATEADD, DATESINPERIOD) et que tu veux la" + chr(10) +
+            "version « du cumul » : « 7d avg » enveloppé est le 7d avg" + chr(10) +
+            "ordinaire, pas la moyenne 7 jours de [Weight YTD]." + chr(10) + chr(10) +
+            "Sans effet si la branche recopie tout (⚙ Réglages → Branches," + chr(10) +
+            "« Envelopper » décoché), ou si le DAX cite {branch} : écrite" + chr(10) +
+            "pour la branche, la variation est alors toujours recopiée.")
         pour = QHBoxLayout()
         pour.addWidget(self.chk_kpi)
         pour.addSpacing(12)
@@ -927,11 +936,29 @@ class ConfigTab(QWidget):
         grid.setColumnStretch(1, 1)
         return gb
 
+    # Les pages de la fenêtre ⚙ Réglages, dans l'ordre de la barre latérale :
+    # (clé, libellé). La clé sert à ouvrir la fenêtre SUR une page
+    # (ouvrir_reglages(page=…)) — le lien de la fiche Excel du Rapport.
+    PAGES_REGLAGES = (
+        ("generation", "Génération"),
+        ("excel", "Excel des indicateurs"),
+        ("parametres", "Paramètres de champ"),
+        ("branches", "Branches"),
+        ("cibles", "Mesures cibles"),
+        ("delta", "Formats « delta »"),
+    )
+    # les groupes d'une page, quand elle en a plusieurs : les attributs codés
+    # en dur et la portée par KPI sont des COLONNES de l'Excel des
+    # indicateurs — ils se règlent avec lui, pas trois pages plus loin
+    GROUPES_PAGE = {"excel": ("excel", "attributs", "portee")}
+    # les pages dont le groupe prend toute la hauteur (des listes à parcourir)
+    PAGES_PLEINES = ("branches",)
+
     def _build_global_tab(self) -> QWidget:
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        content = QWidget()
-        outer = QVBoxLayout(content)
+        """Les réglages globaux, UNE page par sujet et une barre latérale
+        pour passer de l'une à l'autre — au lieu d'un long défilement où
+        tout se voit à la fois."""
+        groupes: dict = {}          # clé de page -> son groupe
 
         def line(tip=None):
             e = QLineEdit()
@@ -963,6 +990,13 @@ class ConfigTab(QWidget):
         self.g_targetTable = line("Table où créer les mesures (vide = même table que la base).")
         self.g_folderPattern = line("Dossier des variations. {baseFolder} {base} {variation} {kpi} {branch}.")
         self.g_branchFolderPattern = line("Dossier racine d'une branche (ex. {baseFolder}\\__{branch}).")
+        # rangement des dossiers : par variation (les deux motifs ci-dessus)
+        # ou par KPI (motifs fixes, cf. generate_measures.DOSSIERS_PAR_KPI)
+        self.g_folderLayout = QComboBox()
+        self.g_folderLayout.addItem("par variation — _indicateurs\\_7d avg\\Weight 7d avg",
+                                    "variation")
+        self.g_folderLayout.addItem("par KPI — _indicateurs\\Weight\\Weight 7d avg", "kpi")
+        self.g_folderLayout.currentIndexChanged.connect(self._on_folder_layout)
         self.g_overwrite = check("overwriteExisting — réécrit les mesures générées existantes")
         self.g_removeOrphans = check("removeOrphans — supprime les mesures générées absentes du config")
         self.g_dryRun = check("dryRun — aperçu, en ligne de commande seulement")
@@ -1055,9 +1089,9 @@ class ConfigTab(QWidget):
             "transportable puisqu'il ne retient que le nom de la colonne.")))
         ligne3.addStretch()
         tdv.addLayout(ligne3)
-        outer.addWidget(gb_td)
+        groupes["excel"] = gb_td
 
-        outer.addWidget(self._form_group("Génération (settings)", [
+        groupes["generation"] = self._form_group("Génération (settings)", [
             ("sourceTable :", self.g_sourceTable,
              "Table où le générateur cherche les mesures de BASE — tes KPI.\n\n"
              "Défaut : _mesures."),
@@ -1076,6 +1110,25 @@ class ConfigTab(QWidget):
             ("targetTable :", self.g_targetTable,
              "Table où CRÉER les mesures générées.\n\n"
              "Vide = la table de chaque mesure de base (le cas courant)."),
+            ("Dossiers :", self.g_folderLayout,
+             "Comment ranger les mesures générées.\n\n"
+             "PAR VARIATION — un dossier par variation, tous KPI confondus :\n"
+             "   _indicateurs\\Weight\n"
+             "   _indicateurs\\_7d avg\\Weight 7d avg\n"
+             "   _indicateurs\\__YTD\\Weight YTD\n"
+             "   _indicateurs\\__YTD\\_7d avg\\Weight YTD 7d avg\n"
+             "Les deux motifs ci-dessous décident des noms.\n\n"
+             "PAR KPI — un dossier par KPI, la base restant dehors ; dedans,\n"
+             "toutes ses variations et un dossier par branche :\n"
+             "   _indicateurs\\Weight\n"
+             "   _indicateurs\\Weight\\Weight 7d avg\n"
+             "   _indicateurs\\Weight\\YTD\\Weight YTD\n"
+             "   _indicateurs\\Weight\\YTD\\Weight YTD 7d avg\n"
+             "Les motifs ci-dessous sont alors ignorés.\n\n"
+             "Changer de rangement DÉPLACE les mesures déjà générées à la\n"
+             "prochaine génération (elles sont « modifiées », rien n'est\n"
+             "recréé). Le choix vit dans le config : c'est celui du rapport,\n"
+             "pour tout le monde."),
             ("displayFolderPattern :", self.g_folderPattern,
              "Dossier d'affichage des mesures générées.\n\n"
              "Jetons : {baseFolder} dossier de la base · {base} · {variation}\n"
@@ -1108,7 +1161,7 @@ class ConfigTab(QWidget):
              "Dans l'app, c'est la case « Aperçu (dry-run) » du panneau de\n"
              "génération qui décide : ce réglage-ci y est sans effet."),
         ], resume="Où le générateur trouve tes KPI, où il range ce qu'il crée, "
-                  "et ce qu'il a le droit de modifier."))
+                  "et ce qu'il a le droit de modifier.")
 
         gb_d = QGroupBox("Formats « delta »")
         dv = QVBoxLayout(gb_d)
@@ -1140,7 +1193,7 @@ class ConfigTab(QWidget):
             "Vide = ancien comportement (pas de format).")))
         dv.addLayout(drow)
         dv.addWidget(self.lbl_delta_preview)
-        outer.addWidget(gb_d)
+        groupes["delta"] = gb_d
 
         # -- paramètres de champ : une LISTE de tables, chacune ses réglages --
         self.g_fp_enabled = check("Générer les tables paramètre de champ")
@@ -1211,7 +1264,7 @@ class ConfigTab(QWidget):
         rang_communs.addWidget(bouton_schema(self, "parametres"))
         gb_fp.layout().addLayout(rang_communs, gb_fp.layout().rowCount(), 0, 1, 3)
         gb_fp.layout().addWidget(communs, gb_fp.layout().rowCount(), 0, 1, 3)
-        outer.addWidget(gb_fp)
+        groupes["parametres"] = gb_fp
 
         # -- mesures cibles (dossier dédié : bases supplémentaires) --
         gb_c = QGroupBox("Mesures cibles (dossier dédié)")
@@ -1244,7 +1297,7 @@ class ConfigTab(QWidget):
         c_btns.addWidget(b_c_add)
         c_btns.addWidget(b_c_del)
         cv.addLayout(c_btns)
-        outer.addWidget(gb_c)
+        groupes["cibles"] = gb_c
 
         # -- portée par KPI --
         # une ligne : colonne + déduction. Le mode d'emploi est derrière le ⓘ.
@@ -1291,7 +1344,7 @@ class ConfigTab(QWidget):
             "<<removeFilters>>, <<tables>> (la liste nue).\n\n"
             "Cellule vide et déduction inactive = ce KPI n'a pas la variation\n"
             "(le journal le nomme).")))
-        outer.addWidget(gb_t)
+        groupes["portee"] = gb_t
 
         # -- attributs codés en dur (au lieu de LOOKUPVALUE) --
         gb_hc = QGroupBox("Attributs codés en dur (au lieu de LOOKUPVALUE)")
@@ -1321,79 +1374,146 @@ class ConfigTab(QWidget):
         hc_btns.addWidget(b_hc_add)
         hc_btns.addWidget(b_hc_del)
         hcv.addLayout(hc_btns)
-        outer.addWidget(gb_hc)
+        groupes["attributs"] = gb_hc
 
-        # -- branches --
+        # -- branches : deux colonnes pleine hauteur (les branches à gauche,
+        # ce que fait celle qui est choisie à droite) — en une colonne, deux
+        # listes de 110 px empilées ne laissaient rien voir --
         gb_b = QGroupBox("Branches (variations-de-variations)")
-        vb = QVBoxLayout(gb_b)
+        vb_haut = QVBoxLayout(gb_b)
+        colonnes = QHBoxLayout()
+        vb_haut.addLayout(colonnes, 1)
+        gauche = QVBoxLayout()
+        colonnes.addLayout(gauche, 2)
         note = QLabel("Coche une variation pour qu'elle devienne une BRANCHE : ses mesures sont "
                       "redéclinées (ex. YTD → YTD PY, YTD 7d avg…).")
         note.setWordWrap(True)
         note.setStyleSheet(f"color:{TEXT_DIM};")
-        vb.addWidget(note)
+        gauche.addWidget(note)
         self.g_branches = QListWidget()
         self.g_branches.setStyleSheet(checkable_list_stylesheet())
-        self.g_branches.setMaximumHeight(110)
+        self.g_branches.setMinimumHeight(160)
         self.g_branches.itemChanged.connect(self._on_branch_toggle)
-        vb.addWidget(self.g_branches)
+        gauche.addWidget(self.g_branches, 1)
 
-        # restriction : quelles variations la branche APPLIQUE
+        # ce que la branche choisie APPLIQUE : toutes les variations, sauf
+        # celles qu'on décoche
+        droite = QVBoxLayout()
+        colonnes.addLayout(droite, 3)
         pick = QHBoxLayout()
-        pick.addWidget(QLabel("Restreindre la branche :"))
+        pick.addWidget(QLabel("Branche :"))
         self.g_branch_pick = QComboBox()
         self.g_branch_pick.currentIndexChanged.connect(self._on_branch_pick)
         pick.addWidget(self.g_branch_pick, 1)
-        vb.addLayout(pick)
-        note2 = QLabel("Coche les variations que cette branche applique (toutes par défaut). "
-                       "Décoche pour exclure — ex. une cible autonome en {kpi} qui n'a pas à "
-                       "être re-forkée.")
+        droite.addLayout(pick)
+        note2 = QLabel("Les variations que cette branche applique. Toutes le sont par "
+                       "défaut, et une variation ajoutée plus tard aussi : décoche celles "
+                       "à exclure — ex. une cible autonome en {kpi} qui n'a pas à être "
+                       "re-forkée.")
         note2.setWordWrap(True)
         note2.setStyleSheet(f"color:{TEXT_DIM};")
-        vb.addWidget(note2)
+        droite.addWidget(note2)
+        aide_enveloppe = (
+            "Deux façons de dériver une variation en branche.\n\n"
+            "ENVELOPPE (défaut) : la branche entoure la variation RÉEL —\n"
+            "   Weight YTD PY = CALCULATE([Weight PY], DATESYTD(…))\n"
+            "Toutes les mesures de la branche se lisent pareil, donc un écart\n"
+            "se débogue dans la variation Réel. Et un correctif apporté à\n"
+            "celle-ci se répercute SANS régénérer.\n\n"
+            "SUBSTITUTION (case décochée) : le DAX de la variation est\n"
+            "recopié avec la mesure de branche à l'intérieur —\n"
+            "   Weight YTD PY = CALCULATE([Weight YTD], SAMEPERIODLASTYEAR(…))\n\n"
+            "Le PATRON vient du DAX de la branche : sa base ({baseRef})\n"
+            "devient la variation ({variationRef}). YTD =\n"
+            "CALCULATE({baseRef}, DATESYTD({date})) donne\n"
+            "CALCULATE({variationRef}, DATESYTD({date})). Le champ ne sert\n"
+            "qu'à en écrire un autre.\n\n"
+            "⚠ Ce n'est pas toujours équivalent. Identique pour les variations\n"
+            "qui DÉCALENT le contexte (SAMEPERIODLASTYEAR) ; autre sens pour\n"
+            "celles qui ÉPINGLENT une fenêtre sur la borne du contexte\n"
+            "(MAX({date}), DATEADD, DATESINPERIOD) — « 7d avg » enveloppé\n"
+            "est le 7d avg ordinaire, pas le 7d avg du cumul YTD.\n"
+            "Pour celles-là, décoche « envelopper en branche » dans l'éditeur\n"
+            "de la variation : elle seule repasse en substitution.")
+        enveloppe_l = QHBoxLayout()
+        self.g_branch_envelopper = QCheckBox(
+            "Envelopper la variation Réel (au lieu de recopier son DAX)")
+        self.g_branch_envelopper.setToolTip(aide_enveloppe)
+        self.g_branch_envelopper.stateChanged.connect(self._on_branch_envelopper)
+        enveloppe_l.addWidget(self.g_branch_envelopper, 1)
+        enveloppe_l.addWidget(self._help("Enveloppe de branche", aide_enveloppe))
+        droite.addLayout(enveloppe_l)
         enrobe = QHBoxLayout()
-        enrobe.addWidget(QLabel("Enveloppe :"))
+        enrobe.addWidget(QLabel("Patron :"))
         self.g_branch_wrap = QLineEdit()
-        self.g_branch_wrap.setPlaceholderText(
-            "vide = substitution (comportement d'origine) — "
-            "ex. CALCULATE({variationRef}, DATESYTD({date}))")
+        self.g_branch_wrap.setToolTip(aide_enveloppe)
         self.g_branch_wrap.textChanged.connect(self._on_branch_wrap_changed)
         enrobe.addWidget(self.g_branch_wrap, 1)
-        enrobe.addWidget(self._help("Enveloppe de branche", (
-            "Deux façons de dériver une variation en branche.\n\n"
-            "SUBSTITUTION (défaut, champ vide) : le DAX de la variation est\n"
-            "ré-émis avec la mesure de branche à l'intérieur —\n"
-            "   Weight YTD PY = CALCULATE([Weight YTD], SAMEPERIODLASTYEAR(…))\n\n"
-            "ENVELOPPE : la mesure de branche enveloppe la variation RÉEL —\n"
-            "   Weight YTD PY = CALCULATE([Weight PY], DATESYTD(…))\n"
-            "Toutes les mesures de la branche se ressemblent alors, donc un\n"
-            "écart se débogue forcément dans la variation Réel. Et un correctif\n"
-            "apporté à celle-ci se répercute SANS régénérer.\n\n"
-            "⚠ Ce n'est pas toujours équivalent. L'enveloppe convient aux\n"
-            "variations qui DÉCALENT le contexte (SAMEPERIODLASTYEAR) ; elle\n"
-            "change le sens de celles qui ÉPINGLENT une fenêtre sur la borne\n"
-            "du contexte (MAX({date}), DATEADD) — « 7d avg » enveloppé\n"
-            "redeviendrait le 7d avg ordinaire.\n\n"
-            "D'où l'activation variation par variation : coche « enveloppable »\n"
-            "dans l'éditeur, sur celles dont le DAX s'y prête.\n\n"
-            "Jeton : {variationRef} = la mesure Réel de la variation.")))
-        vb.addLayout(enrobe)
+        droite.addLayout(enrobe)
         self.g_branch_restrict = QListWidget()
         self.g_branch_restrict.setStyleSheet(checkable_list_stylesheet())
-        self.g_branch_restrict.setMaximumHeight(120)
+        self.g_branch_restrict.setMinimumHeight(160)
         self.g_branch_restrict.itemChanged.connect(self._on_branch_restrict_changed)
-        vb.addWidget(self.g_branch_restrict)
-        outer.addWidget(gb_b)
+        droite.addWidget(self.g_branch_restrict, 1)
+        groupes["branches"] = gb_b
 
-        outer.addStretch()
-        scroll.setWidget(content)
-        return scroll
+        # ---- la barre latérale et ses pages ----
+        w = QWidget()
+        h = QHBoxLayout(w)
+        h.setContentsMargins(0, 0, 0, 0)
+        self.reglages_nav = QListWidget()
+        self.reglages_nav.setObjectName("reglagesNav")
+        self.reglages_nav.setFixedWidth(210)
+        self.reglages_nav.setStyleSheet(
+            "QListWidget#reglagesNav { border: none; outline: 0; }"
+            "QListWidget#reglagesNav::item { padding: 8px 10px; }")
+        self.reglages_pages = QStackedWidget()
+        for cle, libelle in self.PAGES_REGLAGES:
+            page = QScrollArea()
+            page.setWidgetResizable(True)
+            page.setFrameShape(QFrame.NoFrame)
+            contenu = QWidget()
+            pv = QVBoxLayout(contenu)
+            pv.setContentsMargins(4, 0, 4, 0)
+            pleine = cle in self.PAGES_PLEINES
+            for g in self.GROUPES_PAGE.get(cle, (cle,)):
+                pv.addWidget(groupes.pop(g), 1 if pleine else 0)
+            if not pleine:
+                pv.addStretch()
+            page.setWidget(contenu)
+            self.reglages_pages.addWidget(page)
+            it = QListWidgetItem(libelle)
+            it.setData(Qt.UserRole, cle)
+            self.reglages_nav.addItem(it)
+        assert not groupes, f"groupe sans page : {sorted(groupes)}"
+        self.reglages_nav.currentRowChanged.connect(self.reglages_pages.setCurrentIndex)
+        self.reglages_nav.setCurrentRow(0)
+        h.addWidget(self.reglages_nav)
+        h.addWidget(self.reglages_pages, 1)
+        return w
+
+    def _on_folder_layout(self, *_) -> None:
+        """Par KPI, les deux motifs de dossier ne servent pas : grisés."""
+        par_variation = self.g_folderLayout.currentData() == "variation"
+        for w in (self.g_folderPattern, self.g_branchFolderPattern):
+            w.setEnabled(par_variation)
+        self._mark_dirty()
+
+    def aller_reglages(self, cle: str) -> bool:
+        """Montre la page `cle` de la fenêtre ⚙ Réglages (cf. PAGES_REGLAGES).
+        Rend False pour une clé inconnue, sans rien changer."""
+        for i in range(self.reglages_nav.count()):
+            if self.reglages_nav.item(i).data(Qt.UserRole) == cle:
+                self.reglages_nav.setCurrentRow(i)
+                return True
+        return False
 
     def _build_reglages_dialog(self) -> QDialog:
         """La fenêtre ⚙ Réglages : les réglages globaux du config, et deux
         boutons. Construite une fois ; chaque ouverture la recharge."""
         dlg = QDialog(self)
         dlg.setWindowTitle("⚙ Réglages globaux du config")
-        dlg.resize(980, 820)
+        dlg.resize(1040, 700)
         v = QVBoxLayout(dlg)
         v.addWidget(self._build_global_tab(), 1)
         bas = QHBoxLayout()
@@ -1414,8 +1534,11 @@ class ConfigTab(QWidget):
         v.addLayout(bas)
         return dlg
 
-    def ouvrir_reglages(self) -> bool:
+    def ouvrir_reglages(self, page: str = "") -> bool:
         """⚙ Réglages : les réglages globaux, dans leur fenêtre.
+
+        `page` : la page à montrer (clé de PAGES_REGLAGES) ; vide = celle où
+        on l'avait laissée.
 
         Ouvrir d'abord la vue en cours dans le config (un JSON brut invalide
         arrête tout, comme pour changer de vue). « Enregistrer » écrit le
@@ -1426,13 +1549,15 @@ class ConfigTab(QWidget):
             QMessageBox.information(
                 self, "Réglages",
                 "Aucun measures_config.json chargé pour ce rapport — choisis-le\n"
-                "d'abord avec « Config… » dans la barre du haut.")
+                "d'abord avec le bouton 📄 du config, sous la barre du projet.")
             return False
         if not self._committer_vue():
             return False
         sale_avant = self._dirty
         self._load_global()
         self.lbl_reglages_fichier.setText(str(self.project.config_json))
+        if page:
+            self.aller_reglages(page)
         dlg = self._dlg_reglages
         ok = (dlg.exec_() if hasattr(dlg, "exec_") else dlg.exec()) == QDialog.Accepted
         if not ok:
@@ -1510,6 +1635,9 @@ class ConfigTab(QWidget):
         self.g_targetTable.setText(s.get("targetTable", "") or "")
         self.g_folderPattern.setText(s.get("displayFolderPattern", "") or "")
         self.g_branchFolderPattern.setText(s.get("branchFolderPattern", "") or "")
+        i = self.g_folderLayout.findData(str(s.get("folderLayout") or "variation").lower())
+        self.g_folderLayout.setCurrentIndex(max(i, 0))
+        self._on_folder_layout()
         self.g_overwrite.setChecked(bool(s.get("overwriteExisting", True)))
         sym = s.get("deltaSymbols") or {}
         self.g_delta_pos.setText(sym.get("positive", gm.DELTA_SYMBOLS["positive"]))
@@ -1584,17 +1712,19 @@ class ConfigTab(QWidget):
                 item.setData(Qt.UserRole, vid)
                 self.g_branches.addItem(item)
 
-        # état des restrictions : branche -> set des variations appliquées
-        self._branch_restrict = {}
+        # état des exclusions : branche -> set des variations qu'elle écarte.
+        # L'ancien format (liste blanche « variations ») se lit avec la même
+        # règle que la génération, et sera réécrit en exclusions
+        self._branch_exclu = {}
         self._branch_wrap = {
             b: str((bval or {}).get("wrap") or "")
             for b, bval in branches.items() if isinstance(bval, dict)}
+        self._branch_subst = {
+            b: bool(isinstance(bval, dict) and bval.get("substitution"))
+            for b, bval in branches.items()}
         for b, bval in branches.items():
-            applicable = set(self._applicable_vars(b))
-            if isinstance(bval, dict) and isinstance(bval.get("variations"), list):
-                self._branch_restrict[b] = set(bval["variations"]) & applicable
-            else:
-                self._branch_restrict[b] = applicable   # pas de restriction = toutes
+            appliquees = set(gm.variations_de_branche(b, bval, self._variations()))
+            self._branch_exclu[b] = set(self._applicable_vars(b)) - appliquees
         self._branch_pick_current = None
         self._reload_branch_pick(list(branches.keys()))
 
@@ -1618,11 +1748,10 @@ class ConfigTab(QWidget):
         self._save_branch_restrict()
         branch_ids = self._checked_branch_ids()
         for b in branch_ids:                        # nouvelles : toutes par défaut
-            if b not in self._branch_restrict:
-                self._branch_restrict[b] = set(self._applicable_vars(b))
-        for b in list(self._branch_restrict):       # retirées
+            self._branch_exclu.setdefault(b, set())
+        for b in list(self._branch_exclu):          # retirées
             if b not in branch_ids:
-                del self._branch_restrict[b]
+                del self._branch_exclu[b]
         self._reload_branch_pick(branch_ids)
 
     def _reload_branch_pick(self, branch_ids):
@@ -1640,18 +1769,27 @@ class ConfigTab(QWidget):
 
     def _show_branch_restrict(self, branch_id):
         self._branch_pick_current = branch_id
-        included = self._branch_restrict.get(branch_id, set(self._applicable_vars(branch_id)))
+        exclues = self._branch_exclu.get(branch_id, set())
         self.g_branch_restrict.blockSignals(True)
         self.g_branch_restrict.clear()
         for v in self._applicable_vars(branch_id):
             it = QListWidgetItem(v)
             it.setFlags(it.flags() | Qt.ItemIsUserCheckable)
-            it.setCheckState(Qt.Checked if v in included else Qt.Unchecked)
+            it.setCheckState(Qt.Unchecked if v in exclues else Qt.Checked)
             self.g_branch_restrict.addItem(it)
         self.g_branch_restrict.blockSignals(False)
         self.g_branch_wrap.blockSignals(True)
         self.g_branch_wrap.setText(self._branch_wrap.get(branch_id, ""))
+        derive = gm.patron_enveloppe(branch_id, {}, self._config.get("variations") or {})
+        self.g_branch_wrap.setPlaceholderText(
+            f"vide = tiré du DAX de {branch_id} : {derive}" if derive else
+            f"le DAX de {branch_id} ne cite pas {{baseRef}} : écris le patron, "
+            "ex. CALCULATE({variationRef}, DATESYTD({date}))")
         self.g_branch_wrap.blockSignals(False)
+        self.g_branch_envelopper.blockSignals(True)
+        self.g_branch_envelopper.setChecked(not self._branch_subst.get(branch_id, False))
+        self.g_branch_envelopper.blockSignals(False)
+        self.g_branch_wrap.setEnabled(self.g_branch_envelopper.isChecked())
         idx = self.g_branch_pick.findText(branch_id)
         if idx >= 0 and self.g_branch_pick.currentIndex() != idx:
             self.g_branch_pick.blockSignals(True)
@@ -1659,16 +1797,24 @@ class ConfigTab(QWidget):
             self.g_branch_pick.blockSignals(False)
 
     def _save_branch_restrict(self):
-        """Persiste la restriction affichée dans self._branch_restrict."""
+        """Persiste les exclusions affichées dans self._branch_exclu."""
         b = self._branch_pick_current
         if not b:
             return
-        self._branch_restrict[b] = {
+        self._branch_exclu[b] = {
             self.g_branch_restrict.item(i).text()
             for i in range(self.g_branch_restrict.count())
-            if self.g_branch_restrict.item(i).checkState() == Qt.Checked
+            if self.g_branch_restrict.item(i).checkState() != Qt.Checked
         }
         self._branch_wrap[b] = self.g_branch_wrap.text().strip()
+        self._branch_subst[b] = not self.g_branch_envelopper.isChecked()
+
+    def _on_branch_envelopper(self, *_):
+        b = self._branch_pick_current
+        if b:
+            self._branch_subst[b] = not self.g_branch_envelopper.isChecked()
+        self.g_branch_wrap.setEnabled(self.g_branch_envelopper.isChecked())
+        self._mark_dirty()
 
     def _on_branch_wrap_changed(self, *_):
         if self._loading:
@@ -1707,6 +1853,9 @@ class ConfigTab(QWidget):
         sset("targetTable", self.g_targetTable.text().strip())
         sset("displayFolderPattern", self.g_folderPattern.text().strip())
         sset("branchFolderPattern", self.g_branchFolderPattern.text().strip())
+        # « variation » est le défaut : la clé n'est écrite que pour « kpi »
+        sset("folderLayout", "" if self.g_folderLayout.currentData() == "variation"
+             else self.g_folderLayout.currentData())
         # Excel des indicateurs : bloc unique (on n'écrit que le non-défaut)
         td = {"path": self.g_td_path.text().strip(),
               "keyColumn": self.g_td_key.currentText().strip(),
@@ -1845,16 +1994,25 @@ class ConfigTab(QWidget):
             b = item.data(Qt.UserRole)
             value = dict(old.get(b) or {}) if isinstance(old.get(b), dict) else {}
             applicable = self._applicable_vars(b)    # ordre du config
-            included = self._branch_restrict.get(b, set(applicable))
+            exclues = self._branch_exclu.get(b, set())
             enveloppe = (self._branch_wrap.get(b) or "").strip()
             if enveloppe:
                 value["wrap"] = enveloppe
             else:
-                value.pop("wrap", None)          # vide = substitution, clé retirée
-            if set(included) >= set(applicable):     # toutes appliquées -> pas de restriction
-                value.pop("variations", None)
+                value.pop("wrap", None)          # vide = patron tiré du DAX de la branche
+            # l'enveloppe est le défaut : seule la substitution s'écrit
+            if self._branch_subst.get(b):
+                value["substitution"] = True
             else:
-                value["variations"] = [v for v in applicable if v in included]
+                value.pop("substitution", None)
+            # des EXCLUSIONS, jamais une liste blanche : une variation ajoutée
+            # plus tard est appliquée d'office (l'ancienne clé est migrée)
+            value.pop("variations", None)
+            excl = [v for v in applicable if v in exclues]
+            if excl:
+                value["excludeVariations"] = excl
+            else:
+                value.pop("excludeVariations", None)
             new_branches[b] = value
         if new_branches:
             self._config["branches"] = new_branches
@@ -1967,7 +2125,7 @@ class ConfigTab(QWidget):
             self.ed_raw.blockSignals(False)
             self.lbl_hint.setText(
                 "Aucun measures_config.json chargé — attendu : " + str(path)
-                + "\nClique « Config… » dans la barre du haut pour choisir celui de "
+                + "\nClique le bouton 📄 du config, sous la barre du projet, pour choisir celui de "
                   "CE rapport (au travail il peut vivre dans un autre dossier).")
             self.lbl_hint.show()
             for w in (self.inner, self.btn_save, self.btn_reload):
@@ -2121,7 +2279,7 @@ class ConfigTab(QWidget):
             self.cmb_datacat.setCurrentText("")
             self.chk_infp.setChecked(False)
             self.chk_kpi.setChecked(True)
-            self.chk_wrap.setChecked(False)
+            self.chk_wrap.setChecked(True)
             self.chk_cible.setChecked(False)
             self.ed_dax.setPlainText("")
         else:
@@ -2134,7 +2292,7 @@ class ConfigTab(QWidget):
             self.chk_infp.setChecked(bool(v.get("inFieldParameter", False)))
             self.chk_kpi.setChecked(bool(v.get("appliesToKpi", True)))
             self.chk_cible.setChecked(bool(v.get("appliesToCibles", False)))
-            self.chk_wrap.setChecked(bool(v.get("wrapInBranch", False)))
+            self.chk_wrap.setChecked(gm.enveloppable(v))
             self._refresh_kind_items(v.get("appliesToFormats") or None)
             self.ed_exclude.setText(
                 ", ".join(v.get("excludeNameContains") or []))
@@ -2166,10 +2324,12 @@ class ConfigTab(QWidget):
         v["inFieldParameter"] = self.chk_infp.isChecked()
         # portée : on n'écrit que le NON-défaut (appliesToKpi défaut True,
         # appliesToCibles défaut False) — garde les configs existantes propres
+        # envelopper est le défaut : seule la sortie s'écrit (et l'ancien
+        # « wrapInBranch: true » disparaît en passant)
         if self.chk_wrap.isChecked():
-            v["wrapInBranch"] = True
-        else:
             v.pop("wrapInBranch", None)
+        else:
+            v["wrapInBranch"] = False
         if self.chk_kpi.isChecked():
             v.pop("appliesToKpi", None)
         else:
@@ -2369,12 +2529,7 @@ class ConfigTab(QWidget):
             # branche ne s'applique jamais à elle-même (« Weight YTD YTD »
             # s'affichait ici sans jamais être généré), et une branche
             # restreinte n'applique que les variations qu'elle liste
-            if vid.lower() == b.lower():
-                return False
-            bdef = cfg_branches.get(b)
-            if isinstance(bdef, dict) and bdef.get("variations"):
-                return vid in [str(x) for x in bdef["variations"]]
-            return True
+            return vid in gm.variations_de_branche(b, cfg_branches.get(b), variations)
 
         branches = [b for b in cfg_branches if branche_applique(b)]
         lignes = []

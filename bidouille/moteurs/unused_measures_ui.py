@@ -549,9 +549,6 @@ class ChopChopPanel(QWidget):
             f"(dont {generated} générée(s) depuis le config) · "
             f"{len(columns)} colonnes — <b>{len(col_no_ref) + len(col_chained)} inutilisée(s)</b>"
             f"{dead_txt}."
-            # sans suppression (production), l'avertissement n'a pas d'objet
-            + ("" if _production() else
-               " ⚠ Fermer Power BI Desktop avant toute suppression.")
         )
 
         self.tree.blockSignals(True)
@@ -939,7 +936,7 @@ class ChopChopPanel(QWidget):
         if gen:
             msg.append(f"⚠ {len(gen)} mesure(s) générée(s) reviendront à la "
                        "prochaine génération (config).")
-        msg.append("⚠ Power BI Desktop fermé · backup sous _backupsPBIdouille\\_tmdl_backups\\ · "
+        msg.append("Backup sous _backupsPBIdouille\\_tmdl_backups\\ · "
                    "détail complet dans le journal.")
 
         if QMessageBox.question(

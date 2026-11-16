@@ -105,8 +105,7 @@ class BackupsDialog(QDialog):
             "réécrit les fichiers listés ; l'état courant est sauvegardé "
             "avant, donc l'opération reste annulable. Chaque outil ne garde "
             f"que ses <b>{br.MAX_SESSIONS}</b> plus récentes : au-delà, la "
-            "plus vieille s'efface toute seule. "
-            "⚠ Power BI Desktop doit être <b>fermé</b>.")
+            "plus vieille s'efface toute seule.")
 
         muted = QBrush(QColor(_theme.TEXT_MUTED)) if _theme else QBrush(QColor(150, 150, 150))
         for s in self.sessions:
@@ -186,8 +185,7 @@ class BackupsDialog(QDialog):
             msg.append(f"• {s['n_orphelins']} sans cible connue : ignoré(s)")
         msg += ["",
                 "L'état ACTUEL est sauvegardé avant : cette restauration "
-                "pourra elle-même être annulée.",
-                "⚠ Power BI Desktop doit être fermé."]
+                "pourra elle-même être annulée."]
 
         if QMessageBox.question(
             self, "Confirmer la restauration", "\n".join(msg),

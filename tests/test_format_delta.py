@@ -239,7 +239,10 @@ mesures.write_text(texte[:m.start(2)] + texte[m.end(2):], encoding="utf-8")
 conf["variations"]["étiquette"] = {
     "namePattern": "{base} étiquette",
     "dax": "FORMAT({baseRef}, {baseFormatString}) & " + Q + " pas" + Q,
-    "formatString": "text", "inFieldParameter": False}
+    "formatString": "text", "inFieldParameter": False,
+    # ce qu'on verifie en branche, c'est le DAX RECOPIE (le format de la base
+    # de branche) : pas d'enveloppe, qui est le defaut
+    "wrapInBranch": False}
 journal: list = []
 gm.generate(modele, conf, dry_run=False, log=journal.append)
 existantes, _bases = gm.read_measures(modele, conf)

@@ -226,6 +226,7 @@ recommandé pour la première exécution sur un nouveau modèle.
 | `targetTable` | où créer les mesures (omis = table de la base) | `_mesures` |
 | `displayFolderPattern` | dossier des variations | `{baseFolder}\_{variation}` |
 | `branchFolderPattern` | dossier de la MESURE de branche (racine) | `{baseFolder}\__{branch}` |
+| `folderLayout` | `"kpi"` = un dossier par KPI (les deux motifs ci-dessus sont alors ignorés) ; omis = par variation — cf. [folderLayout](#folderlayout--ranger-par-variation-ou-par-kpi) | `"kpi"` |
 | `overwriteExisting` | maj des mesures existantes | `true` |
 | `removeOrphans` | supprime les générées hors config | `true` |
 | `dryRun` | rapport seulement | `false` |
@@ -457,6 +458,51 @@ Le chemin du fichier est retenu au niveau de **l'application**, pas du projet :
 pose-le sur un lecteur partagé et toute l'équipe y puise. Fichier absent ou
 illisible = bibliothèque vide, jamais une erreur ; « Publier » le crée.
 
+### folderLayout — ranger par variation ou par KPI
+
+```json
+"settings": { "folderLayout": "kpi" }
+```
+
+Absent (ou `"variation"`, le défaut) : un dossier **par variation**, tous KPI
+confondus — les motifs `displayFolderPattern` et `branchFolderPattern`
+décident des noms.
+
+```
+_indicateurs\Weight                          (la base)
+_indicateurs\_7d avg\Weight 7d avg
+_indicateurs\__YTD\Weight YTD
+_indicateurs\__YTD\_7d avg\Weight YTD 7d avg
+```
+
+`"kpi"` : un dossier **par KPI**, la base restant **dehors** ; dedans, toutes
+ses variations, et un dossier par branche qui porte la mesure de branche et
+ses variations. Les deux motifs des settings sont alors ignorés.
+
+```
+_indicateurs\Weight                          (la base)
+_indicateurs\Weight\Weight 7d avg
+_indicateurs\Weight\YTD\Weight YTD
+_indicateurs\Weight\YTD\Weight YTD 7d avg
+_cibles\Weight\Weight cible écart           (les cibles pareil, sous leur dossier)
+```
+
+Les deux motifs ne pouvaient pas dire « par KPI » à eux seuls : une variation
+**en branche** prend le motif des variations avec le dossier de la branche
+pour `{baseFolder}`, et `{baseFolder}\{kpi}` la rangerait un cran trop bas
+(`…\Weight\YTD\Weight`). Le rangement par KPI a donc ses trois motifs à lui
+(`generate_measures.DOSSIERS_PAR_KPI`). Une variation qui **impose** son
+dossier (`{baseFolder}\_SVG`, `{folder}\_CF`) le garde, mais `{baseFolder}`
+y désigne le dossier du KPI : la sparkline de Weight reste dans le dossier de
+Weight, comme celle de Weight YTD reste dans celui de la branche.
+`folderVariation` est sans effet par KPI.
+
+Le choix est dans **⚙ Réglages → Génération → Dossiers**. Il vit dans le
+config, donc il vaut pour **le rapport**, quel que soit le poste. Basculer
+**déplace** les mesures déjà générées à la prochaine génération : elles sont
+*modifiées*, rien n'est recréé, et le retour rend exactement les dossiers
+d'avant. Les mesures de base, elles, ne bougent jamais.
+
 ### branches
 
 ```json
@@ -464,53 +510,83 @@ illisible = bibliothèque vide, jamais une erreur ; « Publier » le crée.
 ```
 
 La mesure générée par la variation YTD devient une base : `Weight YTD PY`,
-`Weight YTD Δ 30d`, etc. `"variations": [ids...]` restreint la liste ; omise =
-toutes (sauf la branche elle-même). **Un seul niveau** (pas de branche de
+`Weight YTD Δ 30d`, etc. Une branche applique **toutes** les variations (sauf
+elle-même) ; `"excludeVariations": [ids...]` en écarte. C'est une liste
+d'**exclusions** et non une liste blanche pour qu'une variation ajoutée plus
+tard entre d'office dans la branche : on décoche ce qu'on ne veut pas
+(⚙ Réglages → Branches), on n'a rien à cocher. L'ancien format
+`"variations": [ids...]` (seulement celles-là) est encore lu tel quel ;
+l'outil le réécrit en exclusions au prochain enregistrement. **Un seul niveau** (pas de branche de
 branche). Dossiers : la mesure YTD vit à la racine `__YTD`, ses variations
 autour (`__YTD\_7d avg`...). Dans les paramètres, les rangées de branche
 gardent les MÊMES libellés/index — c'est la colonne `Branche` qui distingue,
 et la mesure de branche devient la rangée « Réel » de sa branche.
 
-#### Substitution ou ENVELOPPE
+#### Enveloppe (défaut) ou substitution
 
 Deux façons de dériver une variation en branche.
 
-**Substitution** (défaut) : le DAX de la variation est ré-émis avec la mesure de
-branche à l'intérieur — `variation(branche(base))`.
+**Enveloppe** (défaut) : la branche entoure la variation Réel —
+`branche(variation(base))`.
+
+```dax
+Weight YTD PY = CALCULATE([Weight PY], DATESYTD('dim_Date'[Date]))
+```
+
+**Substitution** : le DAX de la variation est recopié avec la mesure de branche
+à l'intérieur — `variation(branche(base))`.
 
 ```dax
 Weight YTD PY = CALCULATE([Weight YTD], SAMEPERIODLASTYEAR('dim_Date'[Date]))
 ```
 
-**Enveloppe** : la branche entoure la variation Réel — `branche(variation(base))`.
+L'enveloppe gagne deux fois : toutes les mesures de la branche se lisent
+pareil, donc un écart se débogue dans la variation Réel ; et un correctif
+apporté à celle-ci se répercute **sans régénérer**, puisque la mesure est
+référencée et non recopiée.
+
+**Le patron vient du DAX de la branche**, il n'y a rien à écrire : sa base
+(`{baseRef}` ou `[{base}]`) devient `{variationRef}`, la mesure Réel de la
+variation. `YTD` = `CALCULATE({baseRef}, DATESYTD({date}))` donne
+`CALCULATE({variationRef}, DATESYTD({date}))`. Une branche dont le DAX ne cite
+pas sa base ne peut pas en tirer de patron : elle reste en substitution, et le
+journal le dit une fois.
 
 ```json
-"branches": { "YTD": { "wrap": "CALCULATE({variationRef}, DATESYTD({date}))" } }
-```
-```dax
-Weight YTD PY = CALCULATE([Weight PY], DATESYTD('dim_Date'[Date]))
+"branches": {
+  "YTD": {},                                                   // enveloppe, patron tiré du DAX de YTD
+  "MTD": { "wrap": "TOTALMTD({variationRef}, {date})" },     // patron écrit à la main
+  "R12": { "substitution": true }                              // recopie tout
+},
+"variations": { "7d avg": { "wrapInBranch": false, … } }       // elle seule est recopiée
 ```
 
-Jeton `{variationRef}` = la mesure **Réel** de la variation. Deux gains :
-toutes les mesures de la branche se ressemblent, donc un écart se débogue
-forcément dans la variation Réel ; et un correctif apporté à celle-ci se
-répercute **sans régénérer**, puisque la mesure est référencée et non recopiée.
+Dans l'app : **⚙ Réglages → Branches**, case « Envelopper la variation Réel »
+(et le champ *Patron*, vide = tiré du DAX) ; **éditeur de variation**, case
+« envelopper en branche ». Les deux sont cochées par défaut, et seul le
+**non-défaut** s'écrit dans le config.
 
-> ⚠ **Ce n'est pas toujours équivalent**, d'où l'activation variation par
-> variation (`wrapInBranch`, case « enveloppable en branche » dans l'éditeur) :
+> ⚠ **Ce n'est pas toujours équivalent** :
 >
-> | le DAX de la variation… | enveloppe |
+> | le DAX de la variation… | enveloppée |
 > |---|---|
-> | **décale** le contexte (`SAMEPERIODLASTYEAR`) | équivalent — `PY`, `YoY %`, `MTD` |
-> | **épingle** une fenêtre sur la borne du contexte (`MAX({date})`, `DATEADD`, `DATESINPERIOD`) | **change le sens** — `7d avg` enveloppé redevient le 7d avg ordinaire, `Δ 7d` compare deux plages décalées |
+> | **décale** le contexte (`SAMEPERIODLASTYEAR`) | identique — `PY`, `YoY %`, `MTD` |
+> | **épingle** une fenêtre sur la borne du contexte (`MAX({date})`, `DATEADD`, `DATESINPERIOD`) | **autre sens** — `7d avg` enveloppé est le 7d avg ordinaire (la même valeur que `Weight 7d avg`), pas la moyenne 7 jours du cumul ; `Δ 7d` compare deux plages YTD décalées d'une semaine |
 >
-> C'est le DAX de la variation qui décide, donc le drapeau vit sur elle ; la
-> branche ne fournit que le patron.
+> Pour celles-là, décoche « envelopper en branche » sur la variation si c'est
+> la version « du cumul » que tu veux — ou exclus-la de la branche.
 
-Le patron sans variation cochée, ou une variation cochée sans patron : rien ne
-change, on reste en substitution. Noms, paramètres de champ, annotations,
-formats et propagation sont **inchangés** dans les deux cas — seul le DAX généré
-diffère, donc l'essai se fait et se défait par une régénération.
+Une variation dont le DAX cite **`{branch}`** (`[{kpi} {branch} PY]`) est
+toujours **recopiée**, case cochée ou non : elle a été écrite *pour* la
+branche, et l'envelopper jetterait ce qu'elle y fait.
+
+Avant, l'enveloppe était **opt-in** et demandait deux choses à la fois : la
+case sur la variation **et** un patron tapé sur la branche. La case seule ne
+faisait rien. Un ancien `"wrapInBranch": true` se lit toujours (c'est le
+défaut) et disparaît au prochain enregistrement. Noms, paramètres de champ,
+annotations, formats et propagation ne changent pas — seul le DAX généré
+diffère : à la première génération, les variations de branche sont
+*modifiées*, rien n'est recréé.
 
 ### switch — retiré
 
@@ -718,7 +794,7 @@ config le rendrait faux dès sa réutilisation ; dans TD_Indicateurs, l'attribut
 vit avec le rapport et le config reste générique. (Même principe que
 `kpiLabelLookup` et `hardcodedAttributes`.)
 
-Une seule ligne dans **⚙ Réglages → Portée par KPI** : le nom
+Une seule ligne dans **⚙ Réglages → Excel des indicateurs → Portée par KPI** : le nom
 de la colonne (le détail est derrière le ⓘ). Excel absent ou colonne inconnue ?
 Avertissement au journal, génération poursuivie — jamais d'arrêt brutal.
 
@@ -1751,6 +1827,9 @@ chemin, URL). Gère : connexions live (`byConnection`), `expressions.tmdl`
 Le CSV se charge dans Power BI → rapport de lineage du parc. Au travail :
 pointer `ROOT` vers le répertoire des projets.
 
+Pour **un seul** rapport, l'onglet **« Sources de données »** de PBIdouille
+fait la même lecture (`bidouille\moteurs\lineage.py`) et l'affiche.
+
 ---
 
 ## 10. Recettes
@@ -1921,7 +2000,8 @@ manifestes stockent des chemins relatifs au projet : déplacer un projet avec
 son dossier de sauvegardes les garde restaurables.
 
 **measures_config.json** : par défaut, celui à côté du `.pbip` ; sinon le
-bouton **« Config… »** de la barre permet d'en choisir un autre (mémorisé PAR
+bouton **📄** sous la barre du projet — il montre le chemin du config utilisé —
+permet d'en choisir un autre d'un clic (mémorisé PAR
 projet — utile au travail si le config ne vit pas avec le rapport). La table
 paramètre des KPI est résolue dans l'ordre : celles du config
 (`fieldParameter.tables`, dans l'ordre de la liste) → la première qui
@@ -1967,7 +2047,7 @@ Ce qui traînait dans l'ancien est **rapatrié** à la première lecture.
 |---|---|
 | projet ouvert, projets récents | application |
 | **bibliothèque de variations** (`biblio_path`) | **application** — un fichier global, souvent sur un lecteur partagé ; il ne bouge pas quand on change de rapport |
-| `measures_config.json` choisi (`Config…`) | **par projet** — chaque rapport a le sien |
+| `measures_config.json` choisi (bouton 📄) | **par projet** — chaque rapport a le sien |
 | PBIP gabarit du wireframe | **par projet**, avec repli sur le **dernier choisi** où que ce soit |
 
 Le registre plutôt qu'un fichier posé à côté de `app.py` : dézipper une mise à
@@ -2123,6 +2203,7 @@ bidouille\
     tab_config.py       onglet « Mesures » (Variations, JSON brut) + la fenêtre ⚙ Réglages
     tab_model.py        panneau « Génération des mesures », posé en tête du journal (generate_measures.py)
     tab_report.py       onglet « Rapport » (propagation, couleurs des matrices)
+    tab_lineage.py      onglet « Sources de données » (moteurs\lineage.py)
     dialog_sources.py   la grille des sources du formatage (propagation.json)
     tab_wireframe.py    onglet « Wireframe » (plan des pages, niveaux actifs, gabarits)
     tab_chopchop.py     onglet « ChopChop 🪓 » (embarque le panneau de unused_measures_ui)
@@ -2150,15 +2231,15 @@ appelées avec les constantes de tête). Aucune logique dupliquée.
 - **Couleurs des matrices** : une **fiche** rappelle l'Excel des indicateurs
   — son nom (chemin complet en infobulle, ⚠ s'il est introuvable) et les
   colonnes lues (clé · fond · texte), libellés grisés, valeurs en clair — et
-  un lien **« Se règle dans ⚙ Réglages »** ouvre la fenêtre : l'Excel
+  un lien **« Se règle dans ⚙ Réglages »** ouvre la fenêtre, directement sur
+  sa page « Excel des indicateurs » : l'Excel
   n'est défini qu'une fois, dans le config → bouton **Colorer**. Le bouton **« Aperçu & édition des couleurs… »** ouvre
   l'éditeur : chaque KPI avec ses pastilles fond/texte
   et un aperçu rendu ; clic = sélecteur de couleurs ; **Enregistrer réécrit
   l'Excel** (et CRÉE les colonnes `couleur_fill`/`couleur_text` si l'Excel n'a
   que l'ancienne colonne `couleur` — laquelle n'est pas touchée).
 - **Propager puis colorer** enchaîne les deux dans le bon ordre.
-- Une écriture réelle (dry-run décoché) demande confirmation ; **fermer Power BI
-  Desktop** avant. La sortie CLI arrive telle quelle dans la **colonne
+- Une écriture réelle (dry-run décoché) demande confirmation. La sortie CLI arrive telle quelle dans la **colonne
   journal** à droite, horodatée et colorée (ci-dessus) ; « Propager puis
   colorer » donne **deux** bannières et **deux** durées, une par étape.
 
@@ -2299,10 +2380,18 @@ communs). Voir `core/template_import.py`.
 
 ### Onglet « Mesures »
 
-Deux sous-onglets : **Variations** (l'éditeur ci-dessous) et **JSON brut**.
+Trois sous-onglets : **Variations** (l'éditeur ci-dessous), **Arbre des
+mesures** et **JSON brut**.
 Les réglages globaux du config ont leur **fenêtre**, ouverte par **⚙ Réglages**
 dans la barre du haut : ils servent aussi à l'onglet Rapport (l'Excel des
 indicateurs, par exemple), ils n'avaient rien à faire sous les Mesures.
+Une **barre latérale** y mène à une page par sujet — Génération, Excel des
+indicateurs, Paramètres de champ, Branches, Mesures cibles, Formats « delta »
+— au lieu d'un long défilement où tout se voyait à la fois. La page **Excel
+des indicateurs** porte aussi les **Attributs codés en dur** et la **Portée
+par KPI** : ce sont des colonnes du même classeur. La page **Branches** prend
+toute la hauteur, en deux colonnes (les branches à gauche, ce qu'applique
+celle qui est choisie à droite). La fenêtre rouvre sur la dernière page vue.
 **Enregistrer** y écrit le config, comme « Sauvegarder » — avec tout ce qui
 est en attente, variations comprises ; **Annuler** oublie ce qui a été
 touché dans la fenêtre, y compris l'orange qu'il avait allumé.
@@ -2344,7 +2433,8 @@ CF Δ 30d vit dans le dossier de Δ 30d), **dataCategory en dropdown**
   connus en vert, **inconnus en rouge souligné**. Sont connus les jetons du
   générateur, ceux de la portée par KPI (`<<tables>>`, `<<allTables>>`,
   `<<removeFilters>>`, et `{table}` **dans** un `<<each …>>`) et les
-  `<<labels>>` déclarés dans **⚙ Réglages → Attributs codés en dur** —
+  `<<labels>>` déclarés dans **⚙ Réglages → Excel des indicateurs**
+  (Attributs codés en dur) —
   une déclaration fraîche compte tout de suite, sans enregistrer. Les
   constructeurs de table DAX `{ ad }` (avec espaces) ne sont pas des jetons ;
 - **lint** sous l'éditeur, fondé sur le **même** repérage que la couleur : ce
@@ -2407,6 +2497,27 @@ générer avec un config non enregistré propose **Enregistrer puis générer** 
 en silence. Workflow : éditer → **Générer les mesures** (qui enregistre si
 besoin) → rouvrir Desktop. Le bouton **« Sauvegarder »** s'allume en
 **orange** dès que le config a des modifications en attente.
+
+### Onglet « Sources de données »
+
+D'où vient chaque table du rapport ouvert — le lineage de `scan_lineage.py`
+(section 9), pour ce projet-ci, sans CSV à charger. Lecture seule.
+
+- **Regrouper par source** (défaut) : une ligne par source distincte — l'Excel
+  des indicateurs, la base ODBC, un CSV, un serveur SQL… — avec son détail
+  (chemin, DSN, serveur / base, URL) et, dessous, les tables qui la lisent
+  et leur mode (import, directQuery…). **Regrouper par table** : l'inverse.
+- Les **tables calculées** (DAX : paramètres de champ, calendrier…) ne lisent
+  rien de l'extérieur : elles sont rangées à part, repliées.
+- Un argument qui nomme un **paramètre M** (`Sql.Database(Serveur, Base)`)
+  montre aussi sa valeur, lue dans `expressions.tmdl`.
+- Un **fichier local** cité qui n'existe pas sur ce poste est marqué **⚠** :
+  c'est ce qui fera échouer l'actualisation ici. Les chemins réseau
+  (`\\serveur\…`) ne sont pas testés, pour ne pas faire attendre l'onglet.
+- Un rapport en **connexion live** le dit : ses sources sont dans le modèle
+  publié.
+- Clic droit : copier le détail, ou afficher le fichier dans l'Explorateur.
+  **Exporter CSV…** écrit le même format que `scan_lineage.py`.
 
 ### Onglet « ChopChop 🪓 »
 

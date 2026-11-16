@@ -1178,15 +1178,17 @@ check("les trois colonnes lues, chacune nommee",
           for x in ("clé", "fond", "texte", fr._td_spec()["keyColumn"])))
 appels_reglages = []
 vrai_ouvrir = fen.tab_config.ouvrir_reglages
-fen.tab_config.ouvrir_reglages = lambda: appels_reglages.append(1) or False
+fen.tab_config.ouvrir_reglages = lambda page="": appels_reglages.append(page or 1) or False
 fr.lbl_td_reglage.linkActivated.emit("reglages")
 app.processEvents()
-check("le lien de la fiche ouvre la fenetre ⚙ Reglages", appels_reglages == [1])
+check("le lien de la fiche ouvre la fenetre ⚙ Reglages, sur la page de l'Excel",
+      appels_reglages == ["excel"])
 from qtpy.QtWidgets import QPushButton as _QPB2                  # noqa: E402
 engrenage = [b for b in fen.findChildren(_QPB2) if b.text() == "⚙ Réglages"]
 if engrenage:
     engrenage[0].click()
-check("le bouton ⚙ Reglages de la barre aussi", appels_reglages == [1, 1])
+check("le bouton ⚙ Reglages de la barre aussi (sur la derniere page vue)",
+      appels_reglages == ["excel", 1])
 fen.tab_config.ouvrir_reglages = vrai_ouvrir
 
 print("   un journal plus large")

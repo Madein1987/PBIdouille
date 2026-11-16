@@ -1242,6 +1242,112 @@ def scan_cibles(model_dir, config) -> list:
     return out
 
 
+# Rangement des dossiers d'affichage (settings.folderLayout).
+#
+#   « variation » (défaut) — un dossier par VARIATION sous le dossier de la
+#   base ; les motifs sont ceux des settings (displayFolderPattern,
+#   branchFolderPattern) :
+#       _indicateurs\Weight
+#       _indicateurs\_7d avg\Weight 7d avg
+#       _indicateurs\__YTD\Weight YTD
+#       _indicateurs\__YTD\_7d avg\Weight YTD 7d avg
+#
+#   « kpi » — un dossier par KPI, la base restant DEHORS ; dedans, toutes ses
+#   variations, et un dossier par branche qui porte la mesure de branche et
+#   ses variations :
+#       _indicateurs\Weight
+#       _indicateurs\Weight\Weight 7d avg
+#       _indicateurs\Weight\YTD\Weight YTD
+#       _indicateurs\Weight\YTD\Weight YTD 7d avg
+#
+# Les deux motifs des settings ne suffisent pas à dire « kpi » : une variation
+# EN BRANCHE prend le motif des variations avec le dossier de la branche pour
+# {baseFolder}, et {baseFolder}\{kpi} redescendrait d'un cran
+# (…\Weight\YTD\Weight). D'où un troisième motif, propre à chaque rangement.
+RANGEMENTS = ("variation", "kpi")
+DOSSIERS_PAR_KPI = {
+    "variation": "{baseFolder}\\{kpi}",                 # Weight 7d avg
+    "branche": "{baseFolder}\\{kpi}\\{branch}",          # Weight YTD
+    "variation_en_branche": "{baseFolder}",              # Weight YTD 7d avg
+}
+
+
+def motifs_dossiers(settings) -> tuple:
+    """(variation, branche, variation en branche) : les motifs de dossier du
+    rangement choisi (cf. RANGEMENTS)."""
+    settings = settings or {}
+    if str(settings.get("folderLayout") or "").lower() == "kpi":
+        return (DOSSIERS_PAR_KPI["variation"], DOSSIERS_PAR_KPI["branche"],
+                DOSSIERS_PAR_KPI["variation_en_branche"])
+    var = settings.get("displayFolderPattern") or "{baseFolder}"
+    return (var, settings.get("branchFolderPattern") or "{baseFolder}\\__{branch}", var)
+
+
+def patron_enveloppe(branch_id, bdef, variations):
+    """Le DAX avec lequel une branche ENVELOPPE ses variations, ou None si
+    elle les recopie (substitution).
+
+    L'enveloppe est le DÉFAUT : « Weight YTD PY » devient
+        CALCULATE([Weight PY], DATESYTD('dim_Date'[Date]))
+    plutôt que la logique de PY recopiée autour de [Weight YTD]. Toutes les
+    mesures d'une branche se lisent alors pareil, et ce qui cloche se débogue
+    dans la variation Réel.
+
+    · `"substitution": true` sur la branche : pas d'enveloppe, pour elle ;
+    · `"wrap"` : un patron écrit à la main ({variationRef} = la mesure Réel) ;
+    · sinon le patron vient du DAX de la branche elle-même, où la base
+      ({baseRef} ou [{base}]) devient {variationRef} — YTD =
+      CALCULATE({baseRef}, DATESYTD({date})) donne
+      CALCULATE({variationRef}, DATESYTD({date})). Un DAX qui ne cite pas sa
+      base ne peut pas envelopper : None."""
+    bdef = bdef if isinstance(bdef, dict) else {}
+    if bdef.get("substitution"):
+        return None
+    if str(bdef.get("wrap") or "").strip():
+        return str(bdef["wrap"])
+    tpl = (variations or {}).get(branch_id)
+    dax = token_to_text(tpl.get("dax")) if isinstance(tpl, dict) else None
+    if not dax:
+        return None
+    patron = dax.replace("{baseRef}", "{variationRef}").replace("[{base}]", "{variationRef}")
+    return patron if "{variationRef}" in patron else None
+
+
+def enveloppable(tpl) -> bool:
+    """Une variation s'enveloppe en branche sauf si elle dit le contraire
+    (`"wrapInBranch": false`). C'est le DRAPEAU, celui de la case de
+    l'éditeur ; la génération ajoute une règle (cf. s_enveloppe)."""
+    return not (isinstance(tpl, dict) and tpl.get("wrapInBranch") is False)
+
+
+def s_enveloppe(tpl) -> bool:
+    """La génération enveloppe-t-elle cette variation en branche ? Son drapeau,
+    ET son DAX ne cite pas {branch} : une variation qui nomme la branche
+    (« [{kpi} {branch} PY] ») a été écrite POUR la branche — l'envelopper
+    jetterait ce qu'elle y fait. Elle est recopiée, comme avant."""
+    return enveloppable(tpl) and "{branch}" not in (token_to_text(tpl.get("dax")) or "")
+
+
+def variations_de_branche(branch_id, bdef, variations) -> list:
+    """Les variations qu'une branche applique, dans l'ordre du config.
+
+    · `excludeVariations` (ce que l'outil écrit) : toutes SAUF celles-là. Une
+      branche s'applique par défaut, et une variation ajoutée plus tard y
+      entre d'office — on décoche ce qu'on ne veut pas, on ne coche pas ce
+      qu'on veut ;
+    · `variations` (ancien format, liste blanche) : seulement celles-là, encore
+      lues telles quelles ; l'outil les réécrit en exclusions à l'enregistrement ;
+    · ni l'une ni l'autre : toutes.
+
+    Jamais la branche elle-même (« Weight YTD YTD »)."""
+    bdef = bdef if isinstance(bdef, dict) else {}
+    if bdef.get("variations"):
+        return [str(x) for x in bdef["variations"]]
+    exclues = {str(x) for x in (bdef.get("excludeVariations") or [])}
+    return [vid for vid in variations
+            if vid.lower() != branch_id.lower() and vid not in exclues]
+
+
 def generate(model_dir, config, *, dry_run=None, remove_orphans=None, log=print,
              cache_excel=None) -> dict:
     """Génère les mesures et les tables paramètre (cf. _generate).
@@ -1273,8 +1379,10 @@ def _generate(model_dir, config, *, dry_run=None, remove_orphans=None, log=print
     source_folder  = settings.get("sourceFolder")
     date_column    = settings.get("dateColumn") or "'dim_Date'[Date]"
     target_table   = settings.get("targetTable") or source_table
-    folder_pattern = settings.get("displayFolderPattern") or "{baseFolder}"
-    branch_folder_pattern = settings.get("branchFolderPattern") or "{baseFolder}\\__{branch}"
+    # rangement par variation (motifs des settings) ou par KPI
+    folder_pattern, branch_folder_pattern, branch_var_folder_pattern = \
+        motifs_dossiers(settings)
+    par_kpi = str(settings.get("folderLayout") or "").lower() == "kpi"
     overwrite      = settings.get("overwriteExisting", True)
     # formats « delta » : symboles par section + repli si la base n'a pas de
     # format (sinon le delta n'a aucun format, donc aucun signe visible)
@@ -1343,9 +1451,7 @@ def _generate(model_dir, config, *, dry_run=None, remove_orphans=None, log=print
 
 
     def branch_variation_ids(branch_id, bdef):
-        if isinstance(bdef, dict) and bdef.get("variations"):
-            return [str(x) for x in bdef["variations"]]
-        return [vid for vid in variations if vid.lower() != branch_id.lower()]
+        return variations_de_branche(branch_id, bdef, variations)
 
     # index de tri par variation (constant par libellé — exigence SortByColumn)
     var_order: dict = {}
@@ -1410,7 +1516,7 @@ def _generate(model_dir, config, *, dry_run=None, remove_orphans=None, log=print
 
     def process(base_name, base_fmt, base_folder, kpi_lbl, vid, tpl,
                 fp_label, fp_branch, pass_folder_pattern, branch_id, fp_group=2,
-                dax_impose=None):
+                dax_impose=None, en_branche=False):
         """Port de processVariation : calcule la spec + la rangée paramètre.
         `fp_group` = groupe de tri de la rangée (2 = variation de KPI ; 1 =
         cible). `dax_impose` remplace le DAX de la variation — c'est ainsi
@@ -1494,9 +1600,18 @@ def _generate(model_dir, config, *, dry_run=None, remove_orphans=None, log=print
                           .replace("{variation}", folder_var)
                           .replace("{kpi}", kpi_lbl or "")
                           .replace("{branch}", branch_id or ""))
+        # le dossier qu'une variation IMPOSE ({baseFolder}\_SVG) : rangé par
+        # KPI, {baseFolder} y est le dossier du KPI, sinon « Weight sparkline »
+        # sortirait du dossier de Weight alors que « Weight YTD sparkline »
+        # (dont la base est déjà le dossier de branche) y resterait
+        base_imposee = base_folder or ""
+        if par_kpi and not en_branche:
+            base_imposee = (DOSSIERS_PAR_KPI["variation"]
+                            .replace("{baseFolder}", base_folder or "")
+                            .replace("{kpi}", kpi_lbl or ""))
         folder = ((tpl.get("displayFolder") or "{folder}")
                   .replace("{folder}", default_folder)
-                  .replace("{baseFolder}", base_folder or "")
+                  .replace("{baseFolder}", base_imposee)
                   .replace("{base}", base_name)
                   .replace("{variation}", folder_var)
                   .replace("{kpi}", kpi_lbl or "")
@@ -1561,8 +1676,8 @@ def _generate(model_dir, config, *, dry_run=None, remove_orphans=None, log=print
 
     branch_bases: list = []   # (nom, fmt, dossier, kpi, branche, hors_param, préfixe, vids_autorisés, base_racine)
     # (base racine, variation) -> nom RÉEL généré à la 1re passe. C'est lui que
-    # la branche ENVELOPPE quand elle déclare un `wrap` : la 2e passe référence
-    # la mesure au lieu de recopier sa logique (cf. `wrap` plus bas).
+    # la branche ENVELOPPE (par défaut, cf. patron_enveloppe) : la 2e passe
+    # référence la mesure au lieu de recopier sa logique.
     var_ref: dict = {}
     filtres_format: dict = {}  # variation -> bases écartées par appliesToFormats
 
@@ -1702,10 +1817,18 @@ def _generate(model_dir, config, *, dry_run=None, remove_orphans=None, log=print
 
     # -- 2e passe : branches (KPI ET cibles) --
     n_wrap = 0
+    sans_patron: set = set()       # branches signalées une fois sans enveloppe
     for (bname, bfmt, bfolder, bkpi, branch_id, no_fp, calc_prefix,
          allowed_vids, base_racine) in branch_bases:
         bdef = branches.get(branch_id)
-        wrap = (bdef or {}).get("wrap") if isinstance(bdef, dict) else None
+        wrap = patron_enveloppe(branch_id, bdef, variations)
+        if (wrap is None and not (isinstance(bdef, dict) and bdef.get("substitution"))
+                and branch_id not in sans_patron):
+            sans_patron.add(branch_id)
+            log(f"⚠ branche '{branch_id}' : son DAX ne cite pas sa base "
+                "({baseRef}), on ne peut pas en tirer d'enveloppe — ses variations "
+                "sont recopiées (substitution). Écris le patron dans ⚙ Réglages → "
+                "Branches → Enveloppe pour envelopper.")
         allowed_set = set(allowed_vids)          # portée de la base (KPI ou cible)
         for vid in branch_variation_ids(branch_id, bdef):
             if vid not in allowed_set:            # respecte aux KPI / aux cibles
@@ -1729,25 +1852,26 @@ def _generate(model_dir, config, *, dry_run=None, remove_orphans=None, log=print
             # problème est forcément dans la variation Réel. Et un correctif
             # apporté à celle-ci se répercute SANS régénérer.
             #
-            # Deux conditions, parce que l'emballage n'est pas toujours
-            # équivalent : la branche déclare `wrap`, ET la variation se dit
-            # enveloppable (`wrapInBranch`). C'est son DAX qui décide — une
+            # C'est le DÉFAUT (cf. patron_enveloppe), avec deux portes de
+            # sortie : la branche (`substitution`) ou la variation
+            # (`wrapInBranch: false`). Ce n'est pas toujours équivalent — une
             # variation qui ÉPINGLE une fenêtre sur la borne du contexte
             # (MAX({date}), DATEADD) change de sens si on l'enveloppe, alors
-            # qu'un simple DÉCALAGE (SAMEPERIODLASTYEAR) est équivalent.
+            # qu'un simple DÉCALAGE (SAMEPERIODLASTYEAR) est identique.
             dax_impose = None
-            if wrap and tpl.get("wrapInBranch"):
+            if wrap and s_enveloppe(tpl):
                 reel = var_ref.get((base_racine, vid))
                 if reel:
                     dax_impose = wrap.replace("{variationRef}", bracket(reel))
                     n_wrap += 1
                 else:
-                    log(f"⚠ branche '{branch_id}' : « {vid} » se dit "
-                        f"enveloppable mais sa mesure Réel sur « {base_racine} » "
+                    log(f"⚠ branche '{branch_id}' : « {vid} » s'enveloppe "
+                        f"mais sa mesure Réel sur « {base_racine} » "
                         "n'a pas été générée — repli sur la substitution.")
             process(bname, bfmt, bfolder, bkpi, vid, tpl,
-                    None if no_fp else (calc_prefix + vid), branch_id, folder_pattern,
-                    branch_id, 1 if calc_prefix else 2, dax_impose)
+                    None if no_fp else (calc_prefix + vid), branch_id,
+                    branch_var_folder_pattern, branch_id, 1 if calc_prefix else 2,
+                    dax_impose, en_branche=True)
 
     if n_wrap:
         log(f"Branches : {n_wrap} mesure(s) ENVELOPPENT leur variation Réel "

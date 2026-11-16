@@ -125,6 +125,14 @@ def construire(verifier_seulement: bool) -> int:
 
 
 if __name__ == "__main__":
+    # sortie redirigée (pipe, fichier) : Windows y met cp1252, qui n'a ni ✓
+    # ni ✗ — le print plantait APRÈS l'écriture du zip, faisant croire à un
+    # échec. On garde l'encodage et on remplace ce qu'il ne sait pas écrire.
+    for flux in (sys.stdout, sys.stderr):
+        try:
+            flux.reconfigure(errors="replace")
+        except (AttributeError, ValueError):
+            pass
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--verifier", action="store_true",
                     help="vérifier seulement, sans écrire de zip")

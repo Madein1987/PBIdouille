@@ -54,6 +54,7 @@ from tabs.dialog_guide import ouvrir_guide  # noqa: E402
 from tabs.tab_wireframe import WireframeTab  # noqa: E402
 from tabs.tab_config import ConfigTab  # noqa: E402
 from tabs.tab_chopchop import ChopChopTab  # noqa: E402
+from tabs.tab_lineage import LineageTab  # noqa: E402
 
 APP_NAME = "PBIdouille"          # PBI + bidouille ; réglages QSettings gardés sous « BIdouille »
 APP_EMOJI = "🔧"
@@ -130,7 +131,7 @@ class BidouilleWindow(QMainWindow):
             "Les réglages globaux du measures_config.json de ce rapport :\n"
             "Excel des indicateurs, génération, paramètres de champ,\n"
             "attributs, branches… — ce qui sert à plusieurs onglets.")
-        btn_reglages.clicked.connect(self._ouvrir_reglages)
+        btn_reglages.clicked.connect(lambda: self._ouvrir_reglages())
         # les schémas du guide, dans l'app (fenêtre non modale : on la
         # garde ouverte à côté) — aussi ouverts par les liens « ▣ Schéma »
         btn_guide = QPushButton("Guide")
@@ -169,22 +170,17 @@ class BidouilleWindow(QMainWindow):
 
         # ---- barre config : measures_config.json utilisé (chemin explicite,
         # choisissable — au travail il ne vit pas forcément à côté du .pbip) ----
+        # UN bouton qui montre le chemin ET le change : un libellé à gauche et
+        # un « Config… » à droite disaient la même chose à deux endroits
         cfg_bar = QHBoxLayout()
-        self.config_label = QLabel("")
-        self.config_label.setWordWrap(True)
-        btn_config = QPushButton("Config…")
-        btn_config.setToolTip("Choisir le measures_config.json de ce rapport\n"
-                              "(par défaut : celui à côté du .pbip). Mémorisé par projet.")
-        btn_config.clicked.connect(self._choose_config)
-        cfg_bar.addWidget(self.config_label, 1)
-        cfg_bar.addWidget(btn_config)
+        self.btn_config = QPushButton("")
+        self.btn_config.setObjectName("btnConfig")
+        self.btn_config.setStyleSheet("QPushButton#btnConfig { text-align: left; "
+                                      "padding: 4px 10px; }")
+        self.btn_config.clicked.connect(self._choose_config)
+        cfg_bar.addWidget(self.btn_config)
+        cfg_bar.addStretch(1)
         v.addLayout(cfg_bar)
-
-        warn = QLabel("⚠ Ferme Power BI Desktop avant toute écriture "
-                      "(il relit les fichiers à l'ouverture et écraserait les changements).")
-        warn.setWordWrap(True)
-        warn.setStyleSheet("color:#ffd246;")
-        v.addWidget(warn)
 
         # ---- onglets ----
         # « Mesures » en tête : c'est par là que commence le travail (écrire
@@ -194,6 +190,9 @@ class BidouilleWindow(QMainWindow):
         self.tabs.addTab(self.tab_config, "Mesures")
         self.tab_report = ReportTab(self.journal)
         self.tabs.addTab(self.tab_report, "Rapport")
+        # d'où vient chaque table : lecture seule, donc aussi en production
+        self.tab_lineage = LineageTab(self.journal)
+        self.tabs.addTab(self.tab_lineage, "Sources de données")
         self.tab_wireframe = WireframeTab(self.journal)
         # PRODUCTION : pas d'onglet Wireframe du tout — pas encore utilisable
         # pour un usager (cf. core/edition.py). L'objet existe quand même : il
@@ -235,11 +234,12 @@ class BidouilleWindow(QMainWindow):
         # lisent doivent revoir la liste des KPI, sans rechargement manuel
         self.tab_config.model_panel.modele_genere.connect(self._apres_generation)
         # le lien de la fiche Excel (onglet Rapport) mène là où elle se règle
-        self.tab_report.ouvrir_reglages.connect(self._ouvrir_reglages)
+        # le lien de la fiche Excel ouvre la fenêtre SUR la page de l'Excel
+        self.tab_report.ouvrir_reglages.connect(lambda: self._ouvrir_reglages("excel"))
 
-        self._tabs = [self.tab_config, self.tab_report, self.tab_chopchop]
+        self._tabs = [self.tab_config, self.tab_report, self.tab_lineage, self.tab_chopchop]
         if edition.dev():
-            self._tabs.insert(2, self.tab_wireframe)
+            self._tabs.insert(3, self.tab_wireframe)
         self._reload_recents()
         self._load_initial_project()
         self._colonne_selon_la_vue()
@@ -319,11 +319,11 @@ class BidouilleWindow(QMainWindow):
             self.settings.setValue("journal_largeur", tailles[1])
         super().closeEvent(event)
 
-    def _ouvrir_reglages(self):
+    def _ouvrir_reglages(self, page=""):
         """⚙ Réglages — depuis la barre, ou le lien de la fiche Excel du
-        Rapport. Enregistrés, ils changent ce que le Rapport lit : sa fiche
-        et ses groupes se relisent."""
-        if self.tab_config.ouvrir_reglages():
+        Rapport (`page` = "excel"). Enregistrés, ils changent ce que le
+        Rapport lit : sa fiche et ses groupes se relisent."""
+        if self.tab_config.ouvrir_reglages(page):
             self.tab_report._refresh_td_label()
 
     def _save_all(self):
@@ -451,15 +451,19 @@ class BidouilleWindow(QMainWindow):
 
     def _update_config_label(self):
         p = self.project.config_json
+        aide = ("\n\nClique pour choisir un autre fichier (par défaut : celui à "
+                "côté du .pbip).\nLe choix est mémorisé pour ce rapport.")
         if p.exists():
-            self.config_label.setText("Config : " + _chemin_court(p))
-            self.config_label.setToolTip(str(p))
-            self.config_label.setStyleSheet("")
+            self.btn_config.setText("📄 " + _chemin_court(p) + "   ✎")
+            self.btn_config.setToolTip("Config des mesures :\n" + str(p) + aide)
+            self.btn_config.setStyleSheet("QPushButton#btnConfig { text-align: left; "
+                                          "padding: 4px 10px; }")
         else:
-            self.config_label.setText(
-                "Config : introuvable — attendu " + str(p)
-                + "  (clique « Config… » pour choisir celui de ce rapport)")
-            self.config_label.setStyleSheet("color:#ffd246;")
+            self.btn_config.setText("⚠ measures_config.json introuvable — "
+                                    "clique pour le choisir")
+            self.btn_config.setToolTip("Attendu :\n" + str(p) + aide)
+            self.btn_config.setStyleSheet("QPushButton#btnConfig { text-align: left; "
+                                          "padding: 4px 10px; color:#ffd246; }")
 
     def _load_initial_project(self):
         last = self.settings.value("last_pbip", "")
