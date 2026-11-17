@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 """Panneau « Génération des mesures » : génère les mesures/variations/branches,
 et les tables paramètre de champ DIRECTEMENT dans les fichiers
-TMDL — sans Tabular Editor ni Power BI ouvert (generate_measures.py, le
-remplaçant natif du csx). Desktop doit être FERMÉ pour une écriture réelle ;
+TMDL, sans Power BI ouvert (generate_measures.py). Desktop doit être FERMÉ
+pour une écriture réelle ;
 backup automatique ; rouvrir le .pbip ensuite.
 
 Il n'a plus d'onglet à lui : il se pose EN TÊTE DU JOURNAL (colonne de droite)

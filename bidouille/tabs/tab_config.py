@@ -79,7 +79,7 @@ IDX_VARIATIONS, IDX_ARBRE, IDX_PARAM, IDX_RAW = 0, 1, 2, 3
 # — au lieu des 80 px de Qt, une dizaine de caractères
 INDENT_DAX = 4
 
-# placeholders compris par le générateur (generate_measures.py / csx) ; tout autre {jeton}
+# placeholders compris par le générateur (generate_measures.py) ; tout autre {jeton}
 # serré (sans espaces) est probablement une faute de frappe. « { ad } » avec
 # espaces = constructeur de table DAX, jamais signalé.
 KNOWN_PLACEHOLDERS = {
@@ -1011,7 +1011,7 @@ class ConfigTab(QWidget):
         """Peuple l'éditeur des tables paramètre depuis le config."""
         self._loading = True
         fp = self._config.get("fieldParameter") or {}
-        # bloc absent = désactivé (comme le csx : fpConfig null -> off)
+        # bloc absent = désactivé
         self.g_fp_enabled.setChecked(bool(fp.get("enabled", True)) if "fieldParameter" in self._config else False)
         self.g_fp_tables.set_vocab(**self._fp_vocabulaire())
         self.g_fp_tables.load(gm.fp_table_specs(fp) if "fieldParameter" in self._config

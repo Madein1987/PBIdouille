@@ -1,10 +1,10 @@
 # -*- coding: utf-8 -*-
-"""Générateur NATIF des variations de mesures — remplace create_measure_variations.csx
-(Tabular Editor) en écrivant directement les fichiers TMDL du projet PBIP.
+"""Générateur des variations de mesures : écrit directement les fichiers TMDL
+du projet PBIP.
 
-Port 1:1 de la logique du csx : découverte des mesures de base, variations,
-branches (variations de variations), tables paramètre de champ (parCalcul/parCalcul_2, parKPI, baseKPI),
-rang unique KPI-puis-calcul, orphelines. Même config : measures_config.json.
+Découverte des mesures de base, variations, branches (variations de
+variations), cibles, tables paramètre de champ, rang unique KPI-puis-calcul,
+orphelines. Tout vient de measures_config.json.
 
 ⚠ Power BI Desktop doit être FERMÉ (il ne relit les fichiers qu'à l'ouverture
 et un enregistrement écraserait nos modifications). Backup automatique sous
@@ -14,7 +14,7 @@ Rouvrir le .pbip ensuite.
 En ligne de commande :  py generate_measures.py   (config à côté du script)
 En module (BIdouille)  : generate(model_dir, config, dry_run=..., log=...)
 
-Sérialisation TMDL (calquée sur la sortie réelle de Desktop/TE) :
+Sérialisation TMDL (calquée sur la sortie réelle de Desktop) :
   - description en lignes « /// » AVANT la mesure ;
   - DAX mono-ligne : « measure 'X' = <dax> » ; multi-ligne : « = » puis lignes
     à 3 tabs ; propriétés à 2 tabs (formatString brut NON quoté, displayFolder,
@@ -89,9 +89,8 @@ def sort_key_pbi(name):
     Ordre du paramètre de champ ne correspondait alors plus à l'ordre affiché
     par le rapport.
 
-    Reproduit donc les QUATRE niveaux du comparateur culturel .NET — celui
-    qu'utilise `.OrderBy(m => m.Name)` dans create_measure_variations.csx —,
-    dans cet ordre de priorité (vérifié un à un contre StringComparer) :
+    Reproduit donc les QUATRE niveaux du comparateur culturel .NET (celui
+    avec lequel Power BI trie les noms), dans cet ordre de priorité (vérifié un à un contre StringComparer) :
     lettres nues, puis accents, puis casse (minuscule d'abord), puis
     ponctuation de liaison (qui pèse plus que toute lettre : à radical égal,
     « Nombre d'unites » se range APRÈS « Nombre dunites »).
@@ -106,7 +105,7 @@ def sort_key_pbi(name):
     )
 
 
-# ======================= helpers format (ports exacts du csx) ================
+# ======================= helpers format ======================================
 
 def positive_section(f):
     """Première section (valeurs positives) d'un format, sans signe initial.
@@ -1401,7 +1400,7 @@ def _generate(model_dir, config, *, dry_run=None, remove_orphans=None, log=print
     if not tables_dir.exists():
         raise SystemExit(f"Modèle introuvable : {tables_dir}")
 
-    # ---- settings (mêmes défauts que le csx) --------------------------------
+    # ---- settings -------------------------------------------------------------
     settings = config.get("settings") or {}
     source_table   = settings.get("sourceTable") or "_mesures"
     source_folder  = settings.get("sourceFolder")
@@ -1671,8 +1670,7 @@ def _generate(model_dir, config, *, dry_run=None, remove_orphans=None, log=print
         # quand le namePattern est invariant par branche (utilise {kpi} au lieu
         # de {base} — ex. une mesure « direction / libellé du KPI »). On ne
         # garde que la 1re (la base) ; les suivantes sont ignorées. Sinon deux
-        # blocs TMDL de même nom -> Power BI refuse de charger le modèle. (Le
-        # csx ne le voyait pas : le modèle vivant écrasait la même mesure.)
+        # blocs TMDL de même nom -> Power BI refuse de charger le modèle.
         owner = planned_names.get(name)
         if owner is not None and owner != tag:
             log(f"⚠ « {name} » déjà générée par « {owner.split('|', 1)[1]} », "

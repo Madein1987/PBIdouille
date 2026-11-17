@@ -19,10 +19,9 @@ Logique :
 Pour chaque mesure, les référenceurs sont détaillés par type : mesures,
 tables calculées, colonnes calculées, fichiers du rapport.
 
-En ligne de commande (py unused_measures.py) :
-  - unused_measures.csv         : état de toutes les mesures (audit complet) ;
-  - delete_unused_measures.csx  : script Tabular Editor qui supprime les
-    inutilisées (ouvrir dans TE, RELIRE la liste, exécuter, Ctrl+S).
+En ligne de commande (py unused_measures.py) : unused_measures.csv, l'état
+de toutes les mesures et colonnes (audit complet). La suppression se fait
+dans l'app (ChopChop), pas en ligne de commande.
 
 Power Query compte comme une source d'usage à part entière, mais ENTRE
 requêtes seulement : si la requête B fusionne/ajoute/joint la requête A, la
@@ -42,9 +41,9 @@ En module (unused_measures_ui.py) :
     morte (result['dead_tables']) est supprimée fichier + réf model.tmdl ;
   - delete_from_tmdl() : compat (mesures seules) — délègue à delete_objects.
 
-Note : les mesures générées par create_measure_variations.csx portent
-l'annotation MeasureVariation et sont marquées « générée ». Les supprimer ne
-sert à rien si le script TE les recrée — retirer plutôt la variation ou la
+Note : les mesures générées par PBIdouille portent l'annotation
+MeasureVariation et sont marquées « générée ». Les supprimer ne sert à rien,
+la prochaine génération les recrée : retirer plutôt la variation ou la
 branche de measures_config.json (removeOrphans fera le ménage).
 """
 
@@ -67,27 +66,24 @@ import chemins                    # où sont les projets
 # défauts de la ligne de commande ; l'app appelle set_project()
 PBIP_DIR = chemins.PROJETS
 PROJECT  = chemins.PROJET_DEMO
-WRITE_DELETE_SCRIPT = True
 # ---------------------------------------------------------------------------
 
 REPORT_DIR  = PBIP_DIR / f"{PROJECT}.Report"
 MODEL_DIR   = PBIP_DIR / f"{PROJECT}.SemanticModel"
 CSV_PATH    = PBIP_DIR / "unused_measures.csv"
-CSX_PATH    = PBIP_DIR / "delete_unused_measures.csx"
 BACKUP_ROOT = br.backup_root(PBIP_DIR, "_tmdl_backups")
 
 
 def set_project(pbip_path: Path) -> None:
     """Pointe le module vers un autre projet PBIP (utilisé par l'UI pour
     changer de rapport). Recalcule tous les chemins dérivés."""
-    global PBIP_DIR, PROJECT, REPORT_DIR, MODEL_DIR, CSV_PATH, CSX_PATH, BACKUP_ROOT
+    global PBIP_DIR, PROJECT, REPORT_DIR, MODEL_DIR, CSV_PATH, BACKUP_ROOT
     pbip_path = Path(pbip_path)
     PBIP_DIR    = pbip_path.parent
     PROJECT     = pbip_path.stem
     REPORT_DIR  = PBIP_DIR / f"{PROJECT}.Report"
     MODEL_DIR   = PBIP_DIR / f"{PROJECT}.SemanticModel"
     CSV_PATH    = PBIP_DIR / "unused_measures.csv"
-    CSX_PATH    = PBIP_DIR / "delete_unused_measures.csx"
     BACKUP_ROOT = br.backup_root(PBIP_DIR, "_tmdl_backups")
 
 # fichiers de definition\ qui ne portent NI DAX NI requête M : à ne pas
@@ -1104,31 +1100,6 @@ def main() -> None:
             print(f"\n  Used by unused : référencées seulement par des mesures inutilisées ({len(chained_cols)}) :")
             for d in chained_cols:
                 print(f"    - {d}  <- {', '.join(col_refs.get(d, []))}")
-
-    # ---- le « bouton » : script TE de suppression -----------------------------
-    if unused and WRITE_DELETE_SCRIPT:
-        def cs(s: str) -> str:
-            return s.replace("\\", "\\\\").replace('"', '\\"')
-
-        lines = [
-            "// Généré par unused_measures.py, VÉRIFIER la liste avant d'exécuter.",
-            "// Tabular Editor (connecté au même modèle) -> C# Script -> exécuter -> Ctrl+S.",
-            "var aSupprimer = new List<string>",
-            "{",
-        ]
-        lines += [f'    "{cs(n)}",' for n in unused]
-        lines += [
-            "};",
-            "var supprimees = new List<string>();",
-            "foreach (var nom in aSupprimer)",
-            "{",
-            "    var m = Model.AllMeasures.FirstOrDefault(x => x.Name.Equals(nom, StringComparison.OrdinalIgnoreCase));",
-            "    if (m != null) { supprimees.Add(m.Name); m.Delete(); }",
-            "}",
-            'Info("Mesures supprimées (" + supprimees.Count + ") : " + string.Join(", ", supprimees));',
-        ]
-        CSX_PATH.write_text("\n".join(lines) + "\n", encoding="utf-8")
-        print(f"\nScript de suppression écrit : {CSX_PATH.name}")
 
 
 if __name__ == "__main__":

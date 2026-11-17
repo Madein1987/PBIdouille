@@ -1,108 +1,196 @@
-# Boîte à outils Power BI — variations, paramètres de champ et automatisation PBIP
+# PBIdouille 🔧
 
-Documentation des outils du dossier. Tout est conçu pour fonctionner **sans
-dépendance externe** : Tabular Editor 2 ou 3 pour le modèle, Python 3.8+ pour
-la couche rapport (fichiers PBIP/PBIR — `from __future__ import annotations`
-assure la compatibilité avec les Python d'entreprise plus vieux). Aucun module
-Python à installer, sauf qtpy/pyside6 pour les interfaces (ChopChopRapport et
-**PBIdouille** 🔧, cockpit unique — voir section 13).
+Une app de bureau pour les rapports Power BI au format **PBIP**. Elle écrit à
+ta place ce qui se répète dans un rapport : les mesures dérivées de chaque KPI
+(7d avg, PY, YTD…), les tables paramètre de champ, le formatage conditionnel
+recopié d'un KPI gabarit vers tous les autres, et le ménage de ce que plus
+rien n'utilise.
+
+Elle travaille directement sur les fichiers du projet (TMDL pour le modèle,
+PBIR pour le rapport). Rien d'autre à installer qu'un Python et Qt ; Power BI
+Desktop doit être **fermé** pendant une écriture, puisqu'il ne relit les
+fichiers qu'à l'ouverture.
+
+- [En images](#en-images)
+- [Démarrage rapide](#démarrage-rapide)
+- [1. Vue d'ensemble](#1-vue-densemble) · [2. Les composants](#2-les-composants)
+- [3. Générer les mesures](#3-générer-les-mesures) · [4. measures_config.json](#4-measures_configjson--référence)
+- [7. La propagation du formatage](#7-propagate_cfpy-rapport) · [8. ChopChop](#8-unused_measurespy-ménage)
+- [13. L'interface en détail](#13-linterface-en-détail)
+
+---
+
+## En images
+
+Les schémas du guide de démarrage :
+[PBIdouille - Guide de demarrage rapide.pptx](docs/PBIdouille%20-%20Guide%20de%20demarrage%20rapide.pptx)
+(19 diapos, à télécharger). L'app les montre aussi : bouton **Guide** de la
+barre du haut, et liens **▣ Schéma** là où chaque notion sert.
+
+### Les variations se ramifient
+
+Chaque mesure de base reçoit toute sa famille de variations ; une variation
+déclarée *branche* (YTD) devient à son tour une base.
+
+![Comment les variations se ramifient](bidouille/aide/variations.png)
+
+### Ce que reçoivent les paramètres de champ
+
+![Ce que reçoivent les paramètres de champ](bidouille/aide/parametres_champ.png)
+
+### Les jetons du DAX
+
+Une variation s'écrit une fois, avec des jetons (`{baseRef}`, `{kpiRef}`,
+`{date}`…) que la génération remplace pour chaque KPI.
+
+![Les jetons à connaître](bidouille/aide/jetons.png)
+
+### Le formatage se propage, visuel par visuel
+
+Dans un visuel, chaque réglage de formatage vise **une** mesure : celle du
+KPI que le segment montre. Propager recopie chaque réglage dans le même
+visuel, pour la même variation de chaque KPI : seul le KPI change.
+
+![Comment le formatage se propage](bidouille/aide/propagation.png)
+
+### La carte se propage aussi
+
+Les étiquettes, le détail et l'image d'une tuile sont des mesures de son KPI :
+elles changent avec lui.
+
+![La carte se propage aussi](bidouille/aide/propagation_carte.png)
+
+### Qui copie qui
+
+Un gabarit de base pour tout le monde, un gabarit par groupe, et des règles
+plus précises qui l'emportent.
+
+![Qui copie qui : gabarits et groupes](bidouille/aide/gabarits.png)
+
+---
+
+## Démarrage rapide
+
+**Prérequis**
+- Python 3.8 ou plus récent (lancer avec `py`, pas `python` : sur certains
+  postes, `python` est un faux alias du Microsoft Store) ;
+- `qtpy` et un binding Qt : PyQt5 ou PySide6 ;
+- `openpyxl` pour lire l'Excel des indicateurs (`TD_Indicateurs.xlsx`).
+
+**Lancer**, depuis le dossier de l'app :
+
+```
+py app.py
+```
+
+L'app rouvre le dernier rapport utilisé. Le `measures_config.json` est
+cherché à côté du `.pbip` ; le bouton 📄 sous la barre du projet en choisit
+un autre.
+
+**Partager** : `py empaqueter.py` construit un zip dans `dist\`. Il démarre
+toujours en **édition production** (cf. §13, « Édition production / dev »).
+
+**Branches** : `stable` est ce qu'on partage, et ce dont le zip est tiré ;
+`experimental` porte le travail en cours.
 
 ---
 
 ## 1. Vue d'ensemble
 
 ```
-TD_KPI (Excel)                    mesures de base (_mesures\_indicateurs)
-  indicateur, mesure,                     Weight, Total Steps, ...
-  libelle_indicateur, direction                  │
+TD_Indicateurs.xlsx               mesures de base (_mesures\_indicateurs)
+  mesure, libellé, couleurs,              Weight, Total Steps, ...
+  ordre, attributs                               │
         │                                        ▼
-        │                          create_measure_variations.csx  ◄── measures_config.json
-        │                                        │
+        │                       Mesures › Générer  ◄── measures_config.json
+        │                       (generate_measures)
         │            ┌───────────────┬───────────┴────────────┐
         │            ▼               ▼                        ▼
-        │      variations      branches (YTD ...)        mesures CF
-        │      7d avg, PY...   YTD PY, YTD Δ 30d...      (couleurs)
+        │      variations      branches (YTD ...)        cibles
+        │      7d avg, PY...   YTD PY, YTD Δ 30d...      Weight cible écart...
         │            │               │
         │            └───────┬───────┘
         │                    ▼
-        │      paramètres de champ (3 tables)
-        │      P_Indicateurs_parCalcul (+_2)
-        │      P_Indicateurs_parKPI
+        │      tables paramètre de champ
+        │      (autant qu'il en faut, chacune ses réglages)
         │                    │
         └──── relations ─────┤
                              ▼
                        RAPPORT (.pbip)
                              │
-        propagate_cf.py ─────┤ (formatage conditionnel par KPI)
-        unused_measures.py ──┤ (ménage)
-        scan_lineage.py ─────┘ (inventaire des sources)
+   Rapport › Propager ───────┤ (formatage conditionnel, KPI par KPI)
+   Rapport › Colorer ────────┤ (couleurs de matrice par KPI)
+   Sources de données ───────┤ (d'où vient chaque table)
+   ChopChop ─────────────────┘ (ce que plus rien n'utilise)
 ```
+
+Les onglets :
+
+| Onglet | Ce qu'il fait |
+|---|---|
+| **Mesures** | Éditeur des variations, arbre des mesures, tables paramètre de champ, et la génération (en tête du journal) |
+| **Rapport** | Propage le formatage d'un KPI gabarit vers les autres (grille des sources) ; colore les matrices |
+| **Sources de données** | Le lineage du rapport ouvert : chaque table et sa source |
+| **ChopChop 🪓** | Mesures, colonnes et tables que plus rien n'utilise ; export ; restauration des sauvegardes |
+| **Wireframe** | Plan des pages et des visuels (édition dev seulement) |
 
 Principe directeur : **une seule source de vérité par chose**. Les calculs
-vivent dans `measures_config.json`, les libellés métier dans `TD_KPI`, le
-style CF de référence dans UN visuel template. Les scripts matérialisent le
-reste et sont **idempotents** : relancer met à jour, jamais de doublon.
+vivent dans `measures_config.json`, les attributs des KPI dans l'Excel des
+indicateurs, le style de référence dans UN KPI gabarit. L'app matérialise le
+reste et chaque écriture est **idempotente** : relancer met à jour, jamais de
+doublon. Tout ce qui est réécrit est d'abord sauvegardé.
 
 ---
 
-## 2. Les fichiers
+## 2. Les composants
 
-| Fichier | Couche | Rôle |
-|---|---|---|
-| `measures_config.json` | config | définit variations, branches, paramètres |
-| `generate_measures.py` | modèle | **générateur natif** : mesures + paramètres, écrit le TMDL (Desktop fermé) |
-| `create_measure_variations.csx` | modèle (TE) | même génération via Tabular Editor — **solution de secours** |
-| `propagate_cf.py` | rapport | propage le formatage conditionnel d'un KPI template |
-| `color_matrix_by_kpi.py` | rapport | colore les colonnes d'une matrice par KPI (couleurs dans TD) |
-| `unused_measures.py` | modèle + rapport | détecte les mesures inutilisées |
-| `unused_measures_ui.py` | modèle + rapport | UI (qtpy) : voir et supprimer les inutilisées |
-| `backup_restore.py` | transverse | sauvegardes horodatées **＋ restauration** (manifeste : d'où vient chaque copie) |
-| `scan_lineage.py` | parc | inventorie les sources de tous les PBIP d'un répertoire |
-| `bidouille\` | UI | cockpit unique (qtpy) qui pilote les outils du rapport (section 13) |
-| `delete_unused_measures.csx` | généré | « bouton » de suppression (sortie de unused_measures) |
-| `unused_measures.csv`, `pbi_lineage.csv` | générés | audits |
+| Fichier | Rôle |
+|---|---|
+| `app.py` | la fenêtre principale : barre du projet, onglets, journal |
+| `bidouille\moteurs\generate_measures.py` | génère mesures, variations, branches, cibles et tables paramètre dans le TMDL |
+| `bidouille\moteurs\propagate_cf.py` | propage le formatage conditionnel d'un KPI gabarit, selon la grille des sources |
+| `bidouille\moteurs\color_matrix_by_kpi.py` | colore les colonnes d'une matrice par KPI (couleurs de l'Excel) |
+| `bidouille\moteurs\unused_measures.py` | analyse de ce qui ne sert plus (mesures, colonnes, tables) |
+| `bidouille\moteurs\unused_measures_ui.py` | le panneau ChopChop |
+| `bidouille\moteurs\lineage.py` | les sources de données du rapport ouvert |
+| `bidouille\moteurs\backup_restore.py` | sauvegardes horodatées et restauration (manifeste : d'où vient chaque copie) |
+| `bidouille\moteurs\xlsx_lecture.py` | lecture de l'Excel qui relâche toujours le fichier |
+| `bidouille\moteurs\chemins.py` | où vivent l'outil et les projets |
+| `bidouille\core\` | projet, journal, thème, édition, lecture du modèle et du rapport |
+| `bidouille\tabs\` | les onglets et leurs fenêtres |
+| `bidouille\aide\` | les images du guide intégré |
+| `tests\` | les suites de tests (chacune finit par « TOUT OK ») |
+| `docs\` | le guide PowerPoint ; `docs\sources\build_deck.py` le reconstruit, `exporter_aide.ps1` en tire les images de `bidouille\aide\` (PowerPoint requis) |
+| `empaqueter.py` | construit le zip partageable (l'app et le guide, sans les tests ni les sources du guide) |
+
+Côté projet, à côté du `.pbip` : `measures_config.json` (variations,
+branches, paramètres de champ, réglages), `TD_Indicateurs.xlsx` (l'Excel des
+indicateurs), `propagation.json` (la grille des sources du formatage),
+`_backupsPBIdouille\` (les sauvegardes). La bibliothèque de variations
+(`catalogue_variations.json`) est globale, partagée entre rapports.
 
 ---
 
-## 3. Générer les mesures — natif (generate_measures.py) ou Tabular Editor (csx)
+## 3. Générer les mesures
 
-**Chemin principal : `generate_measures.py`** — le même travail que le csx,
-sans TE ni Desktop ouvert : il écrit directement les fichiers TMDL.
-
-```
-py generate_measures.py        (ou « Générer les mesures », en tête du journal de PBIdouille)
-```
+Dans l'app : **« Générer les mesures »**, en tête du journal de l'onglet
+Mesures. En ligne de commande : `py bidouille\moteurs\generate_measures.py`.
+Le générateur écrit directement les fichiers TMDL.
 
 ⚠ Desktop FERMÉ pour l'écriture réelle ; backup automatique sous
 `_backupsPBIdouille\_tmdl_backups\` ; rouvrir le `.pbip` ensuite. `settings.dryRun` (ou la case
-« Aperçu ») pour tout lister sans rien écrire. Validé par « golden master » :
-il reproduit à l'identique les mesures et les tables paramètre produites par
-le csx (idempotent : relancer sans changement = 0 écriture). Les lineageTags
+« Aperçu ») pour tout lister sans rien écrire. Idempotent : relancer sans
+changement = 0 écriture. Les lineageTags
 existants sont préservés ; une table paramètre créée est ajoutée aux
 `ref table` de model.tmdl (penser à la relation TD → Indicateur ensuite).
 
 **Collisions de nom** : les noms de mesures sont uniques dans le modèle. Si une
 variation a un `namePattern` invariant par branche (utilise `{kpi}` au lieu de
-`{base}` — ex. une mesure « direction »), la passe de base et la passe de
+`{base}`, ex. une mesure « direction »), la passe de base et la passe de
 branche visent le même nom : la 1re (la base) est gardée, les suivantes sont
-ignorées avec un avertissement (le csx écrasait silencieusement la même mesure ;
-l'écriture TMDL doit dédupliquer sinon Power BI refuse de charger). Pour éviter
-carrément l'essai en branche, restreindre : `"branches": {"YTD": {"variations":
-[…sans la variation en {kpi}…]}}`.
-
-Le csx reste la **solution de secours** quand seul Tabular Editor est
-disponible (il fait la même chose côté modèle) :
-
-### Utilisation (csx / Tabular Editor)
-
-1. Ouvrir Power BI Desktop avec le projet → Outils externes → Tabular Editor.
-2. Onglet **C# Script** → ouvrir le fichier (⚠ TE ne recharge PAS un .csx
-   modifié sur disque : le rouvrir après chaque changement).
-3. Exécuter → vérifier la grille de sortie → **Ctrl+S** pour pousser au modèle.
-4. Enregistrer le PBIP dans Desktop.
-
-Le chemin du `measures_config.json` est codé en dur en tête de script ; s'il
-n'existe pas (poste du travail), une boîte de dialogue s'ouvre.
+ignorées avec un avertissement (deux mesures du même nom, Power BI refuserait
+de charger le modèle). Pour éviter carrément l'essai en branche, exclure la
+variation de la branche (⚙ Réglages → Branches).
 
 ### Ce qu'il fait, dans l'ordre
 
@@ -110,8 +198,8 @@ n'existe pas (poste du travail), une boîte de dialogue s'ouvre.
    displayFolder est `settings.sourceFolder` deviennent des « mesures de
    base ». Les mesures générées (annotation `MeasureVariation`) sont exclues —
    pas de variations de variations accidentelles. Elles sont triées **comme
-   Power BI trie** (`sort_key_pbi`, réplique du comparateur culturel `.OrderBy`
-   du csx). C'est l'ordre d'écriture dans le TMDL, et **le repli** de la
+   Power BI trie** (`sort_key_pbi`, réplique du comparateur culturel de
+   .NET). C'est l'ordre d'écriture dans le TMDL, et **le repli** de la
    colonne **Ordre** des paramètres de champ quand aucune colonne d'ordre
    n'est configurée (`indicateursXlsx.orderColumn`, plus bas) : dès qu'il
    diverge, l'ordre du paramètre ne colle plus à l'ordre alphabétique affiché
@@ -599,7 +687,7 @@ Réglages.
 Les mesures Switch qu'un modèle porte encore sont des **orphelines** comme les
 autres : retirées par une génération avec « Supprimer les orphelines »,
 gardées sinon. Le journal le dit en clair, avec leur nombre — vérifie avant
-qu'aucun visuel ne s'en sert. (Le `.csx` de secours, lui, les génère encore.)
+qu'aucun visuel ne s'en sert.
 
 ### fieldParameter
 
@@ -693,8 +781,7 @@ Les trois familles d'avant — `tableNames` (par calcul), `tableNamesKpiBase`
 un `includeBase` commun — sont relues comme les trois cas particuliers de la
 liste qu'elles étaient, et génèrent **exactement** les mêmes tables
 (`tests/test_parametres_champ.py`). Le premier enregistrement depuis l'onglet
-Paramètres de champ réécrit le bloc sous la forme `tables` et retire les anciennes clés. Le `.csx`
-de secours, lui, ne lit que l'ancien format.
+Paramètres de champ réécrit le bloc sous la forme `tables` et retire les anciennes clés.
 
 Voir §5.
 
@@ -1032,9 +1119,9 @@ clé vers TD_KPI), `Calcul`, `Branche`.
 | `P_Indicateurs_parCalcul_2` | idem | copie indépendante — 2e sélection sur la même page |
 | `P_Indicateurs_parKPI` | nom du KPI | **1 calcul × plusieurs KPIs** : slicer `Calcul` (sélection simple) + l'axe montre les KPIs |
 
-**À faire une fois dans TE après création** : une relation
-`TD_KPI[mesure] → P_xxx[Indicateur]` **par table** (l'interface de Desktop
-refuse souvent ces relations ; via TE ça fonctionne).
+**À faire une fois après création**, dans Power BI Desktop : une relation
+`TD_KPI[mesure] → P_xxx[Indicateur]` **par table** (Modélisation → Gérer les
+relations). Le journal de la génération le rappelle quand il crée une table.
 
 Règles de tri (pourquoi les index se répètent) : la colonne d'affichage est
 triée par la colonne d'ordre, et un même libellé doit pointer vers UN seul
@@ -1044,7 +1131,7 @@ la séquence sont normaux.
 
 Si Desktop refuse la **création** d'une table calculée par outil externe :
 créer un paramètre bidon du même nom via l'interface (Modélisation > Nouveau
-paramètre > Champs), relancer le script (la mise à jour passe), et l'exécution
+paramètre > Champs), relancer la génération (la mise à jour passe), et la
 suivante renomme les colonnes `Value4`-`Value6`.
 
 ---
@@ -1656,14 +1743,14 @@ catégories calc/import/structural). Une colonne est utilisée si référencée 
 - sinon : « used by unused » si seules des mesures inutilisées la référencent,
   ou « aucune référence ».
 
-**Sorties** : `unused_measures.csv` (audit complet mesures + colonnes, colonne
-`Type`, avec la raison d'utilisation de chacune) et
-`delete_unused_measures.csx` — le « bouton » (mesures seulement) : ouvrir dans
-TE, **relire la liste**, exécuter, Ctrl+S.
+**Sortie** : `unused_measures.csv` (audit complet mesures + colonnes, colonne
+`Type`, avec la raison d'utilisation de chacune), par l'export de ChopChop ou
+`py bidouille\moteurs\unused_measures.py`. La suppression se fait dans
+ChopChop (édition dev), Desktop fermé, avec sauvegarde.
 
-⚠ Pour les mesures marquées « générée » : les supprimer ne sert à rien (le
-script TE les recrée). Retirer plutôt la variation/branche de
-`measures_config.json` — `removeOrphans` fera le ménage au prochain run.
+⚠ Pour les mesures marquées « générée » : les supprimer ne sert à rien, la
+prochaine génération les recrée. Retirer plutôt la variation ou la branche de
+`measures_config.json` : « Supprimer les orphelines » fera le ménage.
 
 ### ChopChopRapport — l'interface graphique (unused_measures_ui.py)
 
@@ -1835,98 +1922,77 @@ hasard.
 
 ---
 
-## 9. scan_lineage.py (inventaire du parc)
+## 9. Sources de données (lineage.py)
 
-Scanne récursivement `ROOT` pour tous les `.pbip` et produit
-`pbi_lineage.csv` : une ligne par partition avec table, mode
-(import/directQuery/calculated), connecteur M et ses arguments (serveur/BD,
-chemin, URL). Gère : connexions live (`byConnection`), `expressions.tmdl`
-(paramètres serveur), connecteurs imbriqués (`Excel.Workbook(File.Contents(x))`
-= une seule ligne avec le chemin). Lecture seule.
-
-Le CSV se charge dans Power BI → rapport de lineage du parc. Au travail :
-pointer `ROOT` vers le répertoire des projets.
-
-Pour **un seul** rapport, l'onglet **« Sources de données »** de PBIdouille
-fait la même lecture (`bidouille\moteurs\lineage.py`) et l'affiche.
+L'onglet **« Sources de données »** lit le modèle du rapport ouvert : une ligne
+par partition avec sa table, son mode (import / directQuery / calculée), son
+connecteur M et ses arguments (serveur et base, chemin, URL). Il gère les
+connexions live, les paramètres M partagés (`expressions.tmdl`) et les
+connecteurs imbriqués (`Excel.Workbook(File.Contents(x))` donne une seule
+ligne, avec le chemin). Un fichier local introuvable est signalé ⚠. Lecture
+seule ; **Exporter…** écrit le CSV.
 
 ---
 
 ## 10. Recettes
 
 **Ajouter un KPI** : créer la mesure de base dans `_mesures` (dossier
-`_indicateurs`) + sa ligne dans TD_Indicateurs.xlsx → actualiser TD_KPI →
-relancer la génération (variations et paramètres suivent tout seuls) →
-si visuels à CF par paramètre : `py propagate_cf.py` (Desktop fermé).
+`_indicateurs`) et sa ligne dans TD_Indicateurs.xlsx → actualiser TD_KPI →
+**Générer les mesures** (variations et paramètres suivent tout seuls) →
+**Propager** dans l'onglet Rapport (Desktop fermé).
 
-**Ajouter une variation** : nouveau bloc dans `variations` (penser à
-`inFieldParameter: true` si elle doit être sélectionnable) → relancer le `.csx`.
+**Ajouter une variation** : **Ajouter** dans Mesures → Variations (cocher
+« dans les paramètres de champ » si elle doit être sélectionnable),
+Sauvegarder, puis Générer.
 
-**Retirer une variation** : la supprimer du JSON → relancer (`removeOrphans`
-nettoie le modèle ET le paramètre, puisque l'expression est régénérée).
+**Retirer une variation** : **Supprimer** dans l'éditeur, Sauvegarder, puis
+Générer avec « Supprimer les orphelines » (le modèle ET les tables paramètre
+sont nettoyés, puisque leur expression est régénérée).
 
-**Renommer un libellé de KPI** : changer `libelle_indicateur` dans l'Excel —
+**Renommer un libellé de KPI** : changer `libelle_indicateur` dans l'Excel,
 rien d'autre (le modèle est indexé sur les noms de mesures).
 
-**Grand ménage** : `py unused_measures.py` → lire le CSV → exécuter
-`delete_unused_measures.csx` dans TE pour les manuelles ; ajuster le JSON pour
-les générées.
-
-**Cartographier le parc** : `py scan_lineage.py` → `pbi_lineage.csv`.
+**Grand ménage** : onglet ChopChop → lire la liste, exporter ; pour les mesures
+générées, retirer la variation du config plutôt que la mesure.
 
 ---
 
 ## 11. Règles d'or
 
-1. **Un seul écrivain à la fois.** Modèle : TE via Outils externes + Ctrl+S,
-   puis enregistrer depuis Desktop. Fichiers PBIP (scripts Python) : Desktop
-   **fermé** (il ne relit qu'à l'ouverture et écrase à l'enregistrement).
-2. **TE ne recharge pas un `.csx` modifié** — le rouvrir après chaque édition.
+1. **Desktop fermé pendant une écriture.** Il ne relit les fichiers qu'à
+   l'ouverture et écrase tout à l'enregistrement.
+2. **Aperçu d'abord.** Chaque action qui écrit a sa case « Aperçu » ; le
+   journal dit ce qui serait fait.
 3. **`py`, pas `python`** (sur certaines machines, `python` est le faux alias
    Microsoft Store qui ne fait rien).
-4. Première exécution sur un nouveau modèle : `"dryRun": true`.
-5. Les relations TD_KPI → paramètres se créent dans TE, une par table.
-6. Sélection **simple** sur `Calcul` pour la table parKPI.
+4. **Le gabarit est maître** : on corrige le KPI gabarit, jamais un clone ; il
+   serait remplacé au prochain passage.
+5. Les relations TD_KPI → tables paramètre se créent dans Desktop, une par
+   table.
+6. Sélection **simple** sur `Calcul` pour une table « par KPI ».
 
 ---
 
-## 12. Checklist de migration au travail
+## 12. Installer au travail
 
-**Fichiers à copier** (tout dans UN dossier, idéalement celui du `.pbip` —
-la structure est obligatoire : `bidouille\` importe les scripts de son dossier
-parent, et ChopChop cherche le thème dans `bidouille\` à côté de lui) :
+Le zip de `dist\` (`py empaqueter.py`, depuis la branche `stable`) contient
+l'app et le guide. L'extraire où l'on veut, puis :
 
-```
-propagate_cf.py            color_matrix_by_kpi.py     unused_measures.py
-unused_measures_ui.py      scan_lineage.py            generate_measures.py
-create_measure_variations.csx (secours TE)            measures_config.json
-ShadedBetween_overlay.dax  README.md
-bidouille\app.py
-bidouille\core\  (__init__, project, model_reader, report_reader, runner, theme)
-bidouille\tabs\  (__init__, tab_report, tab_wireframe, tab_config, tab_model, dialog_couleurs)
-```
-
-⚠ Jamais depuis `codes\` (snapshot périmé) ; pas de `__pycache__` (bytecode
-d'un autre Python). Un zip prêt à l'emploi peut être régénéré depuis la
-racine (voir la liste ci-dessus).
-
-- [ ] `measures_config.json` : `dateColumn`, `sourceTable`/`sourceFolder`,
-      noms des tables paramètre, libellés (`Réel`...)
-- [ ] `.csx` : le chemin codé en dur (ou laisser la boîte de dialogue)
-- [ ] lignes de commande des moteurs : le dossier des projets vient de
-      `chemins.py` (ou `PBIDOUILLE_PROJETS`) ; `propagate_cf.py` :
-      `TEMPLATE_KPI`, `FIELD_PARAMETER`
-- [ ] `scan_lineage.py` : `ROOT`
-- [ ] La table dimension (équivalent TD_KPI) avec une colonne = noms de mesures
-- [ ] Vérifier que Python 3.8+ est disponible (`py --version` ou `python --version`)
-- [ ] Pour les UIs seulement : `qtpy` + un binding Qt — PyQt5 (déjà au
-      travail) ou PySide6 (`py -m pip install qtpy pyside6` à la maison) ;
-      qdarkstyle n'est PLUS requis (thème néon autonome)
-- [ ] Relations TD → P_xxx[Indicateur] dans TE après la première exécution
+- [ ] Python 3.8+ disponible (`py --version`) ;
+- [ ] `qtpy` et un binding Qt : PyQt5 (déjà au travail) ou PySide6
+      (`py -m pip install qtpy pyside6` à la maison) ; `openpyxl` ;
+- [ ] `py app.py`, puis **Changer de rapport…** vers le `.pbip` ;
+- [ ] le `measures_config.json` du rapport (bouton 📄 s'il n'est pas à côté
+      du `.pbip`) ; vérifier dans ⚙ Réglages la colonne de dates, la table et
+      le dossier des mesures de base ;
+- [ ] la table dimension (équivalent TD_KPI) avec une colonne = noms de
+      mesures ;
+- [ ] après la première génération : les relations TD → P_xxx[Indicateur]
+      dans Desktop.
 
 ---
 
-## 13. PBIdouille 🔧 — cockpit des outils (UI)
+## 13. L'interface en détail
 
 *(anciennement « BIdouille » ; réglages QSettings conservés sous ce nom interne)*
 
@@ -2017,8 +2083,7 @@ leur titre. Le guide lui-même se reconstruit avec `docs\sourcesuild_deck.py`
                      TD_Indicateurs.xlsx, measures_config.json,
                      propagation.json, catalogue_variations.json,
                      _backupsPBIdouille\
-  Autres outils\     scripts Tabular Editor (.csx), recettes SVG, scripts
-                     autonomes — hors de l'app
+  Autres outils\     recettes SVG, scripts autonomes : hors de l'app
   Archives\          anciens paquets
 ```
 
@@ -2530,8 +2595,7 @@ CF Δ 30d vit dans le dossier de Δ 30d), **dataCategory en dropdown**
 **Génération** — en tête du journal, visible dans l'onglet Mesures : le bouton
 **« Générer les mesures »** exécute
 `generate_measures.py` sur le modèle du projet : mesures × variations ×
-branches, tables paramètre de champ — **sans Tabular Editor ni
-Desktop ouvert**. Récap du config en une ligne (le détail en infobulle) ;
+branches, tables paramètre de champ, **Desktop fermé**. Récap du config en une ligne (le détail en infobulle) ;
 « Aperçu (dry-run) » coché par
 défaut (liste tout, n'écrit rien) ; case « Supprimer les orphelines » ;
 l'écriture réelle demande confirmation (Desktop FERMÉ), sauvegarde sous

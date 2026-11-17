@@ -7,7 +7,10 @@
 Ce qui part dans le zip : les fichiers SUIVIS PAR GIT (donc jamais un projet,
 une sauvegarde, un Excel ou une bibliothèque personnelle — le dossier de
 travail en est plein) moins les tests et les outils de dev, plus le guide
-utilisateur de docs\\ s'il existe.
+utilisateur de docs\\ s'il existe. docs\\ est suivi par git (le guide et ses
+sources sont publiés sur GitHub) mais n'entre dans le zip que par son
+PowerPoint, posé à la racine du paquet : ses scripts de construction ne
+servent pas à l'usager.
 
 Ce qui est vérifié AVANT d'écrire quoi que ce soit — un échec n'écrit rien :
   · pas de fichier .dev dans le paquet (il donnerait l'édition dev) ;
@@ -34,7 +37,7 @@ from pathlib import Path
 RACINE = Path(__file__).resolve().parent
 DIST = RACINE / "dist"
 # suivis par git, mais pas pour l'usager
-EXCLUS = ("tests/", ".gitignore", "empaqueter.py")
+EXCLUS = ("tests/", "docs/", ".gitignore", "empaqueter.py")
 DOCS = RACINE / "docs"
 # apparus après Python 3.8 : appelés comme méthode ou attribut
 APRES_38 = {"removeprefix": "3.9", "removesuffix": "3.9", "lcm": "3.9",

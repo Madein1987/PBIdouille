@@ -37,7 +37,7 @@ tout le monde, un gabarit par groupe de KPI, un gabarit par variation, et case
 par case (KPI × variation), un autre KPI ou « à la main ».
 
 La liste des KPI est lue automatiquement dans P_Indicateurs.tmdl (colonne
-Indicateur), donc elle suit le script Tabular Editor. TARGET_KPIS permet de
+Indicateur), donc elle suit la génération des mesures. TARGET_KPIS permet de
 forcer une liste explicite au besoin.
 """
 
