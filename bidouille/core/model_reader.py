@@ -103,10 +103,10 @@ def kpis(project) -> list:
         cands = candidate_parameters(project)
         cfg = project.config_json
         raise RuntimeError(
-            "table paramètre introuvable dans ce modèle — essayé : "
+            "table paramètre introuvable dans ce modèle, essayé : "
             + ", ".join(cands)
             + (f" (config : {cfg})" if cfg.exists()
-               else f" (AUCUN config chargé — attendu : {cfg})")
+               else f" (AUCUN config chargé, attendu : {cfg})")
             + ". Clique le bouton du chemin du config (sous la barre du projet) pour choisir le measures_config.json de CE rapport, "
               "ou vérifie ses tables paramètre (⚙ Réglages)."
         )

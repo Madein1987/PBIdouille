@@ -10,7 +10,12 @@ Vérifie :
   3. l'état (nouvelle / modifiée / inchangée) est celui que « Générer »
      annoncerait, et l'aperçu n'écrit rien ;
   4. la vue : un KPI par racine, le marqueur ◆, le filtre texte, le filtre
-     « ◆ seulement », et le config EN MÉMOIRE (sans enregistrer).
+     « ◆ seulement », et le config EN MÉMOIRE (sans enregistrer) ;
+  5. les attributs de chaque nœud (DAX développé, format, dossier) et la
+     FICHE de la mesure choisie ;
+  6. le rangement « par variation », mémorisé ;
+  7. Variations → aperçu des noms : un nom se déplie sur son DAX, celui du
+     formulaire EN COURS (pas encore committé ni enregistré).
 
 Travaille sur une COPIE du projet de démonstration, magasin de réglages jetable.
 """
@@ -186,6 +191,153 @@ check(f"« {nv['name']} » perd son marqueur aussitôt",
 check("rien n'a été enregistré",
       json.loads((copie / "measures_config.json").read_text(encoding="utf-8"))
       ["variations"][V].get("inFieldParameter") is True)
+
+# ---------------------------------------------------------------------------
+print("5. les attributs, et la fiche")
+check("chaque mesure a son DAX", all(n.get("dax") for n in st["arbre"]))
+check("le DAX d'une variation est DÉVELOPPÉ (plus aucun jeton {…})",
+      all("{baseRef}" not in n["dax"] and "{date}" not in n["dax"]
+          for n in st["arbre"] if n["type"] != "base"))
+check(f"le DAX de la base vient du TMDL, sur ses lignes (« {K} »)",
+      arbre[K]["dax"] and "\t\t\t" not in arbre[K]["dax"])
+check("format et dossier suivent, pour la base comme pour une variation",
+      arbre[K]["dossier"] and nv.get("dossier") and "format" in nv)
+sb = [n for n in st["arbre"] if n["branche"] == B and n["type"] == "variation"]
+check(f"une variation en {B} dit si elle enveloppe sa variation Réel",
+      sb and all(isinstance(n.get("enveloppe"), bool) for n in sb)
+      and any(n["enveloppe"] for n in sb))
+env = next(n for n in sb if n["enveloppe"])
+reel = next(n for n in st["arbre"] if n["variation"] == env["variation"]
+            and n["kpi"] == env["kpi"] and not n["branche"] and n["cible"] == env["cible"])
+check(f"… et son DAX cite la mesure Réel (« {reel['name']} »)",
+      "[" + reel["name"] + "]" in env["dax"])
+
+nom_v = next(n["name"] for n in var_k)
+check("rien de choisi : la fiche invite à choisir", not vue.fiche.ed_dax.isVisible()
+      and "Choisis" in vue.fiche.lbl_nom.text())
+
+
+def ct_arbre(nom):
+    """Le nœud qu'affiche la vue (config en mémoire)."""
+    return {n["name"]: n for n in vue._noeuds}[nom]
+
+
+check(f"choisir « {nom_v} » : la fiche montre son DAX", vue.choisir(nom_v)
+      and vue.fiche.texte_dax() == ct_arbre(nom_v)["dax"])
+check("… et ses attributs (format, dossier, paramètres)",
+      "dossier" in vue.fiche.lbl_attributs.text()
+      and "paramètres" in vue.fiche.lbl_attributs.text())
+
+# ---------------------------------------------------------------------------
+print("6. le rangement par variation")
+from tabs.arbre_mesures import CLE_RANGEMENT, ROLE_GROUPE        # noqa: E402
+from core.project import lire_reglage                             # noqa: E402
+vue.cmb_rangement.setCurrentIndex(vue.cmb_rangement.findData("variation"))
+app.processEvents()
+haut = [vue.arbre.topLevelItem(i) for i in range(vue.arbre.topLevelItemCount())]
+check("les racines sont des GROUPES, la 1re tient les mesures écrites à la main",
+      haut and all(g.data(0, ROLE_GROUPE) for g in haut)
+      and vue.element(K).parent() is haut[0])
+it_v = vue.element(nv["name"])
+check(f"« {nv['name']} » est dans le groupe « {V} »",
+      it_v is not None and it_v.parent().text(0) == V and it_v.parent().parent() is None)
+it_b = vue.element(br_k[0]["name"])
+check(f"la mesure de branche est dans le groupe « {B} »",
+      it_b is not None and it_b.parent().text(0) == B)
+it_sb = vue.element(sb[0]["name"])
+check(f"une variation en branche est dans « {B} › {sb[0]['variation']} », sous « {B} »",
+      it_sb is not None and it_sb.parent().text(0) == B + " › " + sb[0]["variation"]
+      and it_sb.parent().parent() is it_b.parent())
+check("le groupe compte ses mesures, sous-groupes compris",
+      it_b.parent().text(2) == f"{sum(1 for n in st['arbre'] if n['branche'] == B)} mesures")
+check("chaque mesure de l'arbre y est, une fois",
+      all(vue.element(n["name"]) is not None for n in st["arbre"]))
+check("la fiche est restée sur la mesure choisie", vue.fiche.lbl_nom.text() == nom_v)
+check("le rangement est mémorisé", lire_reglage(CLE_RANGEMENT, "") == "variation")
+vue.ed_filtre.setText(nv["name"])
+check("un filtre cache les groupes qui n'ont plus rien à montrer",
+      not it_v.parent().isHidden() and it_b.parent().isHidden())
+vue.ed_filtre.setText("")
+vue.arbre.setCurrentItem(it_b.parent())
+check("choisir un groupe : la fiche le résume, sans DAX",
+      B in vue.fiche.lbl_nom.text() and not vue.fiche.ed_dax.isVisible())
+vue.cmb_rangement.setCurrentIndex(vue.cmb_rangement.findData("kpi"))
+check("retour par KPI : un KPI par racine",
+      vue.arbre.topLevelItemCount() == len(bases))
+
+# ---------------------------------------------------------------------------
+print("7. l'aperçu des noms se déplie sur le DAX du formulaire en cours")
+from tabs.fiche_mesure import ROLE_ATTRIBUT                       # noqa: E402
+ct.inner.setCurrentIndex(tc.IDX_VARIATIONS)
+ct._populate_list(select=V)
+app.processEvents()
+ap = ct.arbre_apercu
+lignes_ap = [ap.topLevelItem(i) for i in range(ap.topLevelItemCount())]
+it_ap = next((i for i in lignes_ap if i.data(0, tc.Qt.UserRole) == nv["name"]), None)
+check(f"« {nv['name']} » est une ligne de l'aperçu", it_ap is not None)
+ct._details_apercu()
+dax_vu = it_ap.child(0).text(0) if it_ap.childCount() else ""
+check("dépliée : son DAX en premier, celui du générateur",
+      it_ap.child(0).data(0, ROLE_ATTRIBUT) and dax_vu == ct_arbre(nv["name"])["dax"])
+check("… puis ses attributs (format, dossier…)",
+      any(it_ap.child(i).text(0).startswith("dossier") for i in range(it_ap.childCount())))
+check("les lignes de l'aperçu restent les noms (texte_apercu)",
+      nv["name"] in ct.texte_apercu() and dax_vu not in ct.texte_apercu())
+ap.expandItem(it_ap)
+ancien = ct.ed_dax.toPlainText()
+ct.ed_dax.setPlainText("CALCULATE({baseRef}, ALL('dim_Date')) + 0")
+ct._details_apercu()
+it_ap = next(ap.topLevelItem(i) for i in range(ap.topLevelItemCount())
+             if ap.topLevelItem(i).data(0, tc.Qt.UserRole) == nv["name"])
+check("le DAX tapé, PAS ENCORE committé, s'y voit développé",
+      it_ap.child(0).text(0) == f"CALCULATE([{K}], ALL('dim_Date')) + 0")
+check("… sans toucher le config en mémoire",
+      "ALL('dim_Date')" not in json.dumps(ct._config["variations"][V], ensure_ascii=False))
+check("la ligne dépliée le reste à la frappe", it_ap.isExpanded())
+ct.ed_dax.setPlainText(ancien)
+ct._set_dirty(False)
+
+print("8. les jetons gardent leur couleur, les tables se replient")
+from tabs.fiche_mesure import segments_dax, ROLE_HTML           # noqa: E402
+from core.theme import BLUE                                      # noqa: E402
+tous = [n for n in vue._noeuds if n["type"] not in ("base", "cible")]
+check(f"chaque DAX généré se recolle à son modèle ({len(tous)} mesures)",
+      all("".join(t for t, _ in segments_dax(n)[0]) == n["dax"] for n in tous)
+      and all(any(g for _, g in segments_dax(n)[0]) for n in tous))
+seg, subs = segments_dax(ct_arbre(env["name"]))
+check(f"une enveloppe colore la mesure Réel qu'elle cite ([{reel['name']}])",
+      ("[" + reel["name"] + "]", "accolade") in seg
+      and ("{variationRef}", "[" + reel["name"] + "]") in subs)
+# la section 4 a sorti V du paramètre : le formulaire l'y remet (sans committer)
+ct.chk_infp.setChecked(True)
+ct._details_apercu()
+it_ap = next(ap.topLevelItem(i) for i in range(ap.topLevelItemCount())
+             if ap.topLevelItem(i).data(0, tc.Qt.UserRole) == nv["name"])
+check("le DAX de l'aperçu est peint avec la couleur des jetons",
+      BLUE.lower() in (it_ap.child(0).data(0, ROLE_HTML) or "").lower())
+check("… et son infobulle liste les remplacements",
+      "{baseRef}" in it_ap.child(0).toolTip(0))
+par = next((it_ap.child(i) for i in range(it_ap.childCount())
+            if it_ap.child(i).text(0).startswith("paramètres")), None)
+tables_nv = nv["tables"]                 # ceux de la section 1 : P_tout
+check(f"« paramètres » : une ligne repliée qui compte les tables ({tables_nv})",
+      tables_nv and par is not None and par.childCount() == len(tables_nv)
+      and not par.isExpanded() and f"{len(tables_nv)} table" in par.text(0))
+if tables_nv:
+    ap.expandItem(par)
+    ct._details_apercu()
+    par = next(it_ap2.child(i) for it_ap2 in [next(
+        ap.topLevelItem(i) for i in range(ap.topLevelItemCount())
+        if ap.topLevelItem(i).data(0, tc.Qt.UserRole) == nv["name"])]
+        for i in range(it_ap2.childCount()) if it_ap2.child(i).text(0).startswith("paramètres"))
+    check("… une table par ligne, et dépliée elle le reste à la frappe",
+          [par.child(i).text(0) for i in range(par.childCount())] == tables_nv
+          and par.isExpanded())
+vue.choisir(env["name"])
+c = vue.fiche.ed_dax.document().find("[" + reel["name"] + "]")
+check("la fiche colore aussi ce qu'un jeton est devenu",
+      not c.isNull() and c.charFormat().foreground().color().name().lower() == BLUE.lower())
+ct._set_dirty(False)
 
 ct.deleteLater()
 rmtree(copie)

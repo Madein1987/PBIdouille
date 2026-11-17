@@ -156,7 +156,7 @@ class SourcesDialog(QDialog):
         self._notes: list = []
         self._rangs: list = []                # ce que montre chaque ligne
 
-        self.setWindowTitle("Sources du formatage — " + self.chemin.name)
+        self.setWindowTitle("Sources du formatage · " + self.chemin.name)
         lay = QVBoxLayout(self)
 
         intro = QLabel(
@@ -164,7 +164,7 @@ class SourcesDialog(QDialog):
             "variation. Par défaut, tout vient du <b>gabarit de base</b>. Un "
             "<b>groupe</b> a son propre gabarit, posé <b>par-dessus</b> la "
             "base : il en reçoit d'abord tout, puis ses propres réglages "
-            "l'emportent — et ses KPI copient le résultat. La ligne <b>Tous "
+            "l'emportent, et ses KPI copient le résultat. La ligne <b>Tous "
             "les KPI</b> donne un gabarit par variation, pour tout le monde "
             "(aux groupes, par leur gabarit). Sélectionne des cases "
             "(clic-glisser, ou un en-tête de ligne ou de colonne), puis "
@@ -180,7 +180,7 @@ class SourcesDialog(QDialog):
         self.cmb_base.setCurrentText(self.grille.base or AUCUN)
         self.cmb_base.setToolTip(
             "Le KPI que tu formates en entier dans Desktop, et que tous les\n"
-            "autres copient — sauf ce qu'une règle plus précise décide.")
+            "autres copient, sauf ce qu'une règle plus précise décide.")
         self.cmb_base.currentTextChanged.connect(self._changer_base)
         haut.addWidget(self.cmb_base)
         ordre = QLabel("Priorité : règle de la case › groupe (variation) › "
@@ -276,7 +276,7 @@ class SourcesDialog(QDialog):
         fichier = QLabel(
             "Fichier : " + self.chemin.name + ", partagé par les rapports du "
             "dossier" + ("" if self.source == self.chemin else
-                         f" — lu depuis « {self.source.name} », l'ancien "
+                         f", lu depuis « {self.source.name} », l'ancien "
                          "fichier de ce rapport"))
         fichier.setStyleSheet(f"color:{TEXT_MUTED};")
         fichier.setToolTip(str(self.chemin))
@@ -332,9 +332,9 @@ class SourcesDialog(QDialog):
             return SANS_GROUPE
         role = ""
         if qui == g.base:
-            role = " — gabarit de base"
+            role = " (gabarit de base)"
         elif qui in g.groupe_de and g.groupes[g.groupe_de[qui]]["base"] == qui:
-            role = " — gabarit du groupe"
+            role = " (gabarit du groupe)"
         retrait = "    " if qui in g.groupe_de else ""
         return retrait + qui + role
 
@@ -373,7 +373,7 @@ class SourcesDialog(QDialog):
         if suit:
             # aucune règle sur le détail : celle de son étiquette décide
             origine = (f"le détail suit son étiquette, « "
-                       f"{pc.etiquette_du_detail(v)} » — {origine}")
+                       f"{pc.etiquette_du_detail(v)} », {origine}")
         mesures = self.analyse.get("mesures")
         reglages = self.analyse.get("reglages") or {}
         tete = f"{k} · {v}\n"
@@ -393,7 +393,7 @@ class SourcesDialog(QDialog):
                 info = (tete + f"Gabarit du groupe, posé par-dessus « {u} » ("
                         + ("la base" if u == g.base else "Tous les KPI")
                         + f") : il reçoit d'abord le formatage de « {u} », "
-                        "puis le sien par-dessus — ce qu'il règle lui-même "
+                        "puis le sien par-dessus, ce qu'il règle lui-même "
                         f"l'emporte, le reste vient de « {u} ». Retoucher "
                         "un réglage reçu dans Desktop le fait sien.")
             else:
@@ -419,7 +419,7 @@ class SourcesDialog(QDialog):
             else:
                 fond, encre = _palir(self._teinte(s)), TEXT
             texte, gras, ital = s, posee, False
-            info = tete + f"Copie « {s} » — {origine}."
+            info = tete + f"Copie « {s} », {origine}."
             u = g.sous_couche(s, v)
             if u:
                 info += (f"\n« {s} » se pose par-dessus « {u} » : ce que "
@@ -440,7 +440,7 @@ class SourcesDialog(QDialog):
         perte = (k, v) in retraits
         if perte:
             info += (f"\nCoin orange : {retraits[(k, v)]} réglage(s) seraient "
-                     f"retirés à la prochaine propagation — « {s} » n'en "
+                     f"retirés à la prochaine propagation, « {s} » n'en "
                      f"porte aucun pour « {v} ».")
         return texte, fond, encre, gras, ital, perte, info
 
@@ -533,13 +533,13 @@ class SourcesDialog(QDialog):
         sans = self._sources_sans_mesure()
         for (v, s), ks in sans.items():
             lignes.append(
-                f"Attention : « {v} » — {len(ks)} KPI copient « {s} », qui n'a "
+                f"Attention : « {v} », {len(ks)} KPI copient « {s} », qui n'a "
                 "pas cette mesure : rien ne leur sera copié. Donne-leur un KPI "
                 "qui l'a (ligne « Tous les KPI », par exemple).")
         if retraits:
             lignes.append(
                 f"Attention : {sum(retraits.values())} réglage(s) seraient "
-                "retirés à la prochaine propagation — les cases au coin orange "
+                "retirés à la prochaine propagation, les cases au coin orange "
                 "copient un KPI qui n'a rien pour cette variation.")
         self.lbl_verdict.setText("\n".join(lignes))
         alerte = bool(erreurs or avert or retraits or sans)
@@ -722,7 +722,7 @@ class SourcesDialog(QDialog):
             QMessageBox.warning(
                 self, "Sources du formatage",
                 "Le fichier n'a pas été écrit :\n\n· " + "\n· ".join(erreurs)
-                + "\n\nCorrige d'abord — une propagation sur des règles "
+                + "\n\nCorrige d'abord, une propagation sur des règles "
                   "incohérentes réécrirait le rapport de travers.")
             return
         try:

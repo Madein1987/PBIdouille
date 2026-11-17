@@ -393,7 +393,7 @@ def migrate_legacy(project_root, log=None) -> list:
         for d in list(ancien.iterdir()):
             cible = nouveau / d.name
             if cible.exists():
-                log(f"⚠ {folder}\\{d.name} existe déjà rangé — laissé en place.")
+                log(f"⚠ {folder}\\{d.name} existe déjà rangé, laissé en place.")
                 continue
             try:
                 shutil.move(str(d), str(cible))
@@ -408,7 +408,7 @@ def migrate_legacy(project_root, log=None) -> list:
             # avoir été vidé. Ce n'est pas grave (rien n'y est plus lu) et le
             # prochain chargement du projet réessaie — mais on le DIT, sinon
             # le voir traîner ferait croire que rien n'a bougé.
-            log(f"⚠ {folder}\\ vidé mais non supprimé ({e}) — sans effet, "
+            log(f"⚠ {folder}\\ vidé mais non supprimé ({e}), sans effet, "
                 "il partira au prochain chargement.")
     if bouge:
         log(f"{len(bouge)} sauvegarde(s) rangée(s) sous {PARENT}\\.")

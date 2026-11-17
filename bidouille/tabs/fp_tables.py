@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Éditeur des tables paramètre de champ (⚙ Réglages → Paramètres de champ).
+"""Éditeur des tables paramètre de champ (onglet Mesures → Paramètres de champ).
 
 Une LISTE de tables, chacune avec ses réglages : ce qu'affichent ses rangées,
 ce qu'affiche sa rangée de base, si le KPI paraît sous son libellé, si elle
@@ -77,7 +77,7 @@ class EditeurTablesParametre(QWidget):
         self.b_ajouter.clicked.connect(self._ajouter)
         self.b_dupliquer = QPushButton("Dupliquer")
         self.b_dupliquer.setToolTip(
-            "Une copie de la table choisie, sous un autre nom — pour deux\n"
+            "Une copie de la table choisie, sous un autre nom, pour deux\n"
             "sélections indépendantes sur une même page.")
         self.b_dupliquer.clicked.connect(self._dupliquer)
         self.b_retirer = QPushButton("Retirer")
@@ -111,10 +111,10 @@ class EditeurTablesParametre(QWidget):
         self.cmb_rows.addItem("le KPI", "kpi")
         self.cmb_rows.setToolTip(
             "« le calcul » : on y choisit un CALCUL. Usage : UN KPI × plusieurs\n"
-            "calculs — le KPI vient d'un segment sur TD_KPI, relié à la colonne\n"
+            "calculs : le KPI vient d'un segment sur TD_KPI, relié à la colonne\n"
             "Indicateur.\n\n"
-            "« le KPI » : on y choisit un KPI. Usage : UN calcul × plusieurs KPI\n"
-            "— le calcul vient d'un segment sur la colonne Calcul.")
+            "« le KPI » : on y choisit un KPI. Usage : UN calcul × plusieurs KPI :\n"
+            "le calcul vient d'un segment sur la colonne Calcul.")
         self.cmb_rows.currentIndexChanged.connect(self._edite)
         g.addWidget(QLabel("Chaque rangée affiche :"), r, 0)
         g.addWidget(self.cmb_rows, r, 1)
@@ -139,7 +139,7 @@ class EditeurTablesParametre(QWidget):
         self.chk_libelle.setToolTip(
             "Le libellé vient de la table de correspondance (réglages communs,\n"
             "plus bas). Si elle manque au modèle, on retombe sur le nom de la\n"
-            "mesure — et le journal le dit.")
+            "mesure, et le journal le dit.")
         self.chk_libelle.stateChanged.connect(self._edite)
         g.addWidget(self.chk_libelle, r, 0, 1, 2)
         r += 1

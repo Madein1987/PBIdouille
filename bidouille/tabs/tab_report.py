@@ -153,7 +153,7 @@ class ReportTab(QWidget):
             "Se règle dans ⚙ Réglages</a>")
         self.lbl_td_reglage.setTextInteractionFlags(Qt.LinksAccessibleByMouse)
         self.lbl_td_reglage.setToolTip(
-            "L'Excel est défini UNE fois, dans le config — cet onglet ne fait\n"
+            "L'Excel est défini UNE fois, dans le config, cet onglet ne fait\n"
             "que le lire. Clique pour aller le régler.")
         self.lbl_td_reglage.linkActivated.connect(
             lambda _lien: self.ouvrir_reglages.emit())
@@ -234,7 +234,7 @@ class ReportTab(QWidget):
         self.lbl_sources.setToolTip(str(chemin))
         if not regles:
             self.lbl_sources.setText(
-                "Aucune — " + chemin.name + " absent. Ouvre la grille pour "
+                "Aucune : " + chemin.name + " absent. Ouvre la grille pour "
                 "choisir le gabarit de base : c'est lui qui formate tout le "
                 "monde.")
             self.lbl_sources.setStyleSheet(f"color:{YELLOW};")
@@ -249,7 +249,7 @@ class ReportTab(QWidget):
         if chemin.name == propagate_cf.GROUPES_FICHIER:
             texte += "\nFichier : propagation.json, partagé par les rapports du dossier."
         else:
-            texte += (f"\nFichier : « {chemin.name} », propre à ce rapport — "
+            texte += (f"\nFichier : « {chemin.name} », propre à ce rapport, "
                       "enregistre la grille pour la partager via "
                       "propagation.json.")
         if erreurs:
@@ -441,7 +441,7 @@ class ReportTab(QWidget):
 
         if nouveaux:
             self.journal.info(
-                "Liste des KPI rafraîchie — nouveau(x) : " + ", ".join(nouveaux)
+                "Liste des KPI rafraîchie, nouveau(x) : " + ", ".join(nouveaux)
                 + " (ils suivent la base de la grille des sources).")
         self._refresh_sources_label()
 

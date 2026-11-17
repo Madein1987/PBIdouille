@@ -270,7 +270,7 @@ QToolTip {{
 
 /* ---- groupes ------------------------------------------------------------
    Le titre se lit comme un TITRE : dans sa propre police (TITRE_POLICE), et
-   DANS le cadre — posé à cheval sur la bordure, le trait le barrait. La
+   DANS le cadre, posé à cheval sur la bordure, le trait le barrait. La
    marge du haut du cadre lui est réservée (padding-top), le contenu commence
    dessous.
 
@@ -278,7 +278,7 @@ QToolTip {{
    celle du GROUPE. Le groupe la porte donc, et ses enfants directs repartent
    en poids normal (leur famille et leur taille, la règle QWidget les fixe
    déjà widget par widget). Qt 6 ne transmet pas le poids aux enfants ; Qt 5
-   — celui du poste du travail — est connu pour le faire, d'où cette remise à
+  , celui du poste du travail, est connu pour le faire, d'où cette remise à
    zéro, sans effet ici mais sans coût. */
 QGroupBox {{
     background: {SURFACE};

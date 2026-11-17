@@ -996,7 +996,7 @@ def delete_objects(result: dict, measure_names=(), column_keys=(),
                 report["m_edits"][table] = mnames
             else:
                 report["m_skipped"].append(table)
-                log(f"⚠ {table} : requête M non reconnue — colonnes retirées du "
+                log(f"⚠ {table} : requête M non reconnue, colonnes retirées du "
                     "modèle mais l'import continue (édite Power Query à la main).")
 
         p.write_text(text, encoding="utf-8")
@@ -1083,10 +1083,10 @@ def main() -> None:
         if direct:
             print(f"\n  Aucune référence ({len(direct)}) :")
             for n in direct:
-                gen = "  [générée — voir measures_config.json]" if measures[n]["generated"] else ""
+                gen = "  [générée, voir measures_config.json]" if measures[n]["generated"] else ""
                 print(f"    - {n} ({measures[n]['table']}){gen}")
         if chained:
-            print(f"\n  Used by unused — référencées seulement par des inutilisées ({len(chained)}) :")
+            print(f"\n  Used by unused : référencées seulement par des inutilisées ({len(chained)}) :")
             for n in chained:
                 gen = "  [générée]" if measures[n]["generated"] else ""
                 print(f"    - {n}  <- {', '.join(referencers[n])}{gen}")
@@ -1101,7 +1101,7 @@ def main() -> None:
             for d in unused_cols:
                 print(f"    - {d}")
         if chained_cols:
-            print(f"\n  Used by unused — référencées seulement par des mesures inutilisées ({len(chained_cols)}) :")
+            print(f"\n  Used by unused : référencées seulement par des mesures inutilisées ({len(chained_cols)}) :")
             for d in chained_cols:
                 print(f"    - {d}  <- {', '.join(col_refs.get(d, []))}")
 
@@ -1111,7 +1111,7 @@ def main() -> None:
             return s.replace("\\", "\\\\").replace('"', '\\"')
 
         lines = [
-            "// Généré par unused_measures.py — VÉRIFIER la liste avant d'exécuter.",
+            "// Généré par unused_measures.py, VÉRIFIER la liste avant d'exécuter.",
             "// Tabular Editor (connecté au même modèle) -> C# Script -> exécuter -> Ctrl+S.",
             "var aSupprimer = new List<string>",
             "{",

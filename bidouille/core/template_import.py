@@ -147,7 +147,7 @@ def import_model(template_report_dir, template_page_id, root_id,
     stamp_dir.mkdir(parents=True, exist_ok=True)
     manifest = stamp_dir / "import_manifest.txt"
     lines = [
-        "# Import de gabarit — " + datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "# Import de gabarit · " + datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         f"# source : {template_report_dir}",
         f"# modèle : page {template_page_id} / racine {root_id}",
         f"# cible  : {target_report_dir} / page {target_page_id}",

@@ -306,7 +306,7 @@ def colorize(report_dir=REPORT_DIR, model_dir=MODEL_DIR, xlsx=TD_XLSX, *,
             "enregistre, relance.")
     else:
         if warned:
-            log("⚠ Un gabarit n'avait QU'UN fond (pas de texte) — seul le fond a "
+            log("⚠ Un gabarit n'avait QU'UN fond (pas de texte), seul le fond a "
                 "été appliqué. Ajoute une couleur de texte sur la série gabarit "
                 "puis relance pour colorer le texte aussi.")
         log(f"Terminé : {total} entrées écrites. Rouvre le .pbip.")

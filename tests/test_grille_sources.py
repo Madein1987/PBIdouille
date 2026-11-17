@@ -218,8 +218,8 @@ check("… en-tetes en clair : « Tous les KPI », le groupe, « Sans groupe »"
       and entete("groupe", "groupe 2") == "groupe 2, indépendant"
       and entete("sans_groupe") == "Sans groupe")
 check("… le gabarit du groupe et le gabarit de base sont nommes comme tels",
-      entete("kpi", SLEEP).strip() == SLEEP + " — gabarit du groupe"
-      and entete("kpi", BASE) == BASE + " — gabarit de base")
+      entete("kpi", SLEEP).strip() == SLEEP + " (gabarit du groupe)"
+      and entete("kpi", BASE) == BASE + " (gabarit de base)")
 check("la base est choisie", dlg.cmb_base.currentText() == BASE)
 check("ses cases disent « Gabarit »", all(texte(BASE, v) == ds.GABARIT for v in V))
 check("le gabarit du groupe aussi", all(texte(SLEEP, v) == ds.GABARIT for v in V))
@@ -302,7 +302,7 @@ check("… mais une regle posee sur la case reste (le YoY % de Weight)",
 dlg.changer_gabarit_groupe("Famille", TOTAL)
 check("changer le gabarit du groupe", texte(TOTAL, "Réel") == ds.SUR_LA_BASE
       and texte(FAT, "Réel") == TOTAL
-      and entete("kpi", TOTAL).strip() == TOTAL + " — gabarit du groupe")
+      and entete("kpi", TOTAL).strip() == TOTAL + " (gabarit du groupe)")
 choisir(("groupe", "Famille", "MTD"))
 dlg.cmb_source.setCurrentText(WEIGHT)
 dlg.btn_appliquer.click()
@@ -435,8 +435,8 @@ pc.ecrire_regles(c / "propagation.json", {"version": 2, "base": BASE})
 dlg = ouvrir()
 dlg.cmb_base.setCurrentText(TOTAL)
 check("l'en-tete marque la nouvelle base, et elle seule",
-      entete("kpi", TOTAL).endswith("gabarit de base")
-      and not entete("kpi", BASE).endswith("gabarit de base"))
+      entete("kpi", TOTAL).endswith("(gabarit de base)")
+      and not entete("kpi", BASE).endswith("(gabarit de base)"))
 check("la nouvelle base est le gabarit, l'ancienne la copie",
       texte(TOTAL, "Réel") == ds.GABARIT and texte(BASE, "Réel") == TOTAL)
 dlg.cmb_base.setCurrentText(ds.AUCUN)
@@ -471,7 +471,7 @@ check("… en retrait, car la base n'a pas de cible — rien ne serait copie",
       and "n'a pas de mesure « Cible écart »"
       in item("kpi", WEIGHT, "Cible écart").toolTip())
 check("… et le verdict le dit, colonne par colonne",
-      "« Cible écart » — 2 KPI copient « " + BASE + " », qui n'a pas cette "
+      "« Cible écart », 2 KPI copient « " + BASE + " », qui n'a pas cette "
       "mesure" in dlg.lbl_verdict.text())
 choisir(("tous", None, "Cible écart"))
 dlg.cmb_source.setCurrentText(WEIGHT)

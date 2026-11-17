@@ -219,7 +219,7 @@ class Journal(QWidget):
 
         # l'entête garde l'heure du dernier lancement même quand on est
         # descendu loin : la question « ça date de quand ? » a une réponse fixe
-        self.lbl_run = QLabel("Dernier lancement : —")
+        self.lbl_run = QLabel("Dernier lancement : aucun")
         self.lbl_run.setWordWrap(True)
         self.lbl_run.setStyleSheet(f"color:{TEXT_DIM};")
         lay.addWidget(self.lbl_run)
@@ -283,7 +283,7 @@ class Journal(QWidget):
             duree = (" en %.1f s" % secondes).replace(".", ",")
         verdict = ("✖ échec" if echec else "✔ terminé") + duree
         if resume:
-            verdict += " — " + resume
+            verdict += " · " + resume
         couleur = RED if echec else GREEN
         if self._banniere is not None:
             banniere = self._banniere.block()

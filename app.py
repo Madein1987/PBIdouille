@@ -130,7 +130,7 @@ class BidouilleWindow(QMainWindow):
         btn_reglages.setToolTip(
             "Les réglages globaux du measures_config.json de ce rapport :\n"
             "Excel des indicateurs, génération, paramètres de champ,\n"
-            "attributs, branches… — ce qui sert à plusieurs onglets.")
+            "attributs, branches… : ce qui sert à plusieurs onglets.")
         btn_reglages.clicked.connect(lambda: self._ouvrir_reglages())
         # les schémas du guide, dans l'app (fenêtre non modale : on la
         # garde ouverte à côté) — aussi ouverts par les liens « ▣ Schéma »
@@ -290,7 +290,7 @@ class BidouilleWindow(QMainWindow):
             ("Masquer la colonne des lancements et rendre sa largeur au "
              "travail." if montrer else
              "Montrer la colonne des lancements : le journal de ce qui a\n"
-             "tourné — et, dans l'onglet Mesures, le bouton de génération.")
+             "tourné, et, dans l'onglet Mesures, le bouton de génération.")
             + "\nRetenu séparément pour l'éditeur de variations et pour le"
               "\nreste, comme la largeur de la colonne.")
         if memoriser:
@@ -427,7 +427,7 @@ class BidouilleWindow(QMainWindow):
         # journal
         self.project_label.setText("Projet : " + project.name)
         self.project_label.setToolTip(str(project.pbip))
-        self.setWindowTitle(APP_NAME + " " + edition.libelle() + " — " + project.name)
+        self.setWindowTitle(APP_NAME + " " + edition.libelle() + " · " + project.name)
         self._update_config_label()
         for t in self._tabs:
             t.set_project(project)
@@ -459,7 +459,7 @@ class BidouilleWindow(QMainWindow):
             self.btn_config.setStyleSheet("QPushButton#btnConfig { text-align: left; "
                                           "padding: 4px 10px; }")
         else:
-            self.btn_config.setText("⚠ measures_config.json introuvable — "
+            self.btn_config.setText("⚠ measures_config.json introuvable, "
                                     "clique pour le choisir")
             self.btn_config.setToolTip("Attendu :\n" + str(p) + aide)
             self.btn_config.setStyleSheet("QPushButton#btnConfig { text-align: left; "
@@ -472,7 +472,7 @@ class BidouilleWindow(QMainWindow):
             if cand and Path(cand).exists():
                 self._set_project(cand)
                 return
-        self.project_label.setText("Aucun projet — clique « Changer de rapport… ».")
+        self.project_label.setText("Aucun projet, clique « Changer de rapport… ».")
 
     def _choose_project(self):
         start = str(self.project.folder) if self.project else str(_DOSSIER_PARENT)

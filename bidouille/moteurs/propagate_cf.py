@@ -319,7 +319,7 @@ def migrer_groupes(dossier, log=print):
         anciens[0].rename(partage)
     except OSError as e:
         log(f"⚠ groupes de propagation : « {anciens[0].name} » non renommé "
-            f"({e}) — il reste lu tel quel.")
+            f"({e}), il reste lu tel quel.")
         return None
     log(f"Groupes de propagation : « {anciens[0].name} » renommé en "
         f"« {GROUPES_FICHIER} », partagé par tous les rapports du dossier.")
@@ -401,8 +401,8 @@ def resoudre_groupes(groupes, tous_les_kpis, log=print) -> list:
     for g in groupes:
         for k in g["kpis"]:
             if k not in connus:
-                log(f"⚠ groupe « {g['nom']} » : KPI « {k} » absent du modèle "
-                    "— ignoré.")
+                log(f"⚠ groupe « {g['nom']} » : KPI « {k} » absent du modèle, "
+                    "ignoré.")
                 continue
             revendiquer(k, g["nom"])
     if conflits:
@@ -1507,7 +1507,7 @@ def propagate(report_dir, template_kpi, *, branches=BRANCHES, targets=None,
         log(f"KPI template : {template_kpi}")
         cibles_hors_gabarit = [k for k in targets if k != template_kpi]
         log("KPI cibles   : " + (", ".join(cibles_hors_gabarit)
-                                  or "aucune — le gabarit est seul"))
+                                  or "aucune, le gabarit est seul"))
     else:
         for ligne in entete:
             log(ligne)
@@ -1547,14 +1547,14 @@ def propagate(report_dir, template_kpi, *, branches=BRANCHES, targets=None,
         par_kpi: dict = {}
         for mesure, kpi in sans_equiv:
             par_kpi.setdefault(kpi, []).append(mesure)
-        log(f"KPI sans équivalent ({len(par_kpi)}) — rien ne leur a été écrit "
+        log(f"KPI sans équivalent ({len(par_kpi)}), rien ne leur a été écrit "
             "pour ces attributs (le paramètre de champ ne leur donne pas ce "
             "calcul) :")
         for kpi in sorted(par_kpi):
             log(f"  ∅ {kpi} : {', '.join(sorted(set(par_kpi[kpi])))}")
 
     if communes:
-        log(f"Mesures COMMUNES à toutes les branches ({len(communes)}) — "
+        log(f"Mesures COMMUNES à toutes les branches ({len(communes)}), "
             "gardées telles quelles, elles n'ont pas de variante par branche :")
         for nom in sorted(communes):
             log("  = " + nom)
@@ -2135,7 +2135,7 @@ class Sources:
                 if k in g.groupe_de:
                     g.erreurs.append(
                         f"« {k} » est dans deux groupes, « {g.groupe_de[k]} » "
-                        f"et « {nom} » — retire-le de l'un des deux.")
+                        f"et « {nom} », retire-le de l'un des deux.")
                     continue
                 g.groupe_de[k] = nom
                 membres.append(k)
@@ -2217,7 +2217,7 @@ class Sources:
         if cle in table and table[cle] != valeur:
             self.erreurs.append(
                 f"{quoi} a deux sources : {self.nom(table[cle])} et "
-                f"{self.nom(valeur)} — une case n'en a qu'une.")
+                f"{self.nom(valeur)}, une case n'en a qu'une.")
             return
         table[cle] = valeur
 
@@ -2429,7 +2429,7 @@ class Sources:
             avert.append(
                 "Variation(s) sans formatage dans ce rapport : "
                 + ", ".join(f"« {v} »" for v in self._nommees)
-                + " — sans effet tant qu'aucun visuel ne les formate.")
+                + ", sans effet tant qu'aucun visuel ne les formate.")
         for nom, gr in self.groupes.items():
             if not gr["kpis"]:
                 avert.append(f"Le groupe « {nom} » n'a aucun KPI.")
@@ -2438,7 +2438,7 @@ class Sources:
                        for v in self._toutes_variations())]
         if hors:
             avert.append(f"{len(hors)} KPI non propagé(s) (ni gabarit, ni "
-                         "règle) — ni remplis ni nettoyés : "
+                         "règle), ni remplis ni nettoyés : "
                          + ", ".join(hors) + ".")
         return erreurs, list(dict.fromkeys(avert))
 
@@ -2468,10 +2468,10 @@ class Sources:
     def resume(self) -> list:
         """Le plan, pour le journal : une ligne « clé : valeurs » par règle,
         que le journal range en tableau."""
-        out = [f"Sources du formatage — gabarit de base : "
+        out = [f"Sources du formatage, gabarit de base : "
                f"{self.base or 'aucun'}"]
         if self.base:
-            out.append(f"  {self.base} : gabarit de base — tout le reste")
+            out.append(f"  {self.base} : gabarit de base (tout le reste)")
 
         def par_source(regles):
             """{variation: source} -> [(source, [variations])], dans l'ordre."""
@@ -2906,7 +2906,7 @@ class Sources:
                 return [f"Groupe « {nom} » indépendant : son gabarit ne reçoit "
                         "plus rien de la base ni de « Tous les KPI »."]
             return [f"Groupe « {nom} » : son gabarit se pose par-dessus la "
-                    "base — ce qu'il ne règle pas vient d'elle."]
+                    "base, ce qu'il ne règle pas vient d'elle."]
         return self._structure(changer)
 
     def renommer_groupe(self, ancien, nouveau) -> list:
@@ -3023,7 +3023,7 @@ def ecrire_memoire(chemin, memoire, rapport="") -> None:
         "version": 1,
         "rapport": rapport,
         "role": "ce que la propagation a posé sous les gabarits de groupe "
-                "(depuis la base ou « Tous les KPI ») — pour qu'un "
+                "(depuis la base ou « Tous les KPI »), pour qu'un "
                 "changement du maître y descende aussi",
         "visuels": memoire}, indent=1, ensure_ascii=False) + "\n",
         encoding="utf-8")
@@ -3156,7 +3156,7 @@ def propagate_regles(report_dir, regles=None, *, branches=BRANCHES,
         regles = lire_regles(chemin)
     if not regles:
         raise SystemExit(
-            "Aucune source de formatage — " + str(chemin) + " est absent ou "
+            "Aucune source de formatage : " + str(chemin) + " est absent ou "
             "vide.\nOuvre la grille des sources (onglet Rapport) et choisis "
             "au moins le gabarit de base.")
     if variations is None:
@@ -3174,7 +3174,7 @@ def propagate_regles(report_dir, regles=None, *, branches=BRANCHES,
     grille = Sources.depuis_regles(regles, kpis, analyse["variations"])
     erreurs, avertissements = grille.problemes()
     if erreurs:
-        raise SystemExit("La grille des sources a un problème — rien n'a été "
+        raise SystemExit("La grille des sources a un problème, rien n'a été "
                          "écrit :\n  · " + "\n  · ".join(erreurs))
 
     journal_contexte(ctx, cible_folders, log)
@@ -3183,7 +3183,7 @@ def propagate_regles(report_dir, regles=None, *, branches=BRANCHES,
     for a in avertissements:
         log("⚠ " + a)
     for k, v, s, n in retraits_prevus(analyse, grille):
-        log(f"⚠ {k} · {v} : {n} réglage(s) retiré(s) — sa source, {s}, "
+        log(f"⚠ {k} · {v} : {n} réglage(s) retiré(s), sa source, {s}, "
             "n'en porte aucun.")
     if dry_run:
         log("*** DRY_RUN : aucun fichier modifié (diagnostic seulement) ***")
@@ -3241,7 +3241,7 @@ def propagate_groupes(report_dir, groupes=None, *, branches=BRANCHES,
     resolus = resoudre_groupes(groupes, ctx["kpis_connus"], log)
     if not resolus:
         raise SystemExit(
-            "Aucun groupe de propagation utilisable — vérifie " + str(chemin)
+            "Aucun groupe de propagation utilisable, vérifie " + str(chemin)
             + "\n(un groupe = un nom, un gabarit, et ses KPI ; une liste de "
               "KPI vide ramasse tous ceux qui restent).")
 

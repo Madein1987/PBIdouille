@@ -102,13 +102,14 @@ def page_ouverte_par(b):
 
 l_mes = liens(fen.tab_config)
 titres = {page_ouverte_par(b) for b in l_mes if b.window() is fen}
-check("Mesures : variations et jetons",
-      {"Les variations se ramifient", "Les jetons du DAX"} <= titres)
+check("Mesures : variations, jetons et paramètres de champ (leur onglet)",
+      {"Les variations se ramifient", "Les jetons du DAX",
+       "Les paramètres de champ"} <= titres)
 check("Rapport : propagation",
       [page_ouverte_par(b) for b in liens(fen.tab_report)] == ["Le formatage se propage"])
 reg = fen.tab_config._dlg_reglages
-check("Réglages : paramètres de champ",
-      [page_ouverte_par(b) for b in liens(reg)] == ["Les paramètres de champ"])
+check("Réglages : plus de lien vers les paramètres de champ (ils ont quitté la fenêtre)",
+      "Les paramètres de champ" not in [page_ouverte_par(b) for b in liens(reg)])
 check("le bouton Guide est dans la barre du haut",
       any(b.text() == "Guide" for b in fen.findChildren(QPushButton)))
 

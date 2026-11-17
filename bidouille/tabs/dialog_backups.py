@@ -101,7 +101,7 @@ class BackupsDialog(QDialog):
 
         self.info.setText(
             f"<b>{len(self.sessions)} sauvegarde(s)</b> dans "
-            f"<b>{br.PARENT}\\</b> — la plus récente en haut. Restaurer "
+            f"<b>{br.PARENT}\\</b>, la plus récente en haut. Restaurer "
             "réécrit les fichiers listés ; l'état courant est sauvegardé "
             "avant, donc l'opération reste annulable. Chaque outil ne garde "
             f"que ses <b>{br.MAX_SESSIONS}</b> plus récentes : au-delà, la "
@@ -112,7 +112,7 @@ class BackupsDialog(QDialog):
             orphans = s["n_orphelins"]
             detail = f"{s['n_fichiers']} fichier(s)"
             if s["resume"]:
-                detail += " — " + s["resume"]
+                detail += " · " + s["resume"]
             item = QTreeWidgetItem([s["outil"], s["date"], detail])
             item.setData(COL_QUOI, Qt.UserRole, s["dossier"])
             font = item.font(COL_QUOI)
@@ -128,7 +128,7 @@ class BackupsDialog(QDialog):
                 item.setText(COL_DETAIL, detail + f"  ⚠ {orphans} sans cible")
 
             for e in s["fichiers"]:
-                cible = e.get("cible") or "cible inconnue — ne sera pas restauré"
+                cible = e.get("cible") or "cible inconnue, ne sera pas restauré"
                 marque = ""
                 if e.get("action") == br.DELETED:
                     marque = "  (fichier supprimé → recréé)"
@@ -136,7 +136,7 @@ class BackupsDialog(QDialog):
                     marque = "  (n'existait pas → sera EFFACÉ)"
                 elif e.get("devine"):
                     marque = "  (destination déduite)"
-                child = QTreeWidgetItem([e["sauvegarde"] or "—", "", cible + marque])
+                child = QTreeWidgetItem([e["sauvegarde"] or "·", "", cible + marque])
                 child.setFlags(Qt.ItemIsEnabled)
                 child.setForeground(COL_QUOI, muted)
                 child.setForeground(COL_DETAIL, muted)

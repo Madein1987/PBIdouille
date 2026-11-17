@@ -77,7 +77,7 @@ class CatalogueDialog(QDialog):
         lay.addLayout(haut)
 
         note = QLabel(
-            "Importer copie la variation DANS le config de ce rapport — il "
+            "Importer copie la variation DANS le config de ce rapport, il "
             "reste autonome, et c'est exactement ce qu'il générera. Publier "
             "fait l'inverse, pour réutiliser ailleurs une variation écrite ici.")
         note.setWordWrap(True)
@@ -188,7 +188,7 @@ class CatalogueDialog(QDialog):
         n = len(self.biblio["variations"])
         p = Path(self.chemin()) if self.chemin() else None
         if p and not p.exists():
-            self.lbl_biblio.setText("fichier absent — « Publier » le créera")
+            self.lbl_biblio.setText("fichier absent, « Publier » le créera")
         else:
             self.lbl_biblio.setText(f"{n} variation(s)")
         self.lbl_rapport.setText(f"{len(au_rapport)} variation(s)")
@@ -228,7 +228,7 @@ class CatalogueDialog(QDialog):
         if QMessageBox.question(
             self, "Trier la bibliothèque",
             "Trier toutes les variations de A à Z ?\n\n"
-            "L'ordre actuel sera remplacé — pour tout le monde, si la "
+            "L'ordre actuel sera remplacé, pour tout le monde, si la "
             "bibliothèque est partagée.",
             QMessageBox.Yes | QMessageBox.Cancel, QMessageBox.Cancel,
         ) != QMessageBox.Yes:

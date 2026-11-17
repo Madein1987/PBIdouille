@@ -195,7 +195,7 @@ COLS_TOOLTIP = (
 
 TABLES_TOOLTIP = (
     "Tables dont RIEN d'externe ne dépend (aucune relation, aucun visuel,\n"
-    "aucune mesure utilisée) — dont les paramètres de champ que plus aucun\n"
+    "aucune mesure utilisée), dont les paramètres de champ que plus aucun\n"
     "visuel n'utilise. Cocher supprime la table ENTIÈRE : son fichier .tmdl\n"
     "et sa référence dans model.tmdl (backup fait, Desktop fermé).\n"
     "\n"
@@ -362,7 +362,7 @@ class ChopChopPanel(QWidget):
             self.result = None
             self.tree.clear()
             self._unused_groups = []
-            self.info.setText("Aucun projet valide — dossiers .Report/.SemanticModel introuvables.")
+            self.info.setText("Aucun projet valide, dossiers .Report/.SemanticModel introuvables.")
             self._update_delete_label()
 
     # ---- construction de l'arbre ---------------------------------------------
@@ -434,10 +434,10 @@ class ChopChopPanel(QWidget):
                 "TMDL.",
         "import": "Colonne importée : supprimée du modèle ET retirée de la "
                   "requête Power Query (étape Table.RemoveColumns ajoutée en "
-                  "FIN de requête, donc les étapes précédentes — type, "
-                  "renommage, colonne dérivée — continuent de fonctionner).",
+                  "FIN de requête, donc les étapes précédentes (type, "
+                  "renommage, colonne dérivée) continuent de fonctionner).",
         "structural": "Colonne d'une table calculée (paramètre de champ, sortie "
-                      "DAX) : non supprimable ici — édite l'expression DAX de la "
+                      "DAX) : non supprimable ici, édite l'expression DAX de la "
                       "table dans Power BI.",
     }
 
@@ -545,9 +545,9 @@ class ChopChopPanel(QWidget):
         dead_txt = (f" · <b>{len(dead_tables)} table(s) entièrement inutilisée(s)</b>"
                     if dead_tables else "")
         self.info.setText(
-            f"{len(measures)} mesures — <b>{len(unused)} inutilisée(s)</b> "
+            f"{len(measures)} mesures · <b>{len(unused)} inutilisée(s)</b> "
             f"(dont {generated} générée(s) depuis le config) · "
-            f"{len(columns)} colonnes — <b>{len(col_no_ref) + len(col_chained)} inutilisée(s)</b>"
+            f"{len(columns)} colonnes · <b>{len(col_no_ref) + len(col_chained)} inutilisée(s)</b>"
             f"{dead_txt}."
         )
 
@@ -558,11 +558,11 @@ class ChopChopPanel(QWidget):
         self._dead_table_groups = []
         if dead_tables:
             self._add_dead_table_group(dead_tables)
-        self._add_group("📏 Mesures inutilisées — aucune référence", no_ref, RED_BG, RED_FG, True, True)
-        self._add_group("📏 Mesures inutilisées — used by unused", chained, YELLOW_BG, YELLOW_FG, True, True)
+        self._add_group("📏 Mesures inutilisées · aucune référence", no_ref, RED_BG, RED_FG, True, True)
+        self._add_group("📏 Mesures inutilisées · used by unused", chained, YELLOW_BG, YELLOW_FG, True, True)
         self._add_group("📏 Mesures utilisées", used, None, None, False, False)
-        self._add_column_group("🔢 Colonnes inutilisées — aucune référence", col_no_ref, RED_BG, RED_FG, True, True)
-        self._add_column_group("🔢 Colonnes — used by unused", col_chained, YELLOW_BG, YELLOW_FG, True, True)
+        self._add_column_group("🔢 Colonnes inutilisées · aucune référence", col_no_ref, RED_BG, RED_FG, True, True)
+        self._add_column_group("🔢 Colonnes · used by unused", col_chained, YELLOW_BG, YELLOW_FG, True, True)
         self._add_column_group("🔢 Colonnes utilisées", col_used, None, None, False, False)
         self.tree.blockSignals(False)
 
@@ -586,7 +586,7 @@ class ChopChopPanel(QWidget):
             self.log.appendPlainText(
                 f"{len(spared)} table(s) sans usage visible mais conservée(s) :")
             for t, why in sorted(spared.items(), key=lambda kv: kv[0].lower()):
-                self.log.appendPlainText(f"    • {t} — {why}")
+                self.log.appendPlainText(f"    • {t}, {why}")
 
     # ---- sélection -------------------------------------------------------------
 
@@ -832,7 +832,7 @@ class ChopChopPanel(QWidget):
         default = str(um.PBIP_DIR / f"chopchop_{um.PROJECT}.csv")
         path, _ = QFileDialog.getSaveFileName(
             self, "Exporter l'audit", default,
-            "CSV — s'ouvre dans Excel (*.csv);;Excel (*.xlsx)")
+            "CSV : s'ouvre dans Excel (*.csv);;Excel (*.xlsx)")
         if not path:
             return
         header, rows = self._export_rows()
@@ -847,7 +847,7 @@ class ChopChopPanel(QWidget):
         except ImportError:
             QMessageBox.warning(
                 self, "Excel non disponible",
-                "Ni pandas ni openpyxl n'est installé — exporte en CSV, "
+                "Ni pandas ni openpyxl n'est installé, exporte en CSV, "
                 "il s'ouvre directement dans Excel.")
             return
         except OSError as e:
@@ -962,7 +962,7 @@ class ChopChopPanel(QWidget):
                 + ", ".join(rep["tables_deleted"]))
         for kept in rep.get("tables_skipped", []):
             self.log.appendPlainText(
-                f"⚠ table conservée — {kept} : la supprimer casserait "
+                f"⚠ table conservée, {kept} : la supprimer casserait "
                 "l'actualisation de la requête qui la consomme.")
         if rep["measures_deleted"]:
             self.log.appendPlainText(
@@ -974,10 +974,10 @@ class ChopChopPanel(QWidget):
                 + ", ".join(rep["columns_deleted"]))
         for table, cols in sorted(rep["m_edits"].items()):
             self.log.appendPlainText(
-                f"Power Query — {table} : étape RemoveColumns ({', '.join(cols)})")
+                f"Power Query · {table} : étape RemoveColumns ({', '.join(cols)})")
         for table in rep["m_skipped"]:
             self.log.appendPlainText(
-                f"⚠ {table} : requête M non reconnue — colonne retirée du modèle, "
+                f"⚠ {table} : requête M non reconnue, colonne retirée du modèle, "
                 "édite Power Query à la main pour stopper l'import.")
         self.log.appendPlainText(
             f"Fichiers modifiés : {', '.join(rep['files'])} (backup fait)")
@@ -1017,14 +1017,14 @@ class ChopChopWindow(QMainWindow):
 
     def _set_project(self, pbip_path, initial=False):
         self.project_label.setText(f"Projet : {pbip_path}")
-        self.setWindowTitle(f"{APP_NAME} — {Path(pbip_path).stem}")
+        self.setWindowTitle(f"{APP_NAME} · {Path(pbip_path).stem}")
         if not initial:
             self.settings.setValue("last_pbip", str(pbip_path))
         if Path(pbip_path).exists():
             self.panel.set_pbip(pbip_path)
         else:
             self.panel.info.setText(
-                "Aucun projet valide — clique « Changer de rapport… » pour en choisir un.")
+                "Aucun projet valide, clique « Changer de rapport… » pour en choisir un.")
 
     def _choose_project(self):
         start_dir = str(um.PBIP_DIR) if um.PBIP_DIR.exists() else ""

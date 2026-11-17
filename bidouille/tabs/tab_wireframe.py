@@ -642,7 +642,7 @@ class WireframeTab(QWidget):
             return f"📦 {d['group_name']}  ({d['child_count']})"
         t = d["type"] + (" 🎨" if d["has_color_template"] else "")
         if d["title"]:
-            t += " — " + d["title"]
+            t += " · " + d["title"]
         return t + ("   (caché)" if d["hidden"] else "")
 
     def _build_tree(self, items):
@@ -885,7 +885,7 @@ class WireframeTab(QWidget):
                               restored=restored)
         self._select(gid, from_tree=False)
         self._status(f"📦 Groupe « {name} » créé ({len(ids)} éléments, backup "
-                     f"{backup_dir.name}) — Ctrl+Z pour annuler. "
+                     f"{backup_dir.name}), Ctrl+Z pour annuler. "
                      "Double-clic dessus pour entrer dedans.")
 
     @staticmethod
@@ -977,7 +977,7 @@ class WireframeTab(QWidget):
                    f"({len(rows)} rangée(s))")
         self._rebuild_dividers()
         self._place_grips()
-        self._status(f"⬍⬌ {msg} — Ctrl+Z pour annuler.")
+        self._status(f"⬍⬌ {msg}, Ctrl+Z pour annuler.")
 
     def _ungroup_selection(self):
         """Dissout le groupe sélectionné : ses enfants remontent d'un niveau
@@ -1005,7 +1005,7 @@ class WireframeTab(QWidget):
             restored[str(vis_dir / vid / "visual.json")] = str(bak)
         self._reload_keep_page()
         self._push_undo_files(f"Dégroupement de « {name} »", restored=restored)
-        self._status(f"📤 Groupe « {name} » dissous ({n} élément(s) remontés) — "
+        self._status(f"📤 Groupe « {name} » dissous ({n} élément(s) remontés), "
                      "Ctrl+Z pour annuler.")
 
     # ---- sélection (synchronisée canevas <-> arbre) ------------------------------
@@ -1099,7 +1099,7 @@ class WireframeTab(QWidget):
             lines = [
                 f"id      : {d['id']}",
                 f"type    : {d['type']}" + ("   (caché)" if d["hidden"] else ""),
-                f"titre   : {d['title'] or '—'}",
+                f"titre   : {d['title'] or '(sans titre)'}",
                 f"pos     : x={d['x']:.0f} y={d['y']:.0f}   {d['w']:.0f} × {d['h']:.0f}   z={d['z']:.0f}",
             ]
             if d["parent_name"]:
@@ -1631,8 +1631,8 @@ class WireframeTab(QWidget):
         self.btn_save.setEnabled(n > 0)
         bouton_en_attente(
             self.btn_save, n > 0,
-            en_attente=f"{n} élément(s) déplacé(s)/redimensionné(s) NON écrits "
-                       "— clique pour écrire les visual.json\n"
+            en_attente=f"{n} élément(s) déplacé(s)/redimensionné(s) NON écrits : "
+                       "clique pour écrire les visual.json\n"
                        "(backup automatique ; annulable par Ctrl+Z).",
             au_repos="Écrit les positions modifiées dans les visual.json "
                      "(backup automatique ; annulable par Ctrl+Z).")
@@ -1672,7 +1672,7 @@ class WireframeTab(QWidget):
         self._push_undo_files(f"Enregistrement de {n} position(s)", restored=restored)
         self._dirty = set()
         self._update_dirty_ui()
-        self._status(f"💾 {n} élément(s) écrit(s) (backup {backup_dir.name}) — "
+        self._status(f"💾 {n} élément(s) écrit(s) (backup {backup_dir.name}), "
                      "Ctrl+Z pour annuler. Rouvre le .pbip pour voir le résultat.")
 
     # ---- annulation (Ctrl+Z) -----------------------------------------------------
@@ -1753,7 +1753,7 @@ class WireframeTab(QWidget):
                     "place : leur sauvegarde n'existe plus (le dossier ne "
                     f"garde que les {br.MAX_SESSIONS} plus récentes).\n\n"
                     + ", ".join(manquants))
-            self._status(f"↩ {entry['label']} — annulé."
+            self._status(f"↩ {entry['label']}, annulé."
                          + (f"  ⚠ {len(manquants)} sans sauvegarde."
                             if manquants else ""))
         self._update_dirty_ui()
@@ -1837,7 +1837,7 @@ class WireframeTab(QWidget):
                 label = "📦 {0}  ({1} visuel(s), {2:.0f}×{3:.0f})".format(
                     m["name"], m["n_files"] - 1, m["w"], m["h"])
             else:
-                label = "{0} — {1}".format(m["kind"], m["name"])
+                label = "{0} · {1}".format(m["kind"], m["name"])
             it = QListWidgetItem(label)
             it.setData(Qt.UserRole, m["root_id"])
             self.lst_models.addItem(it)

@@ -67,7 +67,7 @@ class ModelTab(QWidget):
 
         # affiché tant que le config a des modifs non sauvées : le générateur
         # lit le FICHIER, pas l'éditeur
-        self.lbl_unsaved = QLabel("⚠ Config modifié, pas encore enregistré — "
+        self.lbl_unsaved = QLabel("⚠ Config modifié, pas encore enregistré, "
                                   "le générateur lit le fichier.")
         self.lbl_unsaved.setWordWrap(True)
         self.lbl_unsaved.setStyleSheet(f"color:{YELLOW};")
@@ -87,7 +87,7 @@ class ModelTab(QWidget):
         opts.addWidget(self.chk_dry)
         self.chk_orphans = QCheckBox("Supprimer les orphelines")
         self.chk_orphans.setToolTip(
-            "removeOrphans — mesures générées qui ne correspondent plus au\n"
+            "removeOrphans : mesures générées qui ne correspondent plus au\n"
             "config (variation retirée...) : supprimées du modèle.")
         opts.addWidget(self.chk_orphans)
         opts.addStretch()
@@ -105,7 +105,7 @@ class ModelTab(QWidget):
         cfg_path = project.config_json
         if not cfg_path.exists():
             self.lbl_hint.setText(
-                "Aucun measures_config.json chargé — attendu : " + str(cfg_path)
+                "Aucun measures_config.json chargé, attendu : " + str(cfg_path)
                 + "\nClique « Config… » dans la barre du haut pour choisir celui de CE rapport.")
             self.lbl_hint.show()
             self.btn_generate.setEnabled(False)
@@ -124,13 +124,13 @@ class ModelTab(QWidget):
         self.chk_orphans.setChecked(bool(settings.get("removeOrphans", False)))
         self.lbl_recap.setText(
             f"{len(variations)} variation(s) · branches : "
-            f"{', '.join(branches) or '—'}  ⓘ")
+            f"{', '.join(branches) or 'aucune'}  ⓘ")
         self.lbl_recap.setToolTip(
             f"Config : {cfg_path.name}\n"
             f"bases = mesures de '{settings.get('sourceTable', '_mesures')}' "
             f"(dossier '{settings.get('sourceFolder', '')}')\n"
-            f"{len(variations)} variation(s) · branches : {', '.join(branches) or '—'}\n"
-            f"tables paramètre : {', '.join(tables) or '—'}\n\n"
+            f"{len(variations)} variation(s) · branches : {', '.join(branches) or 'aucune'}\n"
+            f"tables paramètre : {', '.join(tables) or 'aucune'}\n\n"
             f"Écriture réelle : backup automatique sous\n"
             f"_backupsPBIdouille\\_tmdl_backups\\, puis rouvrir le .pbip.")
 

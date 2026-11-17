@@ -198,7 +198,7 @@ class LineageTab(QWidget):
                 n = len(tables)
                 titre = s["famille"] or s["connecteur"]
                 if n:
-                    titre += f"  —  {n} table{'s' if n > 1 else ''}"
+                    titre += f"  ·  {n} table{'s' if n > 1 else ''}"
                 top = self._item([titre, "", detail, s["connecteur"]], detail)
                 top.setFont(COL_NOM, gras)
                 top.setForeground(COL_NOM, QBrush(QColor(BLUE)))
@@ -212,7 +212,7 @@ class LineageTab(QWidget):
                 top.setExpanded(True)
 
         if calculees:
-            top = self._item([CALCULEES + f"  —  {len(calculees)}", "", "", ""])
+            top = self._item([CALCULEES + f"  ·  {len(calculees)}", "", "", ""])
             top.setToolTip(COL_NOM, "Paramètres de champ, calendrier, tables de mesures…\n"
                                     "Calculées par le modèle : elles ne lisent rien de "
                                     "l'extérieur.")
@@ -237,7 +237,7 @@ class LineageTab(QWidget):
             self.lbl_avis.show()
             return
         if res.get("live"):
-            self.lbl_resume.setText(f"Connexion LIVE au modèle « {res.get('modele')} » — "
+            self.lbl_resume.setText(f"Connexion LIVE au modèle « {res.get('modele')} », "
                                     "ses sources sont dans le modèle publié, pas dans ce projet.")
         else:
             n_src = len(lg.sources(lignes))
@@ -249,7 +249,7 @@ class LineageTab(QWidget):
             params = res.get("parametres") or {}
             if params:
                 morceaux.append(f"{len(params)} paramètre{'s' if len(params) > 1 else ''} M")
-            self.lbl_resume.setText(" · ".join(morceaux) + " — lecture seule.")
+            self.lbl_resume.setText(" · ".join(morceaux) + ", lecture seule.")
         avis = []
         if manquants:
             avis.append(f"⚠ {manquants} fichiers locaux introuvables sur ce poste"
@@ -308,7 +308,7 @@ class LineageTab(QWidget):
         try:
             lg.ecrire_csv(self.lignes(), chemin)
         except OSError as e:
-            self.journal.erreur(f"Sources de données : export impossible — {e}")
+            self.journal.erreur(f"Sources de données : export impossible, {e}")
             return
         self.journal.info(f"Sources de données : {len(self.lignes())} lignes exportées "
                           f"vers {chemin}")

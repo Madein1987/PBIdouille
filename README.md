@@ -603,10 +603,30 @@ qu'aucun visuel ne s'en sert. (Le `.csx` de secours, lui, les génère encore.)
 
 ### fieldParameter
 
-Une **liste** de tables paramètre de champ, aussi longue qu'il faut — une
-seule, ou dix — et **chacune avec ses réglages**. C'est la page « Paramètres
-de champ » de **⚙ Réglages** : la liste à gauche (Ajouter, Dupliquer,
-Retirer), les réglages de la table choisie à droite.
+Une **liste** de tables paramètre de champ, aussi longue qu'il faut (une
+seule, ou dix), et **chacune avec ses réglages**. Elles ont leur onglet,
+**Mesures → Paramètres de champ** (elles étaient une page de ⚙ Réglages, où
+l'on ne voyait pas ce qu'elles contiendraient) :
+
+- **en haut, l'éditeur** : la liste à gauche (Ajouter, Dupliquer, Retirer),
+  les réglages de la table choisie à droite, et les réglages communs (noms
+  de colonnes, libellés) repliés dessous ;
+- **en bas, ce que les tables contiendront**, recalculé à chaque réglage
+  (génération à blanc sur une copie du config, rien n'est écrit) :
+  - la **matrice KPI × tables** : quels KPI sont dans quelles tables, et
+    combien de rangées chacun y a (0 = absent). Un clic sur une colonne ou
+    une case ouvre la table, sur ce KPI ;
+  - le **contenu** de la table choisie dans l'éditeur, rangé par KPI : pour
+    chaque rangée, ce qu'elle **affiche** (le calcul, le KPI, ou son
+    **libellé** en bleu italique, lu dans l'Excel des indicateurs comme le
+    fera le `LOOKUPVALUE`), la **mesure** derrière, et les valeurs des
+    colonnes Calcul et Branche, plus l'ordre de tri. L'état dit si la table
+    sera *nouvelle*, *modifiée*, *inchangée* ou *vide* (aucune rangée après
+    ses filtres : non touchée).
+
+Comme pour les variations, un réglage changé allume « Sauvegarder », et
+changer d'onglet le garde en mémoire sans l'écrire. Un lien vers l'ancienne
+page des Réglages ouvre l'onglet.
 
 ```json
 "fieldParameter": {
@@ -672,8 +692,8 @@ Les trois familles d'avant — `tableNames` (par calcul), `tableNamesKpiBase`
 (base = libellé du KPI) et `tableNamesByKpi` (par KPI, `byKpiUsesLabel`), avec
 un `includeBase` commun — sont relues comme les trois cas particuliers de la
 liste qu'elles étaient, et génèrent **exactement** les mêmes tables
-(`tests/test_parametres_champ.py`). Le premier enregistrement des Réglages
-réécrit le bloc sous la forme `tables` et retire les anciennes clés. Le `.csx`
+(`tests/test_parametres_champ.py`). Le premier enregistrement depuis l'onglet
+Paramètres de champ réécrit le bloc sous la forme `tables` et retire les anciennes clés. Le `.csx`
 de secours, lui, ne lit que l'ancien format.
 
 Voir §5.
@@ -1948,6 +1968,20 @@ Tout ce que « Générer » produira, rangé comme cela se dérive : chaque KPI
   ce que le générateur annoncerait.
 - Un filtre texte (nom, variation, branche), « ◆ seulement », tout
   déplier / replier ; les avertissements du générateur s'affichent en bas.
+- **Rangement** (liste à gauche du filtre, mémorisé) : **par KPI** — l'arbre
+  ci-dessus — ou **par variation** : un groupe par variation (« 7d avg » :
+  Weight 7d avg, Steps 7d avg…), un par branche qui tient ses mesures de
+  branche puis un sous-groupe par variation en branche (« YTD › PY »), et en
+  tête les mesures écrites à la main. Chaque groupe compte ses mesures ; un
+  filtre cache les groupes qui n'ont plus rien à montrer.
+- **La fiche**, sous l'arbre : clique une mesure pour voir son **DAX tel que
+  « Générer » l'écrira** (jetons développés et colorés comme dans l'éditeur,
+  enveloppe de branche comprise) et ses attributs, une table paramètre par
+  ligne — format, dossier, description, catégorie, tables paramètre,
+  et pour une variation en branche si elle *enveloppe la variation Réel* ou
+  *recopie son DAX*. Pour un KPI ou une cible racine, c'est le DAX du TMDL,
+  sur ses lignes. Elle reste sur la même mesure quand l'arbre se recalcule ou
+  change de rangement.
 
 L'arbre **est** la génération en aperçu (`generate_measures.generate`, qui
 rend `stats["arbre"]`), lancée sur le config **en mémoire** : une variation
@@ -1965,7 +1999,7 @@ jetons du DAX, la propagation du formatage. La fenêtre n'est pas modale (on la
 garde ouverte à côté) et il n'y en a qu'une. Des liens **▣ Schéma** l'ouvrent
 directement sur la bonne page, là où la notion sert : à côté de
 « Bibliothèque… » et de « Jetons disponibles » (Mesures), de « Grille des
-sources… » (Rapport) et dans ⚙ Réglages → Paramètres de champ.
+sources… » (Rapport) et dans Mesures → Paramètres de champ.
 
 Les images (`bidouilleide\*.png`) **sont** les diapos du guide, exportées
 par `docs\sources\exporter_aide.ps1` (PowerPoint requis) — une seule source,
@@ -2201,6 +2235,10 @@ bidouille\
                     code) et rangee_transparente (rangées dans un groupe)
   tabs\                 (dans l'ordre des onglets)
     tab_config.py       onglet « Mesures » (Variations, JSON brut) + la fenêtre ⚙ Réglages
+    arbre_mesures.py    Mesures → « Arbre des mesures » (par KPI / par variation)
+    fiche_mesure.py     DAX et attributs d'une mesure générée (fiche, aperçu dépliable)
+    apercu_parametres.py  Mesures → « Paramètres de champ », ce que les tables contiendront
+    fp_tables.py        l'éditeur de la liste des tables paramètre
     tab_model.py        panneau « Génération des mesures », posé en tête du journal (generate_measures.py)
     tab_report.py       onglet « Rapport » (propagation, couleurs des matrices)
     tab_lineage.py      onglet « Sources de données » (moteurs\lineage.py)
@@ -2380,14 +2418,14 @@ communs). Voir `core/template_import.py`.
 
 ### Onglet « Mesures »
 
-Trois sous-onglets : **Variations** (l'éditeur ci-dessous), **Arbre des
-mesures** et **JSON brut**.
+Quatre sous-onglets : **Variations** (l'éditeur ci-dessous), **Arbre des
+mesures**, **Paramètres de champ** (cf. `fieldParameter`) et **JSON brut**.
+Variations et Paramètres de champ reprennent la colonne du journal.
 Les réglages globaux du config ont leur **fenêtre**, ouverte par **⚙ Réglages**
 dans la barre du haut : ils servent aussi à l'onglet Rapport (l'Excel des
 indicateurs, par exemple), ils n'avaient rien à faire sous les Mesures.
-Une **barre latérale** y mène à une page par sujet — Génération, Excel des
-indicateurs, Paramètres de champ, Branches, Mesures cibles, Formats « delta »
-— au lieu d'un long défilement où tout se voyait à la fois. La page **Excel
+Une **barre latérale** y mène à une page par sujet (Génération, Excel des
+indicateurs, Branches, Mesures cibles, Formats « delta ») au lieu d'un long défilement où tout se voyait à la fois. La page **Excel
 des indicateurs** porte aussi les **Attributs codés en dur** et la **Portée
 par KPI** : ce sont des colonnes du même classeur. La page **Branches** prend
 toute la hauteur, en deux colonnes (les branches à gauche, ce qu'applique
@@ -2460,7 +2498,17 @@ CF Δ 30d vit dans le dossier de Δ 30d), **dataCategory en dropdown**
   elles-mêmes (l'aperçu montrait `Weight YTD YTD`, jamais généré) et, pour
   une branche restreinte, aux seules variations qu'elle liste. Un test
   vérifie, variation par variation, que chaque nom affiché figure dans le
-  plan d'une génération à blanc ;
+  plan d'une génération à blanc. **Un nom se déplie** sur son DAX, développé
+  (`[Weight]` à la place de `{baseRef}`), puis ses attributs (format, dossier,
+  tables paramètre…). Ce que chaque jeton est devenu y garde **la couleur de
+  l'éditeur** (bleu pour un `{jeton}`, vert pour un `<<jeton>>`), et
+  l'infobulle liste les remplacements (`{baseRef}  →  [Weight]`). Les tables
+  paramètre sont une ligne **repliable** (« paramètres  4 tables »), une table
+  par ligne une fois dépliée. Ce DAX vient du générateur en aperçu, lancé sur une
+  COPIE du config avec le formulaire **en cours** : ce qu'on tape dans
+  l'éditeur s'y voit un quart de seconde plus tard, sans enregistrer ni
+  changer de variation. Un nom que la génération ne produirait pas se déplie
+  sur la raison (le ⚠ du générateur qui le nomme) ;
 - boutons Ajouter / Dupliquer / Renommer / Supprimer + **↑ Monter / ↓ Descendre**
   (réordonne les variations — l'ordre pilote celui des calculs dans le
   paramètre de champ et la génération) ;

@@ -35,6 +35,8 @@ PAGES = [
     ("parametres", "Les paramètres de champ", "parametres_champ.png"),
     ("jetons", "Les jetons du DAX", "jetons.png"),
     ("propagation", "Le formatage se propage", "propagation.png"),
+    ("propagation_carte", "La carte se propage aussi", "propagation_carte.png"),
+    ("gabarits", "Qui copie qui : gabarits et groupes", "gabarits.png"),
 ]
 
 
@@ -72,7 +74,7 @@ class _Image(QLabel):
 class GuideDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("Guide — comment ça marche")
+        self.setWindowTitle("Guide · comment ça marche")
         self.setModal(False)
         self.resize(1180, 640)
         h = QHBoxLayout(self)

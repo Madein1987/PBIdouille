@@ -272,7 +272,7 @@ def create_group(report_dir, page_id, member_ids, display_name, backup_root) -> 
     group_path.parent.mkdir(parents=True, exist_ok=True)
     group_path.write_text(json.dumps(group, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     (backup_dir / "group_manifest.txt").write_text(
-        "# Groupement — " + stamp + "\n"
+        "# Groupement · " + stamp + "\n"
         f"# groupe créé : {group_path}\n"
         "# membres modifiés (backups ci-contre) :\n"
         + "\n".join(str(vj) for vj, _, _ in datas.values()) + "\n"
@@ -328,7 +328,7 @@ def ungroup(report_dir, page_id, group_id, backup_root) -> tuple:
         n += 1
     rmtree_force(gj.parent)
     (backup_dir / "ungroup_manifest.txt").write_text(
-        "# Dégroupement — " + backup_dir.name + "\n"
+        "# Dégroupement · " + backup_dir.name + "\n"
         f"# groupe supprimé : {gj} (backup ci-contre)\n"
         "# membres rebasés :\n" + "\n".join(members) + "\n"
         "# undo : restaurer les backups (groupe inclus)\n",

@@ -220,6 +220,12 @@ qapp.processEvents()
 tc = fen.tab_config
 tc._load_global()
 qapp.processEvents()
+# l'aperçu des noms (Variations) lance la génération à blanc un instant
+# après l'ouverture, et elle lit les libellés des KPI dans le classeur : ça
+# fait partie du démarrage, on ne laisse pas la minuterie tomber au hasard
+# pendant la promenade
+tc._minuterie_apercu.stop()
+tc._details_apercu()
 apres_demarrage = len(lectures)
 check("le demarrage lit le classeur (il faut bien les colonnes)",
       apres_demarrage >= 1)
@@ -229,9 +235,9 @@ for _ in range(4):                       # rouvrir « Reglages globaux »
 for i in range(fen.tabs.count()):        # se promener dans les onglets
     fen.tabs.setCurrentIndex(i)
     qapp.processEvents()
-from tabs.tab_config import IDX_ARBRE                       # noqa: E402
+from tabs.tab_config import IDX_ARBRE, IDX_PARAM            # noqa: E402
 for i in range(tc.inner.count()):        # et dans les sous-onglets
-    if i != IDX_ARBRE:                   # (l'arbre a sa regle, ci-dessous)
+    if i not in (IDX_ARBRE, IDX_PARAM):  # (eux ont leur regle, ci-dessous)
         tc.inner.setCurrentIndex(i)
         qapp.processEvents()
 check("se promener dans l'outil ne le rouvre PAS",
@@ -247,8 +253,17 @@ for _ in range(3):                       # l'ouvrir, en sortir, y revenir
     qapp.processEvents()
     tc.inner.setCurrentIndex(0)
     qapp.processEvents()
-check("trois ouvertures de l'arbre : UNE lecture du classeur",
-      len(lectures) - avant_arbre == 1)
+# au plus une : le démarrage a peut-être déjà mis le classeur en cache
+check("trois ouvertures de l'arbre : UNE lecture du classeur au plus",
+      len(lectures) - avant_arbre <= 1)
+avant_fp = len(lectures)
+for _ in range(3):                       # Paramètres de champ : même cache
+    tc.inner.setCurrentIndex(IDX_PARAM)
+    qapp.processEvents()
+    tc.inner.setCurrentIndex(0)
+    qapp.processEvents()
+check("… puis trois ouvertures des Paramètres de champ : aucune (cache partagé)",
+      len(lectures) == avant_fp)
 check("… et l'arbre est bien rempli", tc.arbre_mesures.arbre.topLevelItemCount() > 0)
 import os as _os                                             # noqa: E402
 xlsx_copie = Path(tc._td_path_resolu())

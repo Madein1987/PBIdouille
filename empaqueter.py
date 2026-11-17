@@ -103,7 +103,7 @@ def construire(verifier_seulement: bool) -> int:
 
     print(f"{len(noms)} fichiers de l'application, {len(guide)} document(s) du guide")
     if erreurs:
-        print("\nÉCHEC — rien n'a été écrit :")
+        print("\nÉCHEC. Rien n'a été écrit :")
         for e in erreurs:
             print("  ✗ " + e)
         return 1

@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
-"""⚙ Réglages → Paramètres de champ : la liste de tables, chacune ses réglages.
+"""Mesures → Paramètres de champ : la liste de tables, chacune ses réglages,
+et ce qu'elles contiendront.
 
     py tests\\test_reglages_parametres.py
 
@@ -10,12 +11,14 @@ Vérifie, dans la vraie fenêtre (hors écran) :
      les branches ;
   3. une table « par KPI » grise le choix de la rangée de base ;
   4. ajouter, dupliquer, retirer, renommer, filtrer ;
-  5. Enregistrer écrit la liste sous forme compacte, sans les anciennes clés,
-     et la génération suit ce qui a été réglé ;
+  5. Sauvegarder écrit la liste sous forme compacte, sans les anciennes
+     clés, et la génération suit ce qui a été réglé ;
   6. une exclusion hors vocabulaire (KPI renommé) survit à une édition ;
-  7. Annuler n'écrit rien ;
-  8. la barre latérale : une page par sujet, ouverture sur une page donnée,
-     et la page vue en dernier est celle qui revient.
+  7. Recharger (annule) n'écrit rien ;
+  8. la barre latérale des Réglages : une page par sujet (et plus de page
+     « Paramètres de champ » : un lien vers elle ouvre l'onglet) ;
+  9. l'aperçu : la matrice KPI × tables, le contenu de la table choisie
+     (synchronisé avec l'éditeur), et les réglages EN COURS, non enregistrés.
 
 Travaille sur une COPIE du projet de démonstration, magasin de réglages jetable.
 """
@@ -121,7 +124,7 @@ def choisir(nom):
 print("1. l'ancien format s'ouvre en liste de tables")
 ancien = sur_disque()["fieldParameter"]
 noms_avant = gm.fp_table_names(ancien)
-ct._load_global()
+ct.inner.setCurrentIndex(tc.IDX_PARAM)          # ouvrir l'onglet le charge
 check("la liste montre les tables du config",
       [ed.liste.item(i).text() for i in range(ed.liste.count())] == noms_avant)
 check("la première est choisie et affichée", ed.ed_nom.text() == noms_avant[0])
@@ -178,8 +181,8 @@ def gestes():
     ed._renommer()
 
 
-fenetre(QDialog.Accepted, gestes)
-check("Enregistrer écrit le config", ct.ouvrir_reglages() is True)
+gestes()
+check("Sauvegarder écrit le config", ct._save() is True)
 
 print("5. le config écrit : la liste, compacte, sans les anciennes clés")
 fp = sur_disque()["fieldParameter"]
@@ -229,24 +232,28 @@ conf["fieldParameter"]["tables"][0]["excludeKpis"] = ["KPI renommé depuis"]
 (copie / "measures_config.json").write_text(json.dumps(conf, ensure_ascii=False, indent=2),
                                             encoding="utf-8")
 ct.set_project(Project(copie / (PROJ + ".pbip")))
-
-
-def editer():
-    choisir(conf["fieldParameter"]["tables"][0]["name"])
-    cocher(ed.cmb_kpis, bases[1], False)
-
-
-fenetre(QDialog.Accepted, editer)
-ct.ouvrir_reglages()
+ct.inner.setCurrentIndex(tc.IDX_PARAM)
+choisir(conf["fieldParameter"]["tables"][0]["name"])
+cocher(ed.cmb_kpis, bases[1], False)
+ct._save()
 ex = sur_disque()["fieldParameter"]["tables"][0].get("excludeKpis")
 check("l'exclusion inconnue est gardée, la nouvelle ajoutée",
       ex is not None and set(ex) == {"KPI renommé depuis", bases[1]})
 
-print("7. Annuler n'écrit rien")
+print("7. Recharger (annule) n'écrit rien")
 avant = (copie / "measures_config.json").read_bytes()
-fenetre(QDialog.Rejected, lambda: ed.chk_cibles.setChecked(False))
-check("Annuler rend False", ct.ouvrir_reglages() is False)
-check("… et le fichier n'a pas bougé", (copie / "measures_config.json").read_bytes() == avant)
+cible_avant = ed.chk_cibles.isChecked()
+ed.chk_cibles.setChecked(not cible_avant)
+check("une édition allume « non sauvegardé »", ct._dirty)
+ct.inner.setCurrentIndex(tc.IDX_VARIATIONS)
+check("changer d'onglet garde l'édition en mémoire, sans l'écrire",
+      (copie / "measures_config.json").read_bytes() == avant
+      and "includeTargets" in json.dumps(ct._config["fieldParameter"]))
+ct._reload()
+check("Recharger : le fichier n'a pas bougé", (copie / "measures_config.json").read_bytes() == avant)
+ct.inner.setCurrentIndex(tc.IDX_PARAM)
+check("… et l'onglet revient à ce qui est écrit", ed.chk_cibles.isChecked() == cible_avant
+      and not ct._dirty)
 
 print("8. la barre latérale")
 from qtpy.QtWidgets import QGroupBox                             # noqa: E402
@@ -291,10 +298,65 @@ check("une clé inconnue ne change rien",
       ct.aller_reglages("nulle_part") is False and groupe_montre().startswith("Branches"))
 vu = []
 fenetre(QDialog.Rejected, lambda: vu.append(groupe_montre()))
-ct.ouvrir_reglages(page="parametres")
-check("ouvrir_reglages(page=…) ouvre sur cette page", vu == ["Paramètres de champ"])
+ct.ouvrir_reglages(page="delta")
+check("ouvrir_reglages(page=…) ouvre sur cette page", vu and vu[0].startswith("Formats"))
 ct.ouvrir_reglages()
-check("… et sans page, on retrouve la dernière vue", vu[-1] == "Paramètres de champ")
+check("… et sans page, on retrouve la dernière vue", vu[-1] == vu[0])
+check("plus de page « Paramètres de champ » dans les Réglages", "parametres" not in cles)
+ct.inner.setCurrentIndex(tc.IDX_VARIATIONS)
+vu.clear()
+check("un lien vers l'ancienne page ouvre l'onglet, sans la fenêtre",
+      ct.ouvrir_reglages(page="parametres") is False and not vu
+      and ct.inner.currentIndex() == tc.IDX_PARAM)
+
+print("9. l'aperçu de ce que les tables contiendront")
+ap = ct.apercu_fp
+ct._rafraichir_parametres()
+noms_ed = [ed.liste.item(i).text() for i in range(ed.liste.count())]
+m = ap.matrice
+check(f"la matrice : une colonne par table ({m.columnCount()})",
+      [m.horizontalHeaderItem(c).text() for c in range(m.columnCount())] == noms_ed)
+kpis_m = [m.verticalHeaderItem(r).text() for r in range(m.rowCount())]
+check(f"… une ligne par KPI ({len(kpis_m)})", set(kpis_m) == set(bases))
+plan = gm.generate(copie / (PROJ + ".SemanticModel"), sur_disque(), dry_run=True,
+                   log=lambda *a: None)["parametres"]
+t0 = plan[0]
+n_k = sum(1 for r in t0["rangees"] if r["indicateur"] == kpis_m[0])
+check("une case = le nombre de rangées du KPI dans la table",
+      m.item(0, 0).text() == str(n_k))
+choisir(noms_ed[1])
+check("choisir une table dans l'éditeur l'ouvre dans l'aperçu",
+      ap.table_courante() == noms_ed[1] and noms_ed[1] in ap.lbl_table.text())
+ap._on_case(0, 0)
+check("cliquer une case de la matrice choisit la table dans l'éditeur",
+      ed.ed_nom.text() == noms_ed[0] and ap.table_courante() == noms_ed[0])
+grp = [ap.contenu.topLevelItem(i) for i in range(ap.contenu.topLevelItemCount())]
+check("le contenu est rangé par KPI, chacun avec ses rangées",
+      [g.text(0) for g in grp] == list(dict.fromkeys(r["indicateur"] for r in t0["rangees"]))
+      and sum(g.childCount() for g in grp) == len(t0["rangees"]))
+r0 = grp[0].child(0)
+check("une rangée : affichage, mesure, calcul, branche (ce que Power BI listera)",
+      [r0.text(c) for c in range(4)] == [t0["rangees"][0][k] for k in
+                                         ("affichage", "mesure", "calcul", "branche")])
+# un réglage EN COURS, pas encore enregistré, se voit dans l'aperçu
+avant = (copie / "measures_config.json").read_bytes()
+cocher(ed.cmb_kpis, kpis_m[0], False)
+ct._rafraichir_parametres()
+m = ap.matrice
+lig = [m.verticalHeaderItem(r).text() for r in range(m.rowCount())].index(kpis_m[0])
+col = [m.horizontalHeaderItem(c).text() for c in range(m.columnCount())].index(ed.ed_nom.text())
+check(f"décocher {kpis_m[0]} : sa case tombe à 0, avant même d'enregistrer",
+      m.item(lig, col).text() == "0"
+      and (copie / "measures_config.json").read_bytes() == avant)
+check("… et il quitte le contenu de la table",
+      all(ap.contenu.topLevelItem(i).text(0) != kpis_m[0]
+          for i in range(ap.contenu.topLevelItemCount())))
+par_kpi = next((t for t in plan if t["rows"] == "kpi"), None)
+if par_kpi:
+    choisir(par_kpi["name"])
+    lib = [r for r in par_kpi["rangees"] if r["libelle"]]
+    check("une table par KPI affiche le LIBELLÉ du KPI (lu dans l'Excel)",
+          not lib or all(r["libelle_trouve"] for r in lib))
 
 ct.deleteLater()
 rmtree(copie)

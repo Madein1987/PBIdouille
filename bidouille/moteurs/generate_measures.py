@@ -423,7 +423,7 @@ def read_kpi_tables(spec, model_dir, default_xlsx, default_key, log=print) -> di
     try:
         brut = read_attribute_map(xlsx, spec.get("keyColumn") or default_key, col)
     except SystemExit as e:
-        log(f"⚠ portée par KPI : {e} — colonne « {col} » ignorée.")
+        log(f"⚠ portée par KPI : {e}, colonne « {col} » ignorée.")
         return {}
     out = {}
     for kpi, val in brut.items():
@@ -665,6 +665,31 @@ def quote_tmdl_value(valeur):
     return QUOTE + valeur.replace(QUOTE, QUOTE + QUOTE) + QUOTE
 
 
+def expression_mesure(chunk_text: str, m_line) -> str | None:
+    """L'expression DAX d'un chunk de mesure, ligne par ligne, désindentée :
+    ce qui suit « = » sur la ligne de la mesure, puis les lignes du corps
+    (trois tabulations) jusqu'à la 1re propriété. Un bloc ``` … ``` est lu
+    jusqu'à sa clôture, lignes vides et propriétés apparentes comprises."""
+    if not m_line or "=" not in m_line.group(0):
+        return None
+    tete = m_line.group(0).split("=", 1)[1].strip()
+    lignes = [] if tete in ("", "```") else [tete]
+    cloture = tete == "```"
+    # m_line finit AVANT son saut de ligne : le 1er morceau est vide
+    for ln in chunk_text[m_line.end():].splitlines()[1:]:
+        if cloture:
+            if ln.strip() == "```":
+                break
+        elif re.match(r"^\t\t[A-Za-z/]", ln):
+            break
+        lignes.append(ln[3:] if ln.startswith("\t\t\t") else ln.lstrip("\t"))
+    while lignes and not lignes[-1].strip():
+        lignes.pop()
+    while lignes and not lignes[0].strip():
+        lignes.pop(0)
+    return "\n".join(lignes) or None
+
+
 def measure_info(chunk_text: str) -> dict:
     """Extrait nom/annotation/format/dossier/lineage d'un chunk de mesure."""
     m_line = re.search(r"^\tmeasure .*$", chunk_text, re.M)
@@ -686,6 +711,9 @@ def measure_info(chunk_text: str) -> dict:
                 morceaux.append(ln.strip())
         dax = " ".join(x for x in morceaux if x) or None
     return {
+        # l'expression TELLE QU'ÉCRITE, sur ses lignes (l'arbre des mesures
+        # la montre) ; « dax » ci-dessous l'aplatit pour la déduction
+        "expression": expression_mesure(chunk_text, m_line),
         "name": name,
         "annotation": a.group(1).strip() if a else None,
         # dé-quoté : c'est LE format, pas la ligne TMDL qui le porte
@@ -982,7 +1010,7 @@ def import_variations(config, biblio, ids, log=print) -> list:
     faits = []
     for vid in ids:
         if vid not in src_v:
-            log(f"⚠ « {vid} » absente de la bibliothèque — ignorée.")
+            log(f"⚠ « {vid} » absente de la bibliothèque, ignorée.")
             continue
         dst_v[vid] = json.loads(json.dumps(src_v[vid]))   # copie profonde
         faits.append(vid)
@@ -1134,7 +1162,7 @@ def read_kpi_order(td, log=print) -> dict:
     try:
         return read_attribute_map(td["path"], td["keyColumn"], col)
     except SystemExit as e:
-        log(f"⚠ ordre des KPI : {e} — colonne « {col} » ignorée, "
+        log(f"⚠ ordre des KPI : {e}, colonne « {col} » ignorée, "
             "tri alphabétique.")
         return {}
 
@@ -1155,7 +1183,7 @@ def kpi_ranks(bases, ordres, log=print) -> dict:
     sans = [b for b in bases if b not in ordres]
     if sans:
         log(f"⚠ ordre des KPI : {len(sans)} sans valeur dans la colonne "
-            f"({', '.join(sorted(sans, key=sort_key_pbi))}) — rangé(s) à la fin.")
+            f"({', '.join(sorted(sans, key=sort_key_pbi))}), rangé(s) à la fin.")
     log("Ordre des KPI : " + " → ".join(ordonnes))
     return {b: i for i, b in enumerate(ordonnes)}
 
@@ -1409,7 +1437,7 @@ def _generate(model_dir, config, *, dry_run=None, remove_orphans=None, log=print
     lkp_ok = (tables_dir / (lkp_table + ".tmdl")).exists()
     if not lkp_ok and any(s_["kpiLabel"] and "kpi" in (s_["rows"], s_["baseRow"])
                           for s_ in fp_specs):
-        log(f"⚠ table de correspondance « {lkp_table} » absente du modèle — "
+        log(f"⚠ table de correspondance « {lkp_table} » absente du modèle, "
             f"les tables paramètre afficheront le nom brut du KPI. "
             f"Corrige fieldParameter.kpiLabelLookup.table.")
     fp_kpi_col    = fp.get("kpiColumn") or "Indicateur"
@@ -1423,7 +1451,7 @@ def _generate(model_dir, config, *, dry_run=None, remove_orphans=None, log=print
     variations = config.get("variations") or {}
     if not variations:
         raise SystemExit(
-            "La config n'a pas d'objet 'variations' — importe-en depuis la "
+            "La config n'a pas d'objet 'variations', importe-en depuis la "
             "bibliothèque (Mesures -> Bibliothèque…).")
     branches = dict(config.get("branches") or {})
 
@@ -1516,7 +1544,7 @@ def _generate(model_dir, config, *, dry_run=None, remove_orphans=None, log=print
 
     def process(base_name, base_fmt, base_folder, kpi_lbl, vid, tpl,
                 fp_label, fp_branch, pass_folder_pattern, branch_id, fp_group=2,
-                dax_impose=None, en_branche=False):
+                dax_impose=None, en_branche=False, modele_impose=None):
         """Port de processVariation : calcule la spec + la rangée paramètre.
         `fp_group` = groupe de tri de la rangée (2 = variation de KPI ; 1 =
         cible). `dax_impose` remplace le DAX de la variation — c'est ainsi
@@ -1577,19 +1605,19 @@ def _generate(model_dir, config, *, dry_run=None, remove_orphans=None, log=print
         desc = expand(token_to_text(tpl.get("description")))
         if (not base_fmt and "{baseFormatString}"
                 in (token_to_text(tpl.get("dax")) or "")):
-            log(f"⚠ variation '{vid}' : « {base_name} » n'a pas de format — "
+            log(f"⚠ variation '{vid}' : « {base_name} » n'a pas de format, "
                 "{baseFormatString} vaut \"\" (FORMAT rendra le nombre brut). "
                 "Donne-lui un format dans Desktop, puis régénère.")
         fmt = resolve_format(tpl.get("formatString"), base_fmt,
                              delta_symbols, delta_fallback)
         if not name or not dax:
-            log(f"⚠ variation '{vid}' sans namePattern ou dax — ignorée.")
+            log(f"⚠ variation '{vid}' sans namePattern ou dax, ignorée.")
             return None
         if "<<" in dax or "<<" in (name or ""):
             missing = re.findall(r"<<([^>]+)>>", dax + " " + (name or ""))
             quoi = "portée" if any("each" in x or "able" in x for x in missing) else missing
             log(f"⚠ « {name} » non générée : {quoi} sans valeur pour "
-                f"« {kpi_lbl} » — remplis sa colonne dans TD_Indicateurs, ou "
+                f"« {kpi_lbl} », remplis sa colonne dans TD_Indicateurs, ou "
                 f"coche « déduire du DAX » (⚙ Réglages → Portée par KPI).")
             return None
 
@@ -1631,7 +1659,7 @@ def _generate(model_dir, config, *, dry_run=None, remove_orphans=None, log=print
         prev = existing.get(name)
         if prev is not None and not prev["annotation"]:
             # collision avec une mesure NON générée : ne pas y toucher
-            log(f"⚠ '{name}' existe mais n'est pas générée — ignorée.")
+            log(f"⚠ '{name}' existe mais n'est pas générée, ignorée.")
             skipped.append(name)
             return (name, prev["format"], prev["folder"])
         if prev is not None and not overwrite:
@@ -1647,7 +1675,7 @@ def _generate(model_dir, config, *, dry_run=None, remove_orphans=None, log=print
         # csx ne le voyait pas : le modèle vivant écrasait la même mesure.)
         owner = planned_names.get(name)
         if owner is not None and owner != tag:
-            log(f"⚠ « {name} » déjà générée par « {owner.split('|', 1)[1]} » — "
+            log(f"⚠ « {name} » déjà générée par « {owner.split('|', 1)[1]} », "
                 f"variante « {vid} »" + (f" (branche {branch_id})" if branch_id else "")
                 + " ignorée : même nom (namePattern en {kpi}, invariant par branche ?).")
             return (name, fmt, folder)
@@ -1660,7 +1688,18 @@ def _generate(model_dir, config, *, dry_run=None, remove_orphans=None, log=print
         arbre[name] = {"name": name, "parent": base_name,
                        "type": "branche" if branch_id == vid else "variation",
                        "kpi": kpi_lbl, "variation": vid,
-                       "branche": branch_id, "cible": fp_group == 1}
+                       "branche": branch_id, "cible": fp_group == 1,
+                       # les attributs, tels que « Générer » les écrira
+                       "dax": dax, "format": fmt, "dossier": folder,
+                       "description": desc,
+                       "dataCategory": tpl.get("dataCategory") or None,
+                       "enveloppe": dax_impose is not None,
+                       # le DAX AVANT développement (jetons compris) : l'aperçu
+                       # s'en sert pour colorer ce que chaque jeton est devenu.
+                       # Pour une enveloppe, c'est le patron de la branche.
+                       "dax_modele": token_to_text(
+                           modele_impose if (dax_impose is not None and modele_impose)
+                           else tpl.get("dax"))}
         return (name, fmt, folder)
 
     # -- 1re passe : bases × variations (KPI, puis cibles) --
@@ -1698,7 +1737,12 @@ def _generate(model_dir, config, *, dry_run=None, remove_orphans=None, log=print
                             "parent": kpi_lbl if is_cible else None,
                             "type": "cible" if is_cible else "base",
                             "kpi": kpi_lbl, "variation": None, "branche": None,
-                            "cible": is_cible}
+                            "cible": is_cible,
+                            # écrite à la main : ses attributs viennent du TMDL
+                            "dax": (existing.get(base_name) or {}).get("expression"),
+                            "format": base_fmt, "dossier": base_folder,
+                            "description": None, "dataCategory": None,
+                            "enveloppe": False}
         var_group  = 1 if is_cible else 2
         # toujours produite : c'est chaque table qui la garde ou non
         fp_rows.append([base_calcul, bracket(base_name), (base_group, 0),
@@ -1707,7 +1751,7 @@ def _generate(model_dir, config, *, dry_run=None, remove_orphans=None, log=print
         for vid in allowed_vids:
             tpl = variations.get(vid)
             if not isinstance(tpl, dict):
-                log(f"⚠ variation '{vid}' n'est pas un objet — ignorée.")
+                log(f"⚠ variation '{vid}' n'est pas un objet, ignorée.")
                 continue
             # filtres : la mesure n'est pas créée du tout
             if not base_retenue(tpl, base_fmt, base_name, kpi_lbl):
@@ -1762,7 +1806,7 @@ def _generate(model_dir, config, *, dry_run=None, remove_orphans=None, log=print
             f"« {', '.join(sorted(anciens_sw))}… » encore dans le modèle "
             + ("seront supprimées avec les orphelines."
                if remove_orphans else
-               "restent en place — coche « Supprimer les orphelines » pour les "
+               "restent en place, coche « Supprimer les orphelines » pour les "
                "retirer (vérifie d'abord qu'aucun visuel ne s'en sert)."))
 
     # -- mesures « cibles » : bases SUPPLÉMENTAIRES d'un dossier dédié ---------
@@ -1782,7 +1826,7 @@ def _generate(model_dir, config, *, dry_run=None, remove_orphans=None, log=print
         if not cfolder:
             continue
         if source_folder and cfolder.lower() == source_folder.lower():
-            log(f"⚠ kpiMeasureFolders : « {cfolder} » est le dossier des bases — ignoré.")
+            log(f"⚠ kpiMeasureFolders : « {cfolder} » est le dossier des bases, ignoré.")
             continue
         found = 0
         cnames = sorted((n for n, e in existing.items()
@@ -1792,13 +1836,13 @@ def _generate(model_dir, config, *, dry_run=None, remove_orphans=None, log=print
             # on ne décline QUE la cible RACINE : on saute ce qui ressemble déjà
             # à une variation/branche (le générateur les crée lui-même)
             if any(cname.endswith(" " + s) for s in var_branch_suffixes):
-                log(f"⚠ « {cname} » ressemble à une variation/branche — ignorée. "
+                log(f"⚠ « {cname} » ressemble à une variation/branche, ignorée. "
                     f"Ne mets que la cible RACINE (« <KPI> cible ») dans le dossier ; "
                     f"le générateur décline le reste.")
                 continue
             kpi = match_kpi(cname, bases_by_len)
             if kpi is None:
-                log(f"⚠ cible « {cname} » : aucun KPI ne correspond au préfixe — ignorée.")
+                log(f"⚠ cible « {cname} » : aucun KPI ne correspond au préfixe, ignorée.")
                 continue
             e = existing[cname]
             run_base(cname, e["format"], e["folder"], kpi, calcul, calcul + " ",
@@ -1826,7 +1870,7 @@ def _generate(model_dir, config, *, dry_run=None, remove_orphans=None, log=print
                 and branch_id not in sans_patron):
             sans_patron.add(branch_id)
             log(f"⚠ branche '{branch_id}' : son DAX ne cite pas sa base "
-                "({baseRef}), on ne peut pas en tirer d'enveloppe — ses variations "
+                "({baseRef}), on ne peut pas en tirer d'enveloppe, ses variations "
                 "sont recopiées (substitution). Écris le patron dans ⚙ Réglages → "
                 "Branches → Enveloppe pour envelopper.")
         allowed_set = set(allowed_vids)          # portée de la base (KPI ou cible)
@@ -1858,20 +1902,21 @@ def _generate(model_dir, config, *, dry_run=None, remove_orphans=None, log=print
             # variation qui ÉPINGLE une fenêtre sur la borne du contexte
             # (MAX({date}), DATEADD) change de sens si on l'enveloppe, alors
             # qu'un simple DÉCALAGE (SAMEPERIODLASTYEAR) est identique.
-            dax_impose = None
+            dax_impose = modele = None
             if wrap and s_enveloppe(tpl):
                 reel = var_ref.get((base_racine, vid))
                 if reel:
                     dax_impose = wrap.replace("{variationRef}", bracket(reel))
+                    modele = wrap
                     n_wrap += 1
                 else:
                     log(f"⚠ branche '{branch_id}' : « {vid} » s'enveloppe "
                         f"mais sa mesure Réel sur « {base_racine} » "
-                        "n'a pas été générée — repli sur la substitution.")
+                        "n'a pas été générée, repli sur la substitution.")
             process(bname, bfmt, bfolder, bkpi, vid, tpl,
                     None if no_fp else (calc_prefix + vid), branch_id,
                     branch_var_folder_pattern, branch_id, 1 if calc_prefix else 2,
-                    dax_impose, en_branche=True)
+                    dax_impose, en_branche=True, modele_impose=modele)
 
     if n_wrap:
         log(f"Branches : {n_wrap} mesure(s) ENVELOPPENT leur variation Réel "
@@ -1931,6 +1976,10 @@ def _generate(model_dir, config, *, dry_run=None, remove_orphans=None, log=print
     fp_statuses: list = []
     fp_writes: list = []      # (path, contenu)
     model_refs_needed: list = []
+    # le CONTENU de chaque table, tel que Power BI le montrera (onglet Mesures
+    # -> Paramètres de champ) : [{name, rows, rangees, etat}], une rangée =
+    # {affichage, libelle?, mesure, ordre, indicateur, calcul, branche}
+    fp_detail: list = []
     if fp_specs and fp_rows:
         # ordre des KPI : la colonne d'ordre de TD_Indicateurs si elle est
         # configurée, sinon le tri alphabétique de Power BI
@@ -1974,13 +2023,53 @@ def _generate(model_dir, config, *, dry_run=None, remove_orphans=None, log=print
                              + '", "' + dax_str(branch) + '")')
             return "{\n" + ",\n".join(lines) + "\n}"
 
+        # les libellés que le LOOKUPVALUE trouvera, lus dans l'Excel des
+        # indicateurs quand il porte la colonne (sinon l'aperçu dit « libellé
+        # de Weight » : la valeur n'existe qu'au rafraîchissement)
+        libelles: dict = {}
+        if lkp_ok and any(s_["kpiLabel"] and "kpi" in (s_["rows"], s_["baseRow"])
+                          for s_ in fp_specs):
+            try:
+                libelles = read_attribute_map(td["path"], lkp_key, lkp_lbl)
+            except (SystemExit, Exception):
+                libelles = {}
+
+        def decrire(spec, rows):
+            """Les rangées de `spec` pour l'aperçu : la MÊME logique
+            d'affichage que build_expr, en texte lisible, triées par ordre."""
+            par_kpi = spec["rows"] == "kpi"
+            out = []
+            for r in rows:
+                disp0, ref, order, kpi, calc, branch = r[:6]
+                if par_kpi:
+                    order = kpi_order[kpi]
+                montre_kpi = par_kpi or (spec["baseRow"] == "kpi"
+                                         and calc == fp_base_lbl)
+                libelle = bool(montre_kpi and spec["kpiLabel"] and lkp_ok)
+                if libelle:
+                    disp = libelles.get(kpi) or kpi
+                elif montre_kpi:
+                    disp = kpi
+                else:
+                    disp = disp0
+                out.append({"affichage": disp, "libelle": libelle,
+                            "libelle_trouve": bool(libelle and libelles.get(kpi)),
+                            "mesure": ref[1:-1] if ref.startswith("[") else ref,
+                            "ordre": order, "indicateur": kpi, "calcul": calc,
+                            "branche": branch})
+            out.sort(key=lambda x: (x["ordre"], x["indicateur"]))
+            return out
+
         targets = []
         for spec in fp_specs:
             rows = fp_rows_pour(spec, fp_rows)
+            fp_detail.append({"name": spec["name"], "rows": spec["rows"],
+                              "rangees": decrire(spec, rows),
+                              "etat": "vide" if not rows else ""})
             if not rows:
                 # {} n'est pas une table DAX valide : on n'y touche pas
                 fp_statuses.append(f"⚠ {spec['name']} : aucune rangée après ses "
-                                   f"filtres — non modifiée")
+                                   f"filtres, non modifiée")
                 continue
             targets.append((spec["name"], build_expr(spec, rows), len(rows)))
 
@@ -1992,6 +2081,7 @@ def _generate(model_dir, config, *, dry_run=None, remove_orphans=None, log=print
                 if n is not None:
                     arbre[n].setdefault("tables", []).append(spec["name"])
 
+        etats_fp: dict = {}
         for tname, expr, n_rows in targets:
             tpath = tables_dir / (tname + ".tmdl")
             indented = "\n".join("\t\t\t\t" + l for l in expr.split("\n"))
@@ -1999,21 +2089,25 @@ def _generate(model_dir, config, *, dry_run=None, remove_orphans=None, log=print
                 ttext = tpath.read_text(encoding="utf-8")
                 m = SOURCE_BLOCK_RE.search(ttext)
                 if not m:
-                    fp_statuses.append(f"⚠ {tname} : bloc `source =` introuvable — non modifiée")
+                    fp_statuses.append(f"⚠ {tname} : bloc `source =` introuvable, non modifiée")
+                    etats_fp[tname] = "source introuvable"
                     continue
                 new_ttext = ttext[: m.start(2)] + indented + "\n" + ttext[m.end(2):]
                 new_ttext = re.sub(r"\n{3,}", "\n\n", new_ttext)
                 if new_ttext != ttext:
                     fp_writes.append((tpath, new_ttext))
-                    fp_statuses.append(f"{tname} — expression mise à jour ({n_rows} rangées)")
+                    fp_statuses.append(f"{tname} : expression mise à jour ({n_rows} rangées)")
+                    etats_fp[tname] = "modifiée"
                 else:
-                    fp_statuses.append(f"{tname} — inchangée ({n_rows} rangées)")
+                    fp_statuses.append(f"{tname} : inchangée ({n_rows} rangées)")
+                    etats_fp[tname] = "inchangée"
             else:
+                etats_fp[tname] = "nouvelle"
                 content = param_table_file(tname, expr, fp_kpi_col, fp_calc_col,
                                            fp_branch_col, {})
                 fp_writes.append((tpath, content))
                 model_refs_needed.append(tname)
-                fp_statuses.append(f"{tname} — CRÉÉE ({n_rows} rangées) — penser à la "
+                fp_statuses.append(f"{tname} : CRÉÉE ({n_rows} rangées). Penser à la "
                                    f"relation TD → {fp_kpi_col} à créer une fois dans Desktop)")
 
     # ---- résumé / écriture -----------------------------------------------------
@@ -2039,10 +2133,17 @@ def _generate(model_dir, config, *, dry_run=None, remove_orphans=None, log=print
         noeud.setdefault("tables", [])
         noeud["etat"] = etat.get(n, "à la main" if noeud["type"] in ("base", "cible")
                                  else "")
+    if fp_detail:
+        for d in fp_detail:
+            d["etat"] = d["etat"] or etats_fp.get(d["name"], "")
     stats = {"bases": bases, "created": created, "updated": updated,
              "unchanged": unchanged, "skipped": skipped, "removed": removed,
              "fp_statuses": fp_statuses, "dry_run": bool(dry_run),
-             "arbre": list(arbre.values())}
+             "arbre": list(arbre.values()),
+             "parametres": fp_detail,
+             "parametres_colonnes": {"kpi": fp_kpi_col, "calcul": fp_calc_col,
+                                     "branche": fp_branch_col},
+             "parametres_actifs": bool(fp_specs)}
 
     if dry_run:
         log("*** DRY_RUN : aucun fichier modifié ***")

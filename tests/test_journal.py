@@ -166,7 +166,7 @@ check("… et garde SA couleur apres l'heure", m["couleur"] == YELLOW.upper())
 
 j = jm.Journal()
 check("au repos, l'entete ne pretend rien",
-      j.lbl_run.text() == "Dernier lancement : —")
+      j.lbl_run.text() == "Dernier lancement : aucun")
 j.lancement("Propagation des attributs", apercu=True)
 entete = j.lbl_run.text()
 heure = HEURE.search(entete)
@@ -380,18 +380,18 @@ check("Variations a trois volets : liste | formulaire | DAX",
       sp is not None and sp.count() == 3)
 check("le DAX et l'apercu sont dans le volet de DROITE",
       sp.widget(2).isAncestorOf(fen.tab_config.ed_dax)
-      and sp.widget(2).isAncestorOf(fen.tab_config.ed_preview))
+      and sp.widget(2).isAncestorOf(fen.tab_config.arbre_apercu))
 check("… le formulaire au milieu",
       sp.widget(1).isAncestorOf(fen.tab_config.ed_name)
       and not sp.widget(1).isAncestorOf(fen.tab_config.ed_dax))
 check("l'apercu n'est plus plafonne a 110 px",
-      fen.tab_config.ed_preview.maximumHeight() > 1000)
+      fen.tab_config.arbre_apercu.maximumHeight() > 1000)
 
 inner = fen.tab_config.inner
 from tabs.tab_config import IDX_RAW as _IDX_RAW                  # noqa: E402
-check("Mesures : Variations, Arbre et JSON brut (ni Generer, ni Reglages)",
+check("Mesures : Variations, Arbre, Parametres de champ et JSON brut (ni Generer, ni Reglages)",
       [inner.tabText(i) for i in range(inner.count())]
-      == ["Variations", "Arbre des mesures", "JSON brut"])
+      == ["Variations", "Arbre des mesures", "Paramètres de champ", "JSON brut"])
 inner.setCurrentIndex(_IDX_RAW)                # « JSON brut »
 app.processEvents()
 check("JSON brut : le journal revient", not fen.journal.isHidden())
@@ -609,10 +609,10 @@ onglet = tc.ConfigTab()
 onglet.show()
 app.processEvents()
 check("l'apercu des noms aussi",
-      onglet.ed_preview.fontInfo().family() == "Consolas")
+      onglet.arbre_apercu.fontInfo().family() == "Consolas")
 from qtpy.QtWidgets import QLabel                                 # noqa: E402
 jetons = [l for l in onglet.findChildren(QLabel)
-          if l.text().startswith("Jetons — exemple")]
+          if l.text().startswith("Jetons, exemple")]
 check("l'aide-memoire des jetons aussi (ses colonnes pointillees s'alignent)",
       jetons and jetons[0].fontInfo().family() == "Consolas")
 from qtpy.QtWidgets import QGroupBox                              # noqa: E402
@@ -817,24 +817,28 @@ check("en branche : racine, puis ce que la BRANCHE ajoute, puis la variation",
       == [("Weight", "racine"), (" YTD", "branche"), (" PY", "variation")])
 
 
-def fragments(ed):
-    """[(texte, couleur)] par ligne, tels que REELLEMENT rendus."""
+def fragments(arbre):
+    """[(texte, couleur)] par ligne, tels que REELLEMENT rendus : lus dans
+    le HTML que le délégué peint (un <span> coloré par segment)."""
+    import re as _re
     out = []
-    b = ed.document().begin()
-    while b.isValid():
-        t = b.text()
-        out.append([(t[r.start:r.start + r.length],
-                     r.format.foreground().color().name().upper())
-                    for r in b.textFormats()])
-        b = b.next()
+    for i in range(arbre.topLevelItemCount()):
+        html = arbre.topLevelItem(i).data(0, tc_ROLE_HTML) or ""
+        out.append([(t.replace("&lt;", "<").replace("&gt;", ">").replace("&amp;", "&"),
+                     c.upper())
+                    for c, t in _re.findall(r"color:(#[0-9A-Fa-f]{6})[^>]*>(.*?)</span>",
+                                            html)])
     return out
+
+
+from tabs.fiche_mesure import ROLE_HTML as tc_ROLE_HTML           # noqa: E402
 
 
 fen.tabs.setCurrentWidget(fen.tab_config)
 fen.tab_config.inner.setCurrentIndex(0)
 fen.tab_config._populate_list(select="Δ 7d")
 app.processEvents()
-lignes = fragments(fen.tab_config.ed_preview)
+lignes = fragments(fen.tab_config.arbre_apercu)
 reel = next((l for l in lignes if l and l[0][0].startswith("[Réel")), [])
 ytd = next((l for l in lignes if l and l[0][0].startswith("[YTD")), [])
 check("Reel : etiquette grisee, racine, puis « Δ 7d » en vert",
@@ -860,19 +864,19 @@ try:
     check("branche restreinte : pas de ligne YTD pour une variation qu'elle "
           "n'applique pas",
           not any(l.startswith("[YTD") for l in
-                  ct_.ed_preview.toPlainText().splitlines()))
+                  ct_.texte_apercu().splitlines()))
     ct_._populate_list(select="PY")
     app.processEvents()
     check("… mais bien pour celle qu'elle liste",
           any(l.startswith("[YTD") for l in
-              ct_.ed_preview.toPlainText().splitlines()))
+              ct_.texte_apercu().splitlines()))
 finally:
     ct_._config["branches"] = avant_branches
 ct_._populate_list(select="YTD")
 app.processEvents()
 check("une branche ne s'applique pas a elle-meme (plus de « Weight YTD YTD »)",
       not any(l.startswith("[YTD") for l in
-              ct_.ed_preview.toPlainText().splitlines()))
+              ct_.texte_apercu().splitlines()))
 
 print("   la couleur ne change pas le NOM : c'est celui que le generateur prevoit")
 import generate_measures as _gm                                   # noqa: E402
@@ -883,7 +887,7 @@ prevus = set(plan["created"]) | set(plan["updated"]) | set(plan["unchanged"])
 ecarts = []
 for vid in fen.tab_config._config.get("variations") or {}:
     fen.tab_config._populate_list(select=vid)
-    for ligne in fen.tab_config.ed_preview.toPlainText().splitlines():
+    for ligne in fen.tab_config.texte_apercu().splitlines():
         if ligne.startswith("[") and "] " in ligne:
             nom = ligne.split("] ", 1)[1]
             if nom not in prevus:
@@ -1103,7 +1107,7 @@ check("un groupe, son gabarit, ses KPI — un par rangee",
                                ["Weight", "Body Fat %"]))
 check("la base, d'un bloc (pas coupee a une virgule)",
       plan("Average Steps :") == ("Average Steps",
-                                  ["gabarit de base — tout le reste"]))
+                                  ["gabarit de base (tout le reste)"]))
 check("aucun symbole dans le plan",
       not any(ch in l for l in lignes_plan for ch in "★✋·∅"))
 
@@ -1152,11 +1156,12 @@ check("la case est moins arrondie (rayon 3 px)",
 
 print("   les Reglages globaux s'expliquent")
 glob = onglet._dlg_reglages                     # la fenetre ⚙ Reglages
-# Paramètres de champ : 1 ⓘ (la case) + 8 réglages communs ; les réglages
-# PAR TABLE sont dans l'éditeur de liste, avec leurs infobulles
-for titre, n_min in (("Paramètres de champ", 9),
-                     ("Génération (settings)", 9)):
-    gbx = [g for g in glob.findChildren(QGroupBox) if g.title() == titre]
+# Paramètres de champ (leur onglet, plus une page des Réglages) : 1 ⓘ (la
+# case) + 8 réglages communs ; les réglages PAR TABLE sont dans l'éditeur de
+# liste, avec leurs infobulles
+for ou, titre, n_min in ((onglet.inner.widget(tc.IDX_PARAM), "Paramètres de champ", 9),
+                         (glob, "Génération (settings)", 9)):
+    gbx = [g for g in ou.findChildren(QGroupBox) if g.title() == titre]
     aides = [b for b in gbx[0].findChildren(QToolButton)
              if b.text() == "ⓘ" and len(b.toolTip()) > 15] if gbx else []
     resumes = [l for l in gbx[0].findChildren(QLabel)

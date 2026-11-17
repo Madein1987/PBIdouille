@@ -47,7 +47,7 @@ class CouleursDialog(QDialog):
     def __init__(self, xlsx, key_col: str, fill_col: str, text_col: str,
                  model_kpis=None, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("Couleurs des KPI — " + Path(xlsx).name)
+        self.setWindowTitle("Couleurs des KPI · " + Path(xlsx).name)
         self.resize(720, 460)
         self.xlsx = Path(xlsx)
         self.key_col = key_col
@@ -73,7 +73,7 @@ class CouleursDialog(QDialog):
         self.table.cellClicked.connect(self._on_cell_clicked)
         lay.addWidget(self.table, 1)
 
-        tip = QLabel("Clique une pastille Fond/Texte pour choisir la couleur — "
+        tip = QLabel("Clique une pastille Fond/Texte pour choisir la couleur, "
                      "clic droit conceptuel : bouton « Effacer » sur la cellule sélectionnée.")
         tip.setStyleSheet(f"color:{TEXT_DIM};")
         tip.setWordWrap(True)
@@ -122,7 +122,7 @@ class CouleursDialog(QDialog):
         key_c = headers.get(self.key_col.lower())
         if key_c is None:
             self.lbl_info.setText(
-                f"Colonne clé « {self.key_col} » absente de {self.xlsx.name} — "
+                f"Colonne clé « {self.key_col} » absente de {self.xlsx.name}, "
                 f"colonnes trouvées : {', '.join(headers)}.")
             self.btn_save.setEnabled(False)
             return
@@ -175,7 +175,7 @@ class CouleursDialog(QDialog):
             self._set_preview(i, k)
 
     def _set_swatch(self, row: int, col: int, hexv: str, editable: bool):
-        item = QTableWidgetItem(hexv if hexv else "—")
+        item = QTableWidgetItem(hexv if hexv else "·")
         item.setFlags(Qt.ItemIsEnabled)
         item.setTextAlignment(Qt.AlignCenter)
         if hexv:
@@ -188,7 +188,7 @@ class CouleursDialog(QDialog):
             item.setBackground(QBrush(QColor(SURFACE_ALT)))
             item.setForeground(QBrush(QColor(TEXT_DIM)))
         if not editable:
-            item.setToolTip("Ligne absente de l'Excel — ajoute-la d'abord.")
+            item.setToolTip("Ligne absente de l'Excel, ajoute-la d'abord.")
         self.table.setItem(row, col, item)
 
     def _set_preview(self, row: int, key: str):
@@ -220,7 +220,7 @@ class CouleursDialog(QDialog):
             return  # absent de l'Excel : rien à éditer
         which = "fill" if col == COL_FILL else "text"
         start = QColor(s[which]) if s[which] else QColor(ACCENT)
-        chosen = QColorDialog.getColor(start, self, f"Couleur {which} — {key}")
+        chosen = QColorDialog.getColor(start, self, f"Couleur {which} · {key}")
         if not chosen.isValid():
             return
         s[which] = chosen.name().upper()
@@ -282,7 +282,7 @@ class CouleursDialog(QDialog):
         except PermissionError:
             QMessageBox.critical(
                 self, "Excel verrouillé",
-                f"{self.xlsx.name} est ouvert dans Excel — ferme-le et réessaie.")
+                f"{self.xlsx.name} est ouvert dans Excel, ferme-le et réessaie.")
             return
         except OSError as e:
             QMessageBox.critical(self, "Erreur d'écriture", str(e))
