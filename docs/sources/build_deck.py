@@ -543,8 +543,19 @@ section("02", "Le rapport", "Formater un KPI à la main dans Desktop : l'outil r
               "précise ; sans propagation, il disparaît quand on change de KPI.")
 
 # ------------------------------------------------------------ visuels dessinés
-# Un graphique en courbes et une carte, dessinés en formes PowerPoint (pas de
-# capture) : on y montre des réglages précis, et ce qu'ils deviennent.
+# Un graphique en courbes, une carte et une grille, dessinés en formes
+# PowerPoint (pas de capture) : on y montre des réglages précis, et ce
+# qu'ils deviennent. Les exemples de groupes et de règles viennent de
+# propagate_cf.Sources : ce que la grille afficherait, pas une invention.
+
+YELLOW = RGBColor(0xF2, 0xC9, 0x4C)
+VIOLET = RGBColor(0xA9, 0x8B, 0xF0)      # une couleur « par défaut » de Power BI
+
+
+def melange(c, a=0.3, fond=CARD):
+    """La couleur `c` posée à l'opacité `a` sur `fond`."""
+    return RGBColor(*(int(fond[i] + (c[i] - fond[i]) * a) for i in range(3)))
+
 
 def segment(slide, x1, y1, x2, y2, color=LINE, w=0.75, dash=False):
     c = slide.shapes.add_connector(MSO_CONNECTOR.STRAIGHT, Inches(x1), Inches(y1),
@@ -556,7 +567,7 @@ def segment(slide, x1, y1, x2, y2, color=LINE, w=0.75, dash=False):
     return c
 
 
-def courbe(slide, pts, x, y, w, h, color, width=2.0, dash=False, marqueurs=False):
+def courbe(slide, pts, x, y, w, h, color, width=2.0, dash=False, marqueurs=False, dm=0.1):
     """Une polyligne ; pts en coordonnées 0..1 (v vers le haut) dans le cadre
     (x, y, w, h)."""
     def xy(u, v):
@@ -572,265 +583,409 @@ def courbe(slide, pts, x, y, w, h, color, width=2.0, dash=False, marqueurs=False
         sh.line.dash_style = MSO_LINE.DASH
     sh.shadow.inherit = False
     if marqueurs:
-        d = 0.1
         for u, v in pts:
-            m = box(slide, x + u * w - d / 2, y + (1 - v) * h - d / 2, d, d, fill=CARD,
-                    line=color, shape=MSO_SHAPE.OVAL, lw=1.25)
+            box(slide, x + u * w - dm / 2, y + (1 - v) * h - dm / 2, dm, dm, fill=CARD,
+                line=color, shape=MSO_SHAPE.OVAL, lw=1.0)
     return sh
 
 
-VIOLET = RGBColor(0xA9, 0x8B, 0xF0)      # une couleur « par défaut » de Power BI
+def puce(slide, x, y, n, d=0.3, color=GREEN, size=11):
+    badge(slide, x, y, n, color=color, d=d, size=size)
 
 
-def graphique(slide, x, y, w, h, kpi, style=True, decal=0.0, cadre=LINE):
+def graphique(slide, x, y, w, h, kpi=None, style=True, decal=0.0, cadre=LINE, mini=False,
+              puces=False):
     """Le graphique en courbes du rapport : YTD et YTD PY d'un KPI. `style` :
-    les réglages du gabarit (marqueurs sur YTD, pointillé coloré sur YTD PY),
-    sinon les défauts de Power BI."""
+    les réglages du gabarit (① marqueurs sur YTD, ② pointillé coloré sur
+    YTD PY), sinon les défauts de Power BI. `mini` : sans légende ni mois."""
     box(slide, x, y, w, h, fill=CARD, line=cadre, radius=0.04)
-    text(slide, x + 0.18, y + 0.12, w - 1.6, 0.3, kpi, size=13, bold=True, font=HEAD)
+    if kpi:
+        text(slide, x + 0.15, y + 0.08, w - 0.3, 0.3, kpi, size=11 if mini else 13,
+             bold=True, font=HEAD)
     c_ytd, c_py = (GREEN, ORANGE) if style else (BLUE, VIOLET)
-    # légende
-    lx, ly = x + w - 1.45, y + 0.2
-    segment(slide, lx, ly, lx + 0.28, ly, color=c_ytd, w=2)
-    if style:
-        box(slide, lx + 0.09, ly - 0.05, 0.1, 0.1, fill=CARD, line=c_ytd, shape=MSO_SHAPE.OVAL)
-    text(slide, lx + 0.33, ly - 0.09, 0.4, 0.2, "YTD", size=8, color=MUTED)
-    segment(slide, lx + 0.72, ly, lx + 1.0, ly, color=c_py, w=1.25 if style else 2, dash=style)
-    text(slide, lx + 1.05, ly - 0.09, 0.45, 0.2, "PY", size=8, color=MUTED)
-    # zone de tracé
-    px, py, pw, ph = x + 0.3, y + 0.55, w - 0.5, h - 0.95
+    if not mini:
+        lx, ly = x + w - 1.45, y + 0.2
+        segment(slide, lx, ly, lx + 0.28, ly, color=c_ytd, w=2)
+        if style:
+            box(slide, lx + 0.09, ly - 0.05, 0.1, 0.1, fill=CARD, line=c_ytd, shape=MSO_SHAPE.OVAL)
+        text(slide, lx + 0.33, ly - 0.09, 0.4, 0.2, "YTD", size=8, color=MUTED)
+        segment(slide, lx + 0.72, ly, lx + 1.0, ly, color=c_py, w=1.25 if style else 2, dash=style)
+        text(slide, lx + 1.05, ly - 0.09, 0.45, 0.2, "PY", size=8, color=MUTED)
+    if mini:
+        px, py, pw, ph = x + 0.2, y + (0.42 if kpi else 0.1), w - 0.35, h - (0.55 if kpi else 0.2)
+    else:
+        px, py, pw, ph = x + 0.3, y + 0.55, w - 0.5, h - 0.95
     for f in (0.0, 0.5):
         segment(slide, px, py + ph * f, px + pw, py + ph * f, color=LINE, w=0.5)
     segment(slide, px, py + ph, px + pw, py + ph, color=MUTED, w=0.75)
-    for u, m in ((0.0, "janv."), (0.5, "avr."), (1.0, "juil.")):
-        text(slide, px + u * pw - 0.25, py + ph + 0.04, 0.5, 0.2, m, size=8, color=MUTED,
-             align=PP_ALIGN.CENTER)
+    if not mini:
+        for u, m in ((0.0, "janv."), (0.5, "avr."), (1.0, "juil.")):
+            text(slide, px + u * pw - 0.25, py + ph + 0.04, 0.5, 0.2, m, size=8, color=MUTED,
+                 align=PP_ALIGN.CENTER)
     us = [i / 6 for i in range(7)]
     ytd = [0.08, 0.22, 0.35, 0.49, 0.62, 0.78, 0.92]
     pyv = [0.06, 0.16, 0.30, 0.40, 0.50, 0.62, 0.74]
     ytd = [min(0.97, v + decal * (i % 2)) for i, v in enumerate(ytd)]
     courbe(slide, list(zip(us, pyv)), px, py, pw, ph, c_py,
-           width=1.25 if style else 2.0, dash=style)
-    courbe(slide, list(zip(us, ytd)), px, py, pw, ph, c_ytd, width=2.25 if style else 2.0,
-           marqueurs=style)
+           width=1.25 if style else (1.5 if mini else 2.0), dash=style)
+    courbe(slide, list(zip(us, ytd)), px, py, pw, ph, c_ytd,
+           width=(1.75 if mini else 2.25) if style else (1.5 if mini else 2.0),
+           marqueurs=style, dm=0.07 if mini else 0.1)
+    if puces:
+        d = 0.22 if mini else 0.3
+        puce(slide, px + pw - 0.45 - d, py + (1 - ytd[-1]) * ph - d - 0.02, 1, d=d,
+             size=9 if mini else 11)
+        puce(slide, px + pw - d / 2, py + (1 - pyv[-1]) * ph + 0.04, 2, d=d,
+             size=9 if mini else 11)
     return (px, py, pw, ph, ytd, pyv)
 
 
 def sparkline(slide, x, y, w, h, color=GREEN):
     box(slide, x, y, w, h, fill=DARK, radius=0.1)
     courbe(slide, [(0, 0.3), (0.2, 0.55), (0.4, 0.4), (0.6, 0.7), (0.8, 0.6), (1, 0.85)],
-           x + 0.08, y + 0.08, w - 0.16, h - 0.16, color, width=1.25)
+           x + 0.06, y + 0.06, w - 0.12, h - 0.12, color, width=1.25)
 
 
-def tuile(slide, x, y, w, h, kpi, valeur, ref1, ref2, detail, monte, cadre=LINE, grand=True):
-    """Une tuile de la carte : valeur, image (sparkline), deux étiquettes de
-    référence (titre, valeur) et un détail."""
+def tuile(slide, x, y, w, h, kpi, valeur, ref1=None, ref2=None, detail="", monte=True,
+          cadre=LINE, forme=True):
+    """Une tuile de carte, compacte. `forme` : le style du gabarit (valeur en
+    gras, image, deux étiquettes de référence et un détail) ; sinon ce que
+    Power BI montre sans lui : la valeur, et rien d'autre."""
     box(slide, x, y, w, h, fill=CARD, line=cadre, radius=0.05)
-    text(slide, x + 0.2, y + 0.14, w - 1.6, 0.3, kpi, size=12 if grand else 11, color=MUTED)
-    text(slide, x + 0.2, y + 0.38, w - 1.6, 0.6, valeur, size=30 if grand else 22, bold=True,
-         font=HEAD)
-    sparkline(slide, x + w - 1.35, y + 0.2, 1.15, 0.6 if grand else 0.5)
-    ylig = y + (1.2 if grand else 0.88)
-    segment(slide, x + 0.2, ylig, x + w - 0.2, ylig, color=LINE)
-    yr = ylig + (0.12 if grand else 0.08)
-    col_w = (w - 0.4) / 2
+    text(slide, x + 0.15, y + 0.1, w - 1.1, 0.25, kpi, size=10, color=MUTED)
+    if not forme:
+        text(slide, x + 0.15, y + 0.35, w - 0.3, 0.45, valeur, size=18, font=BODY,
+             color=MUTED)
+        text(slide, x + 0.15, y + h - 0.42, w - 0.3, 0.3,
+             "ni étiquettes, ni détail, ni image", size=9, color=melange(MUTED, 0.6),
+             font=BODY)
+        return None
+    text(slide, x + 0.15, y + 0.32, w - 1.1, 0.45, valeur, size=20, bold=True, font=HEAD)
+    sparkline(slide, x + w - 0.95, y + 0.14, 0.8, 0.45)
+    ylig = y + 0.85
+    segment(slide, x + 0.15, ylig, x + w - 0.15, ylig, color=LINE)
+    yr = ylig + 0.07
+    col_w = (w - 0.3) / 2
     for i, (titre_r, val_r) in enumerate((ref1, ref2)):
-        xx = x + 0.2 + i * col_w
-        text(slide, xx, yr, col_w, 0.25, titre_r, size=10, color=MUTED)
-        text(slide, xx, yr + (0.22 if grand else 0.19), col_w, 0.3, val_r,
-             size=14 if grand else 12, bold=True)
-    text(slide, x + 0.2, yr + (0.55 if grand else 0.46), col_w, 0.3, detail,
-         size=11 if grand else 10, color=GREEN if monte else RED)
-    return ylig, yr
+        xx = x + 0.15 + i * col_w
+        text(slide, xx, yr, col_w, 0.22, titre_r, size=9, color=MUTED)
+        text(slide, xx, yr + 0.18, col_w, 0.28, val_r, size=11, bold=True)
+    text(slide, x + 0.15, yr + 0.44, col_w + 0.4, 0.25, detail, size=9,
+         color=GREEN if monte else RED)
+    return ylig, yr, col_w
 
 
-def puce(slide, x, y, n, d=0.3, color=GREEN):
-    badge(slide, x, y, n, color=color, d=d, size=11)
-
-
-# ============================================================ 12a. Graphique : le mécanisme
-s = new_slide("Dans un visuel à paramètre de champ, chaque réglage de formatage est accroché à UNE "
-              "mesure : le pointillé à « Total Steps YTD PY », les marqueurs à « Total Steps YTD ». "
-              "Quand le segment passe à Weight, ces mesures ne sont plus à l'écran : Power BI reprend "
-              "ses défauts. Propager recopie chaque réglage, dans le même visuel, pour la même "
-              "variation de chaque KPI : seul le KPI de la mesure visée change.")
+# ============================================================ 12a. Graphique : pour chaque KPI cible
+s = new_slide("Le gabarit, Total Steps, est formaté à la main dans Desktop : ① les marqueurs, sur la "
+              "série « Total Steps YTD », ② le pointillé coloré, sur « Total Steps YTD PY ». Chaque "
+              "réglage vise UNE mesure. Propager prend ces réglages et les recopie, dans le même "
+              "visuel, pour CHAQUE KPI cible : Weight, Body Fat %, Average Steps… En dessous, ce qui "
+              "arrive sans propagation : le segment passe à Weight, les réglages visent toujours "
+              "les mesures de Total Steps, et Weight s'affiche avec les défauts de Power BI.")
 title(s, "Comment le formatage se propage", "Rapport")
 text(s, 0.6, 1.42, 12.1, 0.4,
-     [[("Dans un visuel, chaque réglage de formatage vise ", {}), ("UNE mesure", {"bold": True}),
-       (" : celle du KPI que le segment montre.", {})]], size=15, color=MUTED)
-for x, t in ((0.6, "1 · on formate le gabarit dans Desktop"),
-             (5.15, "2 · le segment passe à Weight"),
-             (9.0, "3 · après Propager")):
-    text(s, x, 2.0, 4.2, 0.3, t.upper(), size=11, color=GREEN, font=HEAD)
+     [[("Propager prend les réglages du gabarit et les recopie ", {}),
+       ("sur chaque KPI cible", {"bold": True}), (", dans le même visuel.", {})]],
+     size=15, color=MUTED)
+text(s, 0.6, 1.95, 4, 0.3, "1 · LE GABARIT, FORMATÉ À LA MAIN", size=11, color=GREEN, font=HEAD)
+text(s, 6.2, 1.95, 6.5, 0.3, "2 · LES MÊMES RÉGLAGES, SUR CHAQUE KPI CIBLE", size=11,
+     color=GREEN, font=HEAD)
 
 # 1. le gabarit
-gx, gy, gw, gh = 0.6, 2.35, 4.2, 2.6
-px, py, pw, ph, ytd, pyv = graphique(s, gx, gy, gw, gh, "Total Steps", style=True, cadre=GREEN)
-puce(s, px + pw - 0.55, py + (1 - ytd[-1]) * ph - 0.42, 1)
-puce(s, px + pw - 0.2, py + (1 - pyv[-1]) * ph + 0.05, 2)
-for i, (attr, mesure) in enumerate((("marqueurs, bordure (lineStyles, markers)", "[Total Steps YTD]"),
-                                     ("couleur, pointillé, 1 px (dataPoint, lineStyles)",
-                                      "[Total Steps YTD PY]"))):
-    yy = 5.1 + i * 0.58
-    puce(s, 0.6, yy, i + 1)
-    text(s, 1.02, yy - 0.04, 3.9, 0.6,
-         [[(attr, {"size": 12})], [("sur ", {"size": 11, "color": MUTED}),
-                                   (mesure, {"size": 11, "font": MONO, "color": GREEN})]], size=12)
+gx, gy, gw, gh = 0.6, 2.3, 3.85, 2.25
+graphique(s, gx, gy, gw, gh, "Total Steps", style=True, cadre=GREEN, puces=True)
+for i, (attr, mesure) in enumerate((("marqueurs, bordure", "[Total Steps YTD]"),
+                                     ("couleur, pointillé, 1 px", "[Total Steps YTD PY]"))):
+    yy = 4.72 + i * 0.5
+    puce(s, 0.6, yy, i + 1, d=0.28)
+    text(s, 0.98, yy - 0.04, 3.5, 0.5,
+         [[(attr + "  ", {"size": 12}), ("sur ", {"size": 10, "color": MUTED}),
+           (mesure, {"size": 10, "font": MONO, "color": GREEN})]], size=12)
 
-# 2. sans propagation
-arrow(s, 4.85, gy + gh / 2, 5.1, gy + gh / 2, color=MUTED)
-graphique(s, 5.15, 2.35, 3.55, 2.6, "Weight", style=False, decal=0.03)
-text(s, 5.15, 5.08, 3.55, 1.0,
-     [[("Les réglages visent toujours ", {}),
-       ("[Total Steps YTD]", {"font": MONO, "size": 11, "color": ORANGE}),
-       (" et ", {}), ("[Total Steps YTD PY]", {"font": MONO, "size": 11, "color": ORANGE}),
-       (". Plus rien ne les porte : Power BI reprend ses défauts.", {})]],
-     size=12, color=MUTED)
+# Propager : pour chaque
+fl = box(s, 4.65, 2.3, 1.35, 3.25, fill=GREEN, shape=MSO_SHAPE.RIGHT_ARROW)
+fl.adjustments[0] = 0.62
+fl.adjustments[1] = 0.32
+text(s, 4.68, 2.3, 1.0, 3.25,
+     [[("Propager", {"bold": True, "size": 14, "font": HEAD})],
+      [("", {"size": 6})],
+      [("pour", {"size": 11})], [("chaque", {"size": 11})], [("KPI cible", {"size": 11})],
+      [("", {"size": 6})],
+      [("① ② copiés", {"size": 10})]],
+     size=11, color=DARK, align=PP_ALIGN.CENTER, anchor=MSO_ANCHOR.MIDDLE)
 
-# 3. après Propager
-arrow(s, 8.75, gy + gh / 2, 8.95, gy + gh / 2, color=GREEN)
-graphique(s, 9.0, 2.35, 3.7, 2.6, "Weight", style=True, decal=0.03, cadre=GREEN)
-text(s, 9.0, 5.08, 3.7, 1.0,
-     [[("[Total Steps YTD]    → ", {"color": MUTED}), ("[Weight YTD]", {"color": GREEN})],
-      [("[Total Steps YTD PY] → ", {"color": MUTED}), ("[Weight YTD PY]", {"color": GREEN})],
-      [("… et ainsi pour chaque KPI du paramètre.", {"font": BODY, "size": 12, "color": MUTED})]],
-     size=11, font=MONO, spacing=2)
+# 2. les cibles
+cibles = [("Weight", 0.03), ("Body Fat %", -0.02), ("Average Steps", 0.04),
+          ("Average Sleep Duration", 0.0)]
+for i, (k, dec) in enumerate(cibles):
+    x = 6.2 + (i % 2) * 3.3
+    y = 2.3 + (i // 2) * 1.65
+    graphique(s, x, y, 3.15, 1.55, k, style=True, decal=dec, cadre=GREEN if i == 0 else LINE,
+              mini=True, puces=True)
+lbl = label_box(s, 6.2 + 0.85, 2.38, 1.05, 0.24, "← le segment", fill=GREEN,
+                color=DARK, size=9, bold=True)
 
-# la règle
-box(s, 0.6, 6.3, 12.1, 0.62, fill=CARD2)
-regle = [("même visuel", False), ("même réglage", False), ("même variation (YTD, YTD PY)", False),
-         ("seul le KPI change", True)]
-text(s, 0.85, 6.3, 2.0, 0.62, "Propager garde :", size=14, bold=True, color=GREEN,
-     anchor=MSO_ANCHOR.MIDDLE)
-cx = 2.75
-for t, fort in regle:
-    wb = 0.32 + 0.095 * len(t)
-    label_box(s, cx, 6.42, wb, 0.38, t, fill=GREEN if fort else CARD, size=12,
-              color=DARK if fort else TEXT, bold=fort)
-    cx += wb + 0.18
+# la boucle, en clair
+box(s, 0.6, 5.72, 12.1, 0.5, fill=CARD2)
+text(s, 0.85, 5.72, 11.6, 0.5,
+     [[("pour chaque KPI cible K :   ", {"font": BODY, "bold": True, "color": GREEN, "size": 13}),
+       ("① [Total Steps YTD] → [K YTD]", {}), ("      ", {}),
+       ("② [Total Steps YTD PY] → [K YTD PY]", {})]],
+     size=12, font=MONO, color=TEXT, anchor=MSO_ANCHOR.MIDDLE)
+
+# sans propagation
+box(s, 0.6, 6.35, 12.1, 0.72, fill=CARD, line=melange(RED, 0.6, BG))
+graphique(s, 0.72, 6.43, 1.35, 0.56, None, style=False, decal=0.03, mini=True)
+text(s, 2.25, 6.35, 10.3, 0.72,
+     [[("Sans propagation", {"bold": True, "color": RED}),
+       (" : le segment passe à Weight, mais les réglages visent toujours ", {}),
+       ("[Total Steps YTD]", {"font": MONO, "size": 11, "color": ORANGE}), (" et ", {}),
+       ("[Total Steps YTD PY]", {"font": MONO, "size": 11, "color": ORANGE}),
+       (". Weight s'affiche avec les défauts de Power BI.", {})]],
+     size=12, color=TEXT, anchor=MSO_ANCHOR.MIDDLE)
 
 # ============================================================ 12b. La carte
-s = new_slide("Une carte montre plusieurs KPI, une tuile chacun. Les réglages d'une tuile visent SA "
-              "mesure (le selector) ; et ce qu'ils affichent, la valeur d'une étiquette de référence, "
-              "son détail, l'image, sont eux aussi des mesures du KPI. Propager réécrit les deux : la "
-              "tuile visée et les mesures affichées. Un texte (le titre « PY ») est recopié tel quel. "
-              "C'est un miroir : ce que le gabarit ne porte plus est retiré des autres tuiles.")
+s = new_slide("Une carte montre plusieurs KPI, une tuile chacun. Avant : seule la tuile Weight, le "
+              "gabarit, est formatée ; Total Steps et Body Fat % n'ont que leur valeur. Les réglages "
+              "d'une tuile visent SA mesure, et ce qu'ils affichent (la valeur d'une étiquette, son "
+              "détail, l'image) sont eux aussi des mesures du KPI. Propager réécrit les deux, pour "
+              "chaque tuile. Après : la même carte, chaque tuile formatée avec ses propres mesures.")
 title(s, "La carte se propage aussi", "Rapport")
 text(s, 0.6, 1.42, 12.1, 0.4,
      [[("Chaque tuile est un KPI. Ses étiquettes, son détail et son image sont ", {}),
        ("des mesures de ce KPI", {"bold": True}), (" : elles changent avec lui.", {})]],
      size=15, color=MUTED)
-for x, t in ((0.6, "1 · la tuile gabarit, à la main"),
-             (4.75, "2 · ce que Propager réécrit"),
-             (9.35, "3 · les autres tuiles")):
-    text(s, x, 2.0, 4.2, 0.3, t.upper(), size=11, color=GREEN, font=HEAD)
 
-# 1. la tuile gabarit
-tx, ty, tw, th = 0.6, 2.35, 3.9, 2.35
-ylig, yr = tuile(s, tx, ty, tw, th, "Weight", "72,4 kg", ("PY", "71,8"), ("Δ 30d", "−0,6"),
-                 "▲ 0,8 % YoY", True, cadre=GREEN)
-col_w = (tw - 0.4) / 2
-d = 0.26
-puce(s, tx + 0.2 + 0.32, yr - 0.02, 2, d=d)                 # titre « PY »
-puce(s, tx + 0.2 + 0.68, yr + 0.23, 1, d=d)                 # valeur de l'étiquette PY
-puce(s, tx + 0.2 + col_w + 0.68, yr + 0.23, 1, d=d)         # valeur de l'étiquette Δ 30d
-puce(s, tx + 0.2 + 1.3, yr + 0.57, 3, d=d)                  # détail
-puce(s, tx + tw - 0.3, ty + 0.08, 4, d=d)                   # image
-text(s, 0.6, 4.85, 3.9, 0.9,
-     [[("Tous ces réglages visent la tuile ", {}), ("[Weight]", {"font": MONO, "size": 11, "color": GREEN}),
-       (" : c'est elle, le gabarit.", {})]], size=12, color=MUTED)
+CW = 2.42                                   # largeur d'une tuile
+VALEURS = [("Weight", "72,4 kg", ("PY", "71,8"), ("Δ 30d", "−0,6"), "▲ 0,8 % YoY", True),
+           ("Total Steps", "312 480", ("PY", "298 150"), ("Δ 30d", "+4 210"), "▲ 4,8 % YoY", True),
+           ("Body Fat %", "21,3 %", ("PY", "22,1 %"), ("Δ 30d", "−0,4"), "▼ 3,6 % YoY", False)]
 
-# 2. ce qui est réécrit
+
+def carte(slide, y, entete, apres):
+    text(slide, 0.6, y - 0.32, 7.9, 0.3, entete, size=11, color=GREEN, font=HEAD)
+    box(slide, 0.6, y, 7.9, 1.86, fill=DARK, line=LINE, radius=0.04)
+    for i, (k, val, r1, r2, det, monte) in enumerate(VALEURS):
+        x = 0.72 + i * (CW + 0.12)
+        forme = apres or i == 0
+        res = tuile(slide, x, y + 0.1, CW, 1.66, k, val, r1, r2, det, monte,
+                    cadre=GREEN if (apres or i == 0) else LINE, forme=forme)
+        if i == 0 and not apres:
+            ylig, yr, col_w = res
+            d = 0.22
+            puce(slide, x + 0.15 + 0.22, yr - 0.02, 2, d=d, size=9)            # titre
+            puce(slide, x + 0.15 + 0.5, yr + 0.2, 1, d=d, size=9)              # valeur PY
+            puce(slide, x + 0.15 + col_w + 0.5, yr + 0.2, 1, d=d, size=9)      # valeur Δ 30d
+            puce(slide, x + 0.15 + 1.05, yr + 0.45, 3, d=d, size=9)            # détail
+            puce(slide, x + CW - 0.27, y + 0.1 + 0.05, 4, d=d, size=9)         # image
+
+
+carte(s, 2.25, "1 · AVANT : SEUL LE GABARIT, WEIGHT, EST FORMATÉ", False)
+carte(s, 4.55, "3 · APRÈS PROPAGER : CHAQUE TUILE, SES PROPRES MESURES", True)
+fl = box(s, 6.45, 4.12, 0.6, 0.42, fill=GREEN, shape=MSO_SHAPE.DOWN_ARROW)
+text(s, 7.12, 4.13, 1.4, 0.4, "Propager", size=13, bold=True, font=HEAD, color=GREEN,
+     anchor=MSO_ANCHOR.MIDDLE)
+
+# 2. ce qui est réécrit, pour chaque tuile
+bx, bw = 8.85, 3.85
+text(s, bx, 1.93, bw, 0.3, "2 · CE QUE PROPAGER RÉÉCRIT", size=11, color=GREEN, font=HEAD)
+box(s, bx, 2.25, bw, 4.16, fill=CARD2)
+text(s, bx + 0.2, 2.36, bw - 0.3, 0.3,
+     [[("pour chaque tuile K", {"bold": True, "color": GREEN}),
+       ("  (Total Steps, Body Fat %)", {"color": MUTED, "size": 10})]], size=12)
 lignes = [
-    (None, "la tuile visée", [("[Weight]", "[Total Steps]")]),
-    (1, "étiquettes de référence : valeur", [("[Weight PY]", "[Total Steps PY]"),
-                                             ("[Weight Δ 30d]", "[Total Steps Δ 30d]")]),
+    (None, "la tuile visée", [("[Weight]", "[K]")]),
+    (1, "étiquettes : valeur", [("[Weight PY]", "[K PY]"), ("[Weight Δ 30d]", "[K Δ 30d]")]),
     (2, "étiquette : titre", [("« PY »", None)]),
-    (3, "détail", [("[Weight YoY %]", "[Total Steps YoY %]")]),
-    (4, "image", [("[Weight sparkline]", "[Total Steps sparkline]")]),
+    (3, "détail", [("[Weight YoY %]", "[K YoY %]")]),
+    (4, "image", [("[Weight sparkline]", "[K sparkline]")]),
 ]
-bx, bw = 4.75, 4.35
-box(s, bx, 2.35, bw, 3.45, fill=CARD2)
-yy = 2.5
+yy = 2.78
 for n, attr, paires in lignes:
     if n:
         puce(s, bx + 0.15, yy + 0.01, n, d=0.26)
     text(s, bx + 0.52, yy, bw - 0.6, 0.25, attr, size=11, bold=True)
-    yy += 0.25
+    yy += 0.26
     for avant, apres in paires:
         if apres is None:
             text(s, bx + 0.52, yy, bw - 0.6, 0.22,
                  [[(avant, {"font": MONO}), ("  un texte : recopié tel quel", {"color": MUTED})]],
-                 size=9.5)
+                 size=10)
         else:
             text(s, bx + 0.52, yy, bw - 0.6, 0.22,
-                 [[(avant, {"color": MUTED}), (" → ", {"color": MUTED}), (apres, {"color": GREEN})]],
-                 size=9.5, font=MONO)
-        yy += 0.21
-    yy += 0.13
+                 [[(avant, {"color": MUTED}), ("  →  ", {"color": MUTED}), (apres, {"color": GREEN})]],
+                 size=10.5, font=MONO)
+        yy += 0.23
+    yy += 0.14
 
-# 3. les autres tuiles
-arrow(s, 9.12, 3.6, 9.32, 3.6, color=GREEN)
-tuile(s, 9.35, 2.35, 3.35, 1.7, "Total Steps", "312 480", ("PY", "298 150"), ("Δ 30d", "+4 210"),
-      "▲ 4,8 % YoY", True, grand=False)
-tuile(s, 9.35, 4.15, 3.35, 1.7, "Body Fat %", "21,3 %", ("PY", "22,1 %"), ("Δ 30d", "−0,4"),
-      "▼ 3,6 % YoY", False, grand=False)
-
-box(s, 0.6, 6.3, 12.1, 0.62, fill=CARD2)
-text(s, 0.85, 6.3, 11.6, 0.62,
+box(s, 0.6, 6.6, 12.1, 0.5, fill=CARD2)
+text(s, 0.85, 6.6, 11.6, 0.5,
      [[("Un miroir : ", {"bold": True, "color": GREEN}),
        ("ce que le gabarit ne porte plus est retiré des autres tuiles (retirer l'image de Weight "
         "la retire partout). Le détail a sa propre colonne dans la grille des sources.", {})]],
-     size=13, anchor=MSO_ANCHOR.MIDDLE)
+     size=12, anchor=MSO_ANCHOR.MIDDLE)
 
-# ============================================================ 12. Diagramme propagation
-s = new_slide("Qui sert de gabarit à qui. Le gabarit de base irrigue tous les KPI ; un groupe peut "
-              "avoir son propre gabarit, qui reçoit d'abord la base puis la complète. Une règle plus "
-              "précise l'emporte toujours : une case de la grille, puis le groupe, puis Tous les KPI.")
+# ============================================================ 12c. Gabarits et groupes
+s = new_slide("Exemple à dix KPI, trois familles. Le gabarit de base, Average Steps, est formaté en "
+              "entier ; les KPI sans groupe le copient. Le groupe Sommeil a son gabarit, Average "
+              "Sleep Duration : il reçoit d'abord la base, puis ses propres réglages l'emportent, "
+              "réglage par réglage (ici ②, la couleur) ; ses KPI copient le résultat. Le groupe Poids "
+              "est indépendant : son gabarit, Weight, ne reçoit rien de la base.")
 title(s, "Qui copie qui : gabarits et groupes", "Rapport")
-label_box(s, 0.6, 2.0, 2.9, 1.1, "Average Steps", fill=CARD, line=GREEN, size=18, bold=True, font=HEAD,
-          sub="gabarit de base · à la main", name="Gabarit base")
-kp = ["Body Fat %", "Total Steps", "Weight"]
-for i, t in enumerate(kp):
-    y = 1.75 + i * 0.62
-    label_box(s, 4.6, y, 2.4, 0.5, t, fill=CARD, size=14)
-    elbow(s, 3.5, 2.55, 4.6, y + 0.25, color=GREEN)
-label_box(s, 0.6, 4.35, 2.9, 1.1, "Average Sleep Duration", fill=CARD2, line=BLUE, size=16, bold=True,
-          font=HEAD, color=BLUE, sub="gabarit du groupe 2", subcolor=BLUE)
-arrow(s, 2.05, 3.1, 2.05, 4.35, color=GREEN, dash=True)
-text(s, 2.2, 3.5, 1.9, 0.6, "reçoit d'abord la base", size=11, color=MUTED)
-label_box(s, 4.6, 4.65, 2.4, 0.5, "KPI du groupe 2", fill=CARD, size=14)
-arrow(s, 3.5, 4.9, 4.6, 4.9, color=BLUE)
-# ce qui est copié
-box(s, 7.5, 1.75, 5.2, 3.75, fill=CARD2)
-text(s, 7.8, 1.95, 4.7, 0.4, "Ce qui est copié", size=18, font=HEAD, color=GREEN)
-text(s, 7.8, 2.45, 4.7, 3.0,
-     [[("Les réglages de chaque visuel : séries, marqueurs, couleurs, étiquettes, images", {})],
-      [("… pour chaque variation et chaque branche", {"color": MUTED})],
-      [("", {"size": 6})],
-      [("Average Steps Δ 30d", {"font": MONO, "size": 12, "color": MUTED})],
-      [("→  Weight Δ 30d", {"font": MONO, "size": 12, "color": GREEN})],
-      [("→  Weight YTD Δ 30d", {"font": MONO, "size": 12, "color": BLUE})]],
-     size=14, spacing=3)
-# priorité
-text(s, 0.6, 5.85, 4, 0.4, "Qui l'emporte, du plus fort au plus faible", size=14, font=HEAD, color=MUTED)
-chain = ["règle de la case", "groupe (variation)", "gabarit du groupe", "Tous les KPI", "gabarit de base"]
-cx = 0.6
-for i, t in enumerate(chain):
-    wbox = 2.25
-    sh = box(s, cx, 6.25, wbox, 0.55, fill=CARD if i else CARD2, line=GREEN if i == 0 else None,
-             shape=MSO_SHAPE.CHEVRON if i else MSO_SHAPE.PENTAGON)
-    tf = sh.text_frame
-    tf.margin_left = Inches(0.25)
-    tf.vertical_anchor = MSO_ANCHOR.MIDDLE
-    p_ = tf.paragraphs[0]
-    p_.alignment = PP_ALIGN.CENTER
-    r = p_.add_run()
-    r.text = t
-    r.font.size = Pt(12)
-    r.font.name = BODY
-    r.font.color.rgb = TEXT
-    cx += wbox + 0.2 - 0.25
+text(s, 0.6, 1.42, 12.1, 0.4,
+     [[("Chaque KPI copie ses réglages d'un gabarit. Un groupe a le sien, ", {}),
+       ("posé par-dessus la base", {"bold": True}), (" : réglage par réglage, le sien l'emporte.", {})]],
+     size=15, color=MUTED)
+
+ORIG = {"base": GREEN, "sommeil": BLUE, "poids": ORANGE}
+
+
+def puces_origine(slide, x, y, origines):
+    for i, o in enumerate(origines):
+        c = box(slide, x + i * 0.34, y, 0.28, 0.28, fill=ORIG[o], radius=0.2)
+        tf = c.text_frame
+        tf.margin_left = tf.margin_right = tf.margin_top = tf.margin_bottom = 0
+        tf.vertical_anchor = MSO_ANCHOR.MIDDLE
+        p_ = tf.paragraphs[0]
+        p_.alignment = PP_ALIGN.CENTER
+        r = p_.add_run()
+        r.text = str(i + 1)
+        r.font.size = Pt(10)
+        r.font.bold = True
+        r.font.name = HEAD
+        r.font.color.rgb = DARK
+
+
+def famille(slide, y, tag, gabarit, sous, couleur, origines, membres, note=None):
+    text(slide, 0.6, y - 0.3, 3.5, 0.28, tag, size=10, color=couleur, font=HEAD)
+    box(slide, 0.6, y, 3.2, 0.95, fill=CARD2, line=couleur, lw=1.5)
+    text(slide, 0.78, y + 0.07, 2.9, 0.3, gabarit, size=13, bold=True, font=HEAD, color=couleur)
+    text(slide, 0.78, y + 0.33, 2.9, 0.25, sous, size=9.5, color=MUTED)
+    puces_origine(slide, 0.78, y + 0.6, origines)
+    yc, ybus = y + 0.47, y - 0.13
+    xs = [4.55 + i * 2.72 for i in range(len(membres))]
+    segment(slide, 3.8, yc, 4.2, yc, color=couleur, w=1.5)
+    segment(slide, 4.2, yc, 4.2, ybus, color=couleur, w=1.5)
+    segment(slide, 4.2, ybus, xs[-1] + 1.25, ybus, color=couleur, w=1.5)
+    for x, m in zip(xs, membres):
+        arrow(slide, x + 1.25, ybus, x + 1.25, y, color=couleur, w=1.5)
+        box(slide, x, y, 2.5, 0.95, fill=CARD)
+        text(slide, x + 0.18, y + 0.1, 2.2, 0.3, m, size=13, bold=True)
+        puces_origine(slide, x + 0.18, y + 0.55, origines)
+    if note:
+        text(slide, 3.95, y - 0.3, 2.8, 0.28, note, size=10, color=MUTED)
+
+
+famille(s, 2.25, "SANS GROUPE", "Average Steps", "gabarit de base · à la main", GREEN,
+        ["base"] * 3, ["Total Steps", "Calories", "Active Minutes"])
+famille(s, 3.85, "GROUPE SOMMEIL", "Average Sleep Duration", "gabarit du groupe · ② à la main",
+        BLUE, ["base", "sommeil", "base"], ["Sleep Score", "Time in Bed"])
+arrow(s, 3.55, 3.2, 3.55, 3.85, color=GREEN, dash=True)
+text(s, 1.95, 3.38, 1.53, 0.25, "reçoit d'abord la base", size=9, color=MUTED, align=PP_ALIGN.RIGHT)
+famille(s, 5.45, "GROUPE POIDS · INDÉPENDANT", "Weight", "gabarit du groupe · ①②③ à la main",
+        ORANGE, ["poids"] * 3, ["Body Fat %", "BMI"])
+text(s, 9.95, 5.45, 2.75, 0.95, "Indépendant : son gabarit ne reçoit rien de la base. Tout "
+     "vient de Weight.", size=11, color=MUTED, anchor=MSO_ANCHOR.MIDDLE)
+
+box(s, 0.6, 6.6, 12.1, 0.55, fill=CARD2)
+text(s, 0.85, 6.6, 11.7, 0.55,
+     [[("Réglages du Réel : ", {"bold": True}), ("① marqueurs  ② couleur de la série  ③ épaisseur", {}),
+       ("      couleur = d'où il vient : ", {"color": MUTED}),
+       ("base", {"bold": True, "color": GREEN}), ("  ·  ", {"color": MUTED}),
+       ("gabarit Sommeil", {"bold": True, "color": BLUE}), ("  ·  ", {"color": MUTED}),
+       ("gabarit Poids", {"bold": True, "color": ORANGE})]],
+     size=12, anchor=MSO_ANCHOR.MIDDLE)
+
+# ============================================================ 12d. Qui l'emporte, variation par variation
+s = new_slide("La grille des sources décide case par case : pour ce KPI et cette variation, de qui "
+              "copier. Une colonne, ce sont les réglages qui visent les mesures de cette variation : "
+              "le PY, c'est la série pointillée. Les mêmes dix KPI : « Tous les KPI » donne le PY de "
+              "Total Steps à tout le monde, les groupes le recevant par leur gabarit (sauf Poids, "
+              "indépendant) ; le groupe Sommeil prend son YoY % de Weight ; Calories garde son "
+              "YoY % à la main. Ces cases sont celles que calcule l'outil.")
+title(s, "Qui l'emporte, variation par variation", "Rapport")
+text(s, 0.6, 1.42, 12.1, 0.4,
+     [[("Une case = un KPI × une variation : ", {}), ("de qui copier", {"bold": True}),
+       (". Une colonne = les réglages qui visent cette variation.", {})]],
+     size=15, color=MUTED)
+
+YELLOW = VIOLET      # Total Steps : distinct de Weight (orange) une fois fondu
+COLS = [("Réel", "la série, ses marqueurs"), ("PY", "la série pointillée"),
+        ("YoY %", "l'étiquette YoY %")]
+# (libellé, est-ce une ligne de règle, [cases]) ; une case = (texte, couleur, gras)
+G, A = "Gabarit", "À la main"
+LIGNES = [
+    ("Tous les KPI", True, [None, ("Total Steps", YELLOW, True), None]),
+    ("Average Steps · base", False, [(G, GREEN, True), ("Total Steps", YELLOW, False),
+                                     (G, GREEN, True)]),
+    ("Total Steps", False, [("Average Steps", GREEN, False), (G, YELLOW, True),
+                            ("Average Steps", GREEN, False)]),
+    ("Calories", False, [("Average Steps", GREEN, False), ("Total Steps", YELLOW, False),
+                         (A, MUTED, True)]),
+    ("Active Minutes", False, [("Average Steps", GREEN, False), ("Total Steps", YELLOW, False),
+                               ("Average Steps", GREEN, False)]),
+    ("Groupe Sommeil", True, [None, None, ("Weight", ORANGE, True)]),
+    ("Average Sleep Duration", False, [("Gabarit, sur la base", BLUE, True),
+                                       ("Gabarit, sur Total Steps", BLUE, True),
+                                       ("Weight", ORANGE, False)]),
+    ("Sleep Score", False, [("Avg Sleep Duration", BLUE, False),
+                            ("Avg Sleep Duration", BLUE, False), ("Weight", ORANGE, False)]),
+    ("Time in Bed", False, [("Avg Sleep Duration", BLUE, False),
+                            ("Avg Sleep Duration", BLUE, False), ("Weight", ORANGE, False)]),
+    ("Groupe Poids · indép.", True, [None, None, None]),
+    ("Weight", False, [(G, ORANGE, True), ("Total Steps", YELLOW, False), (G, ORANGE, True)]),
+    ("Body Fat %", False, [("Weight", ORANGE, False), ("Total Steps", YELLOW, False),
+                           ("Weight", ORANGE, False)]),
+    ("BMI", False, [("Weight", ORANGE, False), ("Total Steps", YELLOW, False),
+                    ("Weight", ORANGE, False)]),
+]
+x0, wk, wv = 0.6, 2.3, 1.8
+y0, hh, hr = 1.95, 0.5, 0.335
+for j, (v, sous) in enumerate(COLS):
+    xx = x0 + wk + j * wv
+    box(s, xx, y0, wv - 0.04, hh - 0.04, fill=CARD2, shape=MSO_SHAPE.RECTANGLE)
+    text(s, xx + 0.08, y0 + 0.03, wv - 0.16, 0.45,
+         [[(v, {"bold": True, "size": 12})], [(sous, {"size": 8.5, "color": MUTED})]],
+         size=12, align=PP_ALIGN.CENTER)
+for i, (lib, regle, cases) in enumerate(LIGNES):
+    yy = y0 + hh + i * hr
+    text(s, x0 + (0.05 if regle else 0.18), yy, wk - 0.2, hr, lib, size=10,
+         bold=regle, color=MUTED if regle else TEXT, anchor=MSO_ANCHOR.MIDDLE)
+    if regle:
+        segment(s, x0, yy, x0 + wk + 3 * wv - 0.04, yy, color=LINE, w=0.75)
+    for j, c in enumerate(cases):
+        xx = x0 + wk + j * wv
+        if c is None:
+            if regle:
+                continue
+            c = ("", CARD, False)
+        t, col, gras = c
+        fond = melange(col, 0.36) if not regle else CARD2
+        box(s, xx, yy + 0.02, wv - 0.04, hr - 0.04, fill=fond,
+            line=col if regle else None, shape=MSO_SHAPE.RECTANGLE, lw=1.25)
+        text(s, xx + 0.05, yy, wv - 0.1, hr, t, size=8.5 if len(t) > 18 else 9.5, bold=gras,
+             color=col if regle else TEXT, align=PP_ALIGN.CENTER, anchor=MSO_ANCHOR.MIDDLE)
+
+# l'échelle
+lx, lw_ = 8.6, 4.1
+text(s, lx, 1.95, lw_, 0.3, "QUI L'EMPORTE, DU PLUS FORT AU PLUS FAIBLE", size=11, color=GREEN,
+     font=HEAD)
+echelle = [
+    ("La case", "Calories · YoY % : à la main."),
+    ("Le groupe, pour une variation", "Sommeil · YoY % : copie Weight."),
+    ("Tous les KPI, pour une variation", "PY : copie Total Steps. Un groupe le reçoit par son "
+                                         "gabarit, sauf s'il est indépendant (Poids)."),
+    ("Le gabarit du groupe", "Sleep Score : copie Average Sleep Duration."),
+    ("Le gabarit de base", "Tout le reste : copie Average Steps."),
+]
+yy = 2.35
+for i, (h_, d_) in enumerate(echelle):
+    puce(s, lx, yy, i + 1, d=0.32)
+    text(s, lx + 0.45, yy - 0.04, lw_ - 0.45, 0.85,
+         [[(h_, {"bold": True, "size": 12})], [(d_, {"size": 10.5, "color": MUTED})]], size=12)
+    yy += 0.88
+text(s, lx, 6.85, lw_, 0.3, "Une case en gras : une règle posée là, ou un gabarit.", size=9.5,
+     color=MUTED)
 
 # ============================================================ 13. Grille des sources
 s = new_slide("La grille dit, case par case, de quel KPI chaque KPI copie chaque variation. "

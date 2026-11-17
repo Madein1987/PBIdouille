@@ -37,6 +37,7 @@ PAGES = [
     ("propagation", "Le formatage se propage", "propagation.png"),
     ("propagation_carte", "La carte se propage aussi", "propagation_carte.png"),
     ("gabarits", "Qui copie qui : gabarits et groupes", "gabarits.png"),
+    ("regles", "Qui l'emporte, variation par variation", "regles.png"),
 ]
 
 

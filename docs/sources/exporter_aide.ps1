@@ -23,6 +23,7 @@ $pages = [ordered]@{
     "propagation.png"      = "Comment le formatage se propage"
     "propagation_carte.png" = "La carte se propage aussi"
     "gabarits.png"         = "Qui copie qui : gabarits et groupes"
+    "regles.png"           = "Qui l'emporte, variation par variation"
 }
 
 $pp = New-Object -ComObject PowerPoint.Application

@@ -24,7 +24,7 @@ fichiers qu'à l'ouverture.
 
 Les schémas du guide de démarrage :
 [PBIdouille - Guide de demarrage rapide.pptx](docs/PBIdouille%20-%20Guide%20de%20demarrage%20rapide.pptx)
-(19 diapos, à télécharger). L'app les montre aussi : bouton **Guide** de la
+(20 diapos, à télécharger). L'app les montre aussi : bouton **Guide** de la
 barre du haut, et liens **▣ Schéma** là où chaque notion sert.
 
 ### Les variations se ramifient
@@ -48,24 +48,33 @@ Une variation s'écrit une fois, avec des jetons (`{baseRef}`, `{kpiRef}`,
 ### Le formatage se propage, visuel par visuel
 
 Dans un visuel, chaque réglage de formatage vise **une** mesure : celle du
-KPI que le segment montre. Propager recopie chaque réglage dans le même
-visuel, pour la même variation de chaque KPI : seul le KPI change.
+KPI que le segment montre. Propager prend les réglages du gabarit et les
+recopie, dans le même visuel, **pour chaque KPI cible** : seul le KPI change.
 
 ![Comment le formatage se propage](bidouille/aide/propagation.png)
 
 ### La carte se propage aussi
 
-Les étiquettes, le détail et l'image d'une tuile sont des mesures de son KPI :
-elles changent avec lui.
+Avant, seule la tuile gabarit est formatée ; après, chaque tuile l'est, avec
+ses propres mesures : les étiquettes, le détail et l'image d'une tuile sont
+des mesures de son KPI.
 
 ![La carte se propage aussi](bidouille/aide/propagation_carte.png)
 
 ### Qui copie qui
 
-Un gabarit de base pour tout le monde, un gabarit par groupe, et des règles
-plus précises qui l'emportent.
+Un gabarit de base pour tout le monde, un gabarit par groupe posé
+par-dessus la base (réglage par réglage, le sien l'emporte), et un groupe
+indépendant qui ne reçoit rien de la base.
 
 ![Qui copie qui : gabarits et groupes](bidouille/aide/gabarits.png)
+
+### Qui l'emporte, variation par variation
+
+La grille des sources sur le même exemple : pour chaque KPI et chaque
+variation, de qui copier, et la règle qui décide.
+
+![Qui l'emporte, variation par variation](bidouille/aide/regles.png)
 
 ---
 
