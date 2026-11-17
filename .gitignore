@@ -70,5 +70,5 @@ Thumbs.db
 # Jamais versionné, jamais zippé : un dossier sans lui est en production.
 .dev
 
-# --- paquets construits par empaqueter.py ---
+# --- anciens zips du dossier de travail ---
 dist/

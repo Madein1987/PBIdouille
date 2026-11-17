@@ -87,11 +87,12 @@ L'app rouvre le dernier rapport utilisé. Le `measures_config.json` est
 cherché à côté du `.pbip` ; le bouton 📄 sous la barre du projet en choisit
 un autre.
 
-**Partager** : `py empaqueter.py` construit un zip dans `dist\`. Il démarre
-toujours en **édition production** (cf. §13, « Édition production / dev »).
+**Partager** : sur GitHub, branche `stable`, **Code → Download ZIP**. Le
+dossier extrait démarre toujours en **édition production** (cf. §13,
+« Édition production / dev ») : le fichier `.dev` n'est jamais versionné.
 
-**Branches** : `stable` est ce qu'on partage, et ce dont le zip est tiré ;
-`experimental` porte le travail en cours.
+**Branches** : `stable` est ce qu'on partage ; `experimental` porte le
+travail en cours.
 
 ---
 
@@ -159,9 +160,8 @@ doublon. Tout ce qui est réécrit est d'abord sauvegardé.
 | `bidouille\core\` | projet, journal, thème, édition, lecture du modèle et du rapport |
 | `bidouille\tabs\` | les onglets et leurs fenêtres |
 | `bidouille\aide\` | les images du guide intégré |
-| `tests\` | les suites de tests (chacune finit par « TOUT OK ») |
+| `tests\` | les suites de tests (chacune finit par « TOUT OK ») ; `test_python38.py` garde l'app lisible en Python 3.8 |
 | `docs\` | le guide PowerPoint ; `docs\sources\build_deck.py` le reconstruit, `exporter_aide.ps1` en tire les images de `bidouille\aide\` (PowerPoint requis) |
-| `empaqueter.py` | construit le zip partageable (l'app et le guide, sans les tests ni les sources du guide) |
 
 Côté projet, à côté du `.pbip` : `measures_config.json` (variations,
 branches, paramètres de champ, réglages), `TD_Indicateurs.xlsx` (l'Excel des
@@ -1975,8 +1975,9 @@ générées, retirer la variation du config plutôt que la mesure.
 
 ## 12. Installer au travail
 
-Le zip de `dist\` (`py empaqueter.py`, depuis la branche `stable`) contient
-l'app et le guide. L'extraire où l'on veut, puis :
+Télécharger le zip de la branche `stable` sur GitHub (**Code → Download
+ZIP**) ; il contient l'app et le guide (`docs\`). L'extraire où l'on veut,
+puis :
 
 - [ ] Python 3.8+ disponible (`py --version`) ;
 - [ ] `qtpy` et un binding Qt : PyQt5 (déjà au travail) ou PySide6
@@ -2077,8 +2078,8 @@ leur titre. Le guide lui-même se reconstruit avec `docs\sourcesuild_deck.py`
 
 ```
 <dossier de travail>\
-  PBIdouille\        l'outil — ce dépôt git : app.py, bidouille\, tests\,
-                     docs\, dist\, README.md, empaqueter.py, .dev
+  PBIdouille\        l'outil, ce dépôt git : app.py, bidouille\, tests\,
+                     docs\, README.md, .dev
   PowerBI\           les projets : *.pbip (+ .Report / .SemanticModel),
                      TD_Indicateurs.xlsx, measures_config.json,
                      propagation.json, catalogue_variations.json,
@@ -2260,9 +2261,9 @@ reste, il n'est pas offert) :
 
 **La production est le défaut.** L'édition dev ne s'obtient qu'en posant un
 fichier **`.dev`** à côté de `app.py` (ou `PBIDOUILLE_DEV=1`) — jamais versionné,
-jamais zippé. Un dossier sans lui est en production : impossible de partager
-la version dev par mégarde, alors que l'inverse (oublier de « passer en
-production » avant de zipper) l'aurait permis. Le titre de la fenêtre porte
+donc jamais dans le zip de GitHub. Un dossier sans lui est en production :
+impossible de partager la version dev par mégarde, alors que l'inverse
+(oublier de « passer en production » avant de partager) l'aurait permis. Le titre de la fenêtre porte
 la version, et « (dev) » hors production. Voir `bidouille/core/edition.py`.
 
 L'objet Wireframe existe quand même en production (il ne lit rien sans
@@ -2271,19 +2272,13 @@ méthodes qui écrivent refusent aussi d'elles-mêmes en production — pas
 seulement leurs boutons : un raccourci (Ctrl+Z) ou un appel oublié ne passe
 pas. `tests/test_edition.py` force chacune et vérifie que rien n'est écrit.
 
-**Construire le zip** :
-
-```
-py empaqueter.py              -> dist\PBIdouille_<version>_<date>.zip
-py empaqueter.py --verifier   -> les vérifications seules
-```
-
-Le zip ne prend que les fichiers **suivis par git** (jamais un projet, un
-Excel, une sauvegarde ou une bibliothèque personnelle), sans les tests, plus
-le guide de `docs\`. Avant d'écrire, il vérifie que chaque module se lit en
+**Partager** : le zip de la branche `stable` sur GitHub. Il ne contient que
+les fichiers **suivis par git** (jamais un projet, un Excel, une sauvegarde
+ou une bibliothèque personnelle : `.gitignore` les tient dehors).
+`tests/test_python38.py` vérifie que chaque module de l'app se lit en
 **Python 3.8** et porte `from __future__ import annotations`, qu'aucune
-fonction postérieure à 3.8 n'est appelée (`removeprefix`…), et que le paquet,
-extrait ailleurs, démarre bien en production. Un échec n'écrit rien.
+fonction postérieure à 3.8 n'est appelée (`removeprefix`…), et qu'aucun
+`.dev` n'est versionné. À lancer avant de pousser sur `stable`.
 
 ### Architecture
 
