@@ -336,7 +336,7 @@ class ArbreMesures(QWidget):
             return
         if courant.data(0, ROLE_GROUPE):
             self.fiche.vider(f"{courant.text(COL_NOM)} : {courant.text(COL_ETAT)}. "
-                             "Choisis une mesure pour voir son DAX et ses attributs.")
+                             "Choisir une mesure pour voir son DAX et ses attributs.")
             return
         n = self._par_nom.get(courant.data(0, Qt.UserRole))
         if n is None:

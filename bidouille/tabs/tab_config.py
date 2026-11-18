@@ -513,8 +513,8 @@ class ConfigTab(QWidget):
         biblio.addWidget(b_biblio)
         biblio.addWidget(bouton_schema(self, "variations"))
         biblio.addWidget(self._help("Bibliothèque de variations", (
-            "Un fichier GLOBAL, hors projet, où tu gardes les variations que\n"
-            "tu réutilises d'un rapport à l'autre.\n\n"
+            "Un fichier GLOBAL, hors projet, qui garde les variations\n"
+            "réutilisées d'un rapport à l'autre.\n\n"
             "IMPORTER copie la variation choisie DANS le measures_config.json\n"
             "de ce rapport. Le config reste donc autonome : ce qu'il contient\n"
             "est exactement ce qui sera généré, rien à cocher ni à retenir\n"
@@ -524,10 +524,10 @@ class ConfigTab(QWidget):
             "Une variation qui sert de BRANCHE amène son entrée de branche.\n"
             "Importer une variation déjà présente la REMPLACE (on confirme).\n\n"
             "Le chemin du fichier est retenu au niveau de l'APPLICATION, pas\n"
-            "du projet, et il n'est pas relatif au rapport courant : choisis-le\n"
+            "du projet, et il n'est pas relatif au rapport courant : le choisir\n"
             "une fois et il est retrouvé à chaque lancement, quel que soit le\n"
-            "projet ouvert. Pose-le sur un lecteur partagé et toute l'équipe y\n"
-            "puise.\n\n"
+            "projet ouvert. Le poser sur un lecteur partagé permet à toute\n"
+            "l'équipe d'y puiser.\n\n"
             "Le chemin retenu est affiché juste en dessous.")))
         biblio.addStretch()
         lv.addLayout(biblio)
@@ -671,8 +671,8 @@ class ConfigTab(QWidget):
             "     Réel →  [Weight]      - [Weight cible]\n"
             "     YTD  →  [Weight YTD]  - [Weight cible YTD]\n"
             "\n"
-            "⚠ N'écris PAS « [{kpi}] - {baseRef} » : {kpi} est le KPI RACINE,\n"
-            "sans branche, donc en YTD tu comparerais le réel COURANT à la\n"
+            "⚠ Ne PAS écrire « [{kpi}] - {baseRef} » : {kpi} est le KPI RACINE,\n"
+            "sans branche, donc en YTD on comparerait le réel COURANT à la\n"
             "cible YTD. {kpiRef} suit la branche, {kpi} non, c'est voulu.\n"
             "\n"
             "Une variation « écart » se coche ici mais se DÉCOCHE côté KPI\n"
@@ -693,8 +693,8 @@ class ConfigTab(QWidget):
             "Toutes les mesures de la branche se lisent alors pareil, le" + chr(10) +
             "DAX généré est trivial, et un correctif ici se répercute" + chr(10) +
             "sans régénérer." + chr(10) + chr(10) +
-            "⚠ DÉCOCHE si le DAX ÉPINGLE une fenêtre sur la borne du" + chr(10) +
-            "contexte (MAX, DATEADD, DATESINPERIOD) et que tu veux la" + chr(10) +
+            "⚠ DÉCOCHER si le DAX ÉPINGLE une fenêtre sur la borne du" + chr(10) +
+            "contexte (MAX, DATEADD, DATESINPERIOD) et que l'on veut la" + chr(10) +
             "version « du cumul » : « 7d avg » enveloppé est le 7d avg" + chr(10) +
             "ordinaire, pas la moyenne 7 jours de [Weight YTD]." + chr(10) + chr(10) +
             "Sans effet si la branche recopie tout (⚙ Réglages → Branches," + chr(10) +
@@ -720,11 +720,11 @@ class ConfigTab(QWidget):
             "   #,0.00 $    donne  devise\n"
             "   #,0 ou vide donne  nombre\n\n"
             "DÉCLARÉS dans TD_Indicateurs (colonne « type », ⚙\n"
-            "Réglages) : ratio, durée, indice, ou ce que tu veux. Un format ne\n"
+            "Réglages) : ratio, durée, indice, ou toute autre valeur. Un format ne\n"
             "peut PAS les deviner, un ratio décimal (0,85) s'écrit comme un\n"
             "nombre. La déclaration prime toujours sur la déduction.\n\n"
             "Exemple : un « % du total » n'a de sens ni sur un pourcentage ni\n"
-            "sur un ratio, coche nombre et devise seulement.\n\n"
+            "sur un ratio, cocher nombre et devise seulement.\n\n"
             "Le journal résume ce qui a été écarté, et l'aperçu suit le filtre.")))
         kinds.addStretch()
         holder_k = QWidget()
@@ -800,7 +800,7 @@ class ConfigTab(QWidget):
         self.explorateur_jetons.attribut_retire.connect(self._attribut_retire)
         self.btn_jetons = QPushButton("Jetons disponibles…")
         self.btn_jetons.setToolTip("Ce que vaut chaque jeton pour le KPI ou la cible\n"
-                                   "de ton choix, et où il se règle.")
+                                   "choisie, et où il se règle.")
         self.btn_jetons.clicked.connect(self.fenetre_jetons.montrer)
         rang_jetons = QHBoxLayout()
         rang_jetons.addWidget(self.btn_jetons)
@@ -821,7 +821,7 @@ class ConfigTab(QWidget):
                            "la racine telle quelle, puis ce que la branche et\n"
                            "la variation lui AJOUTENT (le texte de leur\n"
                            "namePattern).\n\n"
-                           "Déplie un nom : son DAX et ses attributs, tels que\n"
+                           "Déplier un nom pour voir son DAX et ses attributs, tels que\n"
                            "« Générer » les écrira (jetons développés).")
         av.addWidget(legende)
         # un nom par ligne ; DÉPLIÉ, son DAX et ses attributs. Les noms sont
@@ -1065,7 +1065,7 @@ class ConfigTab(QWidget):
         config où l'on a versé les réglages en cours. Rien n'est écrit."""
         import copy
         if not self.project or not self.project.model_dir.exists():
-            self.apercu_fp.erreur("Aucun modèle : ouvre un projet .pbip.")
+            self.apercu_fp.erreur("Aucun modèle : ouvrir un projet .pbip.")
             return
         cfg = copy.deepcopy(self._config)
         self._fp_vers(cfg)
@@ -1261,7 +1261,7 @@ class ConfigTab(QWidget):
         gb_td = QGroupBox("Excel des indicateurs (TD_Indicateurs)")
         tdv = QVBoxLayout(gb_td)
         tdv.addWidget(self._resume(
-            "Le classeur qui décrit tes KPI, une ligne par mesure de base, "
+            "Le classeur qui décrit les KPI, une ligne par mesure de base, "
             "défini ici une fois, utilisé par tout l'outil (attributs, "
             "couleurs des matrices, ordre des KPI)."))
         ligne1 = QHBoxLayout()
@@ -1277,10 +1277,10 @@ class ConfigTab(QWidget):
         b_td_rel.setToolTip(
             "Relire les colonnes depuis l'Excel.\n"
             "Les en-têtes sont lus une fois et gardés en mémoire : l'outil ne\n"
-            "rouvre pas le classeur pendant que tu travailles dedans. Clique\n"
+            "rouvre pas le classeur pendant qu'on travaille dedans. Cliquer\n"
             "ici après avoir AJOUTÉ une colonne dans Excel.\n"
             "(Les générations et les couleurs, elles, relisent toujours le\n"
-            "disque : rien à rafraîchir pour qu'elles voient tes changements.)")
+            "disque : rien à rafraîchir pour qu'elles voient les changements.)")
         # clicked(bool) passerait « False » comme premier argument : le lambda
         # garantit que le bouton FORCE bien la relecture
         b_td_rel.clicked.connect(lambda: self._td_reload_columns(force=True))
@@ -1289,7 +1289,7 @@ class ConfigTab(QWidget):
         ligne1.addWidget(b_td)
         ligne1.addWidget(b_td_rel)
         ligne1.addWidget(self._help("Excel des indicateurs", (
-            "Le classeur qui décrit tes KPI, une ligne par mesure de base.\n"
+            "Le classeur qui décrit les KPI, une ligne par mesure de base.\n"
             "Défini ICI une seule fois, et utilisé par TOUT l'outil :\n\n"
             "  · jetons <<label>> figés dans le DAX (colonnes ci-dessous) ;\n"
             "  · couleurs des matrices par KPI (onglet Rapport).\n\n"
@@ -1322,7 +1322,7 @@ class ConfigTab(QWidget):
             "Power BI applique de lui-même. Cette colonne prend la main :\n"
             "sa valeur devient la colonne Ordre des tables paramètre, et donc\n"
             "l'ordre du slicer (sortByColumn).\n\n"
-            "Mets-y des nombres (10, 20, 30… : on peut intercaler sans tout\n"
+            "Y mettre des nombres (10, 20, 30… : on peut intercaler sans tout\n"
             "renuméroter). Ils sont comparés comme des NOMBRES, donc 10 vient\n"
             "bien après 9. Une valeur texte est acceptée et se range après les\n"
             "nombres, alphabétiquement.\n\n"
@@ -1336,7 +1336,7 @@ class ConfigTab(QWidget):
 
         groupes["generation"] = self._form_group("Génération (settings)", [
             ("sourceTable :", self.g_sourceTable,
-             "Table où le générateur cherche les mesures de BASE : tes KPI.\n\n"
+             "Table où le générateur cherche les mesures de BASE : les KPI.\n\n"
              "Défaut : _mesures."),
             ("sourceFolder :", self.g_sourceFolder,
              "Dossier d'affichage (displayFolder) qui contient les KPI à\n"
@@ -1403,7 +1403,7 @@ class ConfigTab(QWidget):
              "calcule tout, n'écrit rien.\n\n"
              "Dans l'app, c'est la case « Aperçu (dry-run) » du panneau de\n"
              "génération qui décide : ce réglage-ci y est sans effet."),
-        ], resume="Où le générateur trouve tes KPI, où il range ce qu'il crée, "
+        ], resume="Où le générateur trouve les KPI, où il range ce qu'il crée, "
                   "et ce qu'il a le droit de modifier.")
 
         gb_d = QGroupBox("Formats « delta »")
@@ -1428,7 +1428,7 @@ class ConfigTab(QWidget):
             "doit être écrit ici, sinon la valeur s'affiche nue.\n"
             "   +  /  -  /  (vide)      donne  +12,3   -12,3   0\n"
             "   ▲  /  ▼  /  (vide)      donne  ▲ 12,3  ▼ 12,3  0\n"
-            "Avec une flèche, ne mets PAS de « - » : la flèche porte le sens et\n"
+            "Avec une flèche, ne PAS mettre de « - » : la flèche porte le sens et\n"
             "la valeur s'affiche en absolu.\n\n"
             "REPLI : format utilisé quand la mesure de BASE n'a aucun\n"
             "formatString. Sans lui le delta n'hérite de rien, n'a donc aucun\n"
@@ -1441,11 +1441,11 @@ class ConfigTab(QWidget):
         # -- mesures cibles (dossier dédié : bases supplémentaires) --
         gb_c = QGroupBox("Mesures cibles (dossier dédié)")
         cv = QVBoxLayout(gb_c)
-        note_c = QLabel("Crée À LA MAIN la cible RACINE par KPI (ex. « Weight cible ») dans "
+        note_c = QLabel("Créer À LA MAIN la cible RACINE par KPI (ex. « Weight cible ») dans "
                         "un dossier dédié : le générateur la décline en TOUTES les variations "
                         "(comme un KPI, enveloppant [Weight cible]). Au paramètre : Indicateur "
                         "= le KPI (préfixe du nom), Calcul = « Cible » / « Cible 7d avg »… "
-                        "(préfixé par le libellé ci-dessous), Branche normale. Ne mets que la "
+                        "(préfixé par le libellé ci-dessous), Branche normale. Ne mettre que la "
                         "racine ; le dossier doit différer de sourceFolder (imbriqué = OK, "
                         "matché par sa feuille).")
         note_c.setWordWrap(True)
@@ -1511,7 +1511,7 @@ class ConfigTab(QWidget):
         vb_haut.addLayout(colonnes, 1)
         gauche = QVBoxLayout()
         colonnes.addLayout(gauche, 2)
-        note = QLabel("Coche une variation pour qu'elle devienne une BRANCHE : ses mesures sont "
+        note = QLabel("Cocher une variation pour qu'elle devienne une BRANCHE : ses mesures sont "
                       "redéclinées (ex. YTD → YTD PY, YTD 7d avg…).")
         note.setWordWrap(True)
         note.setStyleSheet(f"color:{TEXT_DIM};")
@@ -1533,7 +1533,7 @@ class ConfigTab(QWidget):
         pick.addWidget(self.g_branch_pick, 1)
         droite.addLayout(pick)
         note2 = QLabel("Les variations que cette branche applique. Toutes le sont par "
-                       "défaut, et une variation ajoutée plus tard aussi : décoche celles "
+                       "défaut, et une variation ajoutée plus tard aussi : décocher celles "
                        "à exclure, ex. une cible autonome en {kpi} qui n'a pas à être "
                        "re-forkée.")
         note2.setWordWrap(True)
@@ -1559,7 +1559,7 @@ class ConfigTab(QWidget):
             "celles qui ÉPINGLENT une fenêtre sur la borne du contexte\n"
             "(MAX({date}), DATEADD, DATESINPERIOD), « 7d avg » enveloppé\n"
             "est le 7d avg ordinaire, pas le 7d avg du cumul YTD.\n"
-            "Pour celles-là, décoche « envelopper en branche » dans l'éditeur\n"
+            "Pour celles-là, décocher « envelopper en branche » dans l'éditeur\n"
             "de la variation : elle seule repasse en substitution.")
         enveloppe_l = QHBoxLayout()
         self.g_branch_envelopper = QCheckBox(
@@ -1682,7 +1682,7 @@ class ConfigTab(QWidget):
         if not self.project or not self.project.config_json.exists():
             QMessageBox.information(
                 self, "Réglages",
-                "Aucun measures_config.json chargé pour ce rapport, choisis-le\n"
+                "Aucun measures_config.json chargé pour ce rapport, le choisir\n"
                 "d'abord avec le bouton 📄 du config, sous la barre du projet.")
             return False
         if not self._committer_vue():
@@ -1709,7 +1709,7 @@ class ConfigTab(QWidget):
                 self._config = json.loads(self.ed_raw.toPlainText())
             except ValueError as e:
                 QMessageBox.warning(self, "JSON invalide",
-                                    f"{e}\n\nCorrige le JSON brut d'abord.")
+                                    f"{e}\n\nCorriger le JSON brut d'abord.")
                 return False
         elif self.inner.currentIndex() == IDX_VARIATIONS:
             self._commit_form()
@@ -1746,7 +1746,7 @@ class ConfigTab(QWidget):
         copie : le générateur ne doit rien y laisser). Rien n'est écrit."""
         import copy
         if not self.project or not self.project.model_dir.exists():
-            self.arbre_mesures.erreur("Aucun modèle : ouvre un projet .pbip.")
+            self.arbre_mesures.erreur("Aucun modèle : ouvrir un projet .pbip.")
             return
         avis: list = []
 
@@ -1904,7 +1904,7 @@ class ConfigTab(QWidget):
         derive = gm.patron_enveloppe(branch_id, {}, self._config.get("variations") or {})
         self.g_branch_wrap.setPlaceholderText(
             f"vide = tiré du DAX de {branch_id} : {derive}" if derive else
-            f"le DAX de {branch_id} ne cite pas {{baseRef}} : écris le patron, "
+            f"le DAX de {branch_id} ne cite pas {{baseRef}} : écrire le patron, "
             "ex. CALCULATE({variationRef}, DATESYTD({date}))")
         self.g_branch_wrap.blockSignals(False)
         self.g_branch_envelopper.blockSignals(True)
@@ -2196,7 +2196,7 @@ class ConfigTab(QWidget):
             self.ed_raw.blockSignals(False)
             self.lbl_hint.setText(
                 "Aucun measures_config.json chargé, attendu : " + str(path)
-                + "\nClique le bouton 📄 du config, sous la barre du projet, pour choisir celui de "
+                + "\nCliquer sur le bouton 📄 du config, sous la barre du projet, pour choisir celui de "
                   "CE rapport (au travail il peut vivre dans un autre dossier).")
             self.lbl_hint.show()
             for w in (self.inner, self.btn_save, self.btn_reload):
@@ -2213,7 +2213,7 @@ class ConfigTab(QWidget):
             self._config = json.loads(self.project.config_json.read_text(encoding="utf-8"))
         except (ValueError, OSError) as e:
             QMessageBox.critical(self, "measures_config.json",
-                                 f"Illisible : {e}\nCorrige-le dans le sous-onglet JSON brut.")
+                                 f"Illisible : {e}\nLe corriger dans le sous-onglet JSON brut.")
             self._config = {}
         self._populate_list()
         self.ed_raw.blockSignals(True)
@@ -2279,7 +2279,7 @@ class ConfigTab(QWidget):
             ("Bibliothèque : " if existe else "⚠ Bibliothèque introuvable : ")
             + chemin
             + ("  (mémorisée pour tous les projets)" if existe
-               else ", clique « Bibliothèque… » pour en choisir une"))
+               else ", cliquer sur « Bibliothèque… » pour en choisir une"))
         self.lbl_biblio.setStyleSheet(
             f"color:{TEXT_DIM};" if existe else f"color:{YELLOW};")
 
@@ -2298,7 +2298,7 @@ class ConfigTab(QWidget):
         n = len(self._variations())
         self.lbl_catalogue.setText(
             f"{n} variation(s) dans ce rapport"
-            + ("" if n else ", clique « Bibliothèque… » pour en importer"))
+            + ("" if n else ", cliquer sur « Bibliothèque… » pour en importer"))
 
     def _variations(self) -> dict:
         return self._config.setdefault("variations", {})
@@ -2560,7 +2560,7 @@ class ConfigTab(QWidget):
         if '"' in fmt_txt or "\\ " in fmt_txt:
             avertissements.append(
                 "⚠ formatString : une espace n'a besoin de RIEN, ni "
-                "guillemets, ni backslash. Écris « #,0.00 $ ». "
+                "guillemets, ni backslash. Écrire « #,0.00 $ ». "
                 "(espace, + - $ ( ) s'affichent d'eux-mêmes ; seules les "
                 "lettres et symboles demandent un backslash, ex. \\p\\t\\s.)")
         self.lbl_lint.setText("\n".join(avertissements))
@@ -2592,11 +2592,11 @@ class ConfigTab(QWidget):
                       if not gm.name_excluded(tpl_ex, c, k)
                       or gm.name_included(tpl_ex, c, k)]
             if not cibles:
-                notes.append("(aucune cible trouvée, vérifie le dossier des "
+                notes.append("(aucune cible trouvée, vérifier le dossier des "
                              "cibles dans ⚙ Réglages)")
         if not roots:
             self._ecrire_apercu([[(
-                "Portée vide : coche « générer pour les KPI » et/ou « générer "
+                "Portée vide : cocher « générer pour les KPI » et/ou « générer "
                 "pour les cibles »,\nsinon cette variation n'est générée nulle part."
                 + ("\n" + "\n".join(notes) if notes else ""), "etiquette")]])
             return
@@ -2676,7 +2676,7 @@ class ConfigTab(QWidget):
         sur une copie du config (cf. generate_measures.apercu_jetons)."""
         ex = self.explorateur_jetons
         if not self.project or not self.project.model_dir.exists():
-            ex.erreur("Ouvre un projet .pbip pour voir ce que valent les jetons.")
+            ex.erreur("Ouvrir un projet .pbip pour voir ce que valent les jetons.")
             return
         try:
             donnees = gm.apercu_jetons(self.project.model_dir, self._config,
@@ -2721,7 +2721,7 @@ class ConfigTab(QWidget):
             action(session.save)
         except PermissionError:
             br.abandonner(session)
-            ex.message(f"{xlsx.name} est ouvert dans Excel : ferme-le et réessaie.", True)
+            ex.message(f"{xlsx.name} est ouvert dans Excel : le fermer et réessayer.", True)
             return False
         except (OSError, ValueError) as e:
             br.abandonner(session)
@@ -2772,7 +2772,7 @@ class ConfigTab(QWidget):
             return
         colonne = colonne or label
         if self._nom_attribut_invalide(label) or self._nom_attribut_invalide(colonne):
-            ex.message("Donne un nom de jeton, sans < > ni { }.", True)
+            ex.message("Donner un nom de jeton, sans < > ni { }.", True)
             return
         jetons = self._jetons_attributs()
         if label in jetons:
@@ -2850,7 +2850,7 @@ class ConfigTab(QWidget):
             return
         noeuds, avis, erreur = {}, [], ""
         if not self.project or not self.project.model_dir.exists():
-            erreur = "ouvre un projet .pbip pour voir le DAX généré"
+            erreur = "ouvrir un projet .pbip pour voir le DAX généré"
         else:
             cfg = copy.deepcopy(self._config)
             v = (cfg.get("variations") or {}).get(self._current)
@@ -3070,7 +3070,7 @@ class ConfigTab(QWidget):
                 self._config = json.loads(self.ed_raw.toPlainText())
             except ValueError as e:
                 QMessageBox.warning(self, "JSON invalide",
-                                    f"{e}\n\nCorrige le JSON brut avant de changer de vue.")
+                                    f"{e}\n\nCorriger le JSON brut avant de changer de vue.")
                 self.inner.blockSignals(True)
                 self.inner.setCurrentIndex(IDX_RAW)
                 self.inner.blockSignals(False)

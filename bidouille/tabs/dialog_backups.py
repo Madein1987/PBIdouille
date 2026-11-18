@@ -207,7 +207,7 @@ class BackupsDialog(QDialog):
                           + Path(rep["sauvegarde_avant"]).name + ".")
         if rep["ignorés"]:
             detail.append(f"{len(rep['ignorés'])} ignoré(s) (cible inconnue).")
-        detail.append("Rouvre le .pbip dans Power BI Desktop.")
+        detail.append("Rouvrir le .pbip dans Power BI Desktop.")
         QMessageBox.information(self, "Restauration terminée", "\n".join(detail))
 
         if self.on_restored:

@@ -15,16 +15,16 @@ Il y en a deux familles, reconnaissables à leur couleur dans l'éditeur DAX :
 
 ## Voir ce que vaut un jeton
 
-Dans **Mesures › Variations**, clique **Jetons disponibles…** sous le DAX. La fenêtre
+Dans **Mesures › Variations**, cliquer **Jetons disponibles…** sous le DAX. La fenêtre
 reste ouverte à côté de l'éditeur.
 
-1. Choisis une **mesure** (un KPI, ou une cible sous son KPI) et une **branche**.
-2. Lis la **valeur** de chaque jeton pour cette mesure, et **où elle se règle**.
-3. **Double-clique** un jeton pour l'insérer dans le DAX.
+1. Choisir une **mesure** (un KPI, ou une cible sous son KPI) et une **branche**.
+2. Lire la **valeur** de chaque jeton pour cette mesure, et **où elle se règle**.
+3. **Double-cliquer** sur un jeton pour l'insérer dans le DAX.
 
 Les cibles du rapport apparaissent sous leur KPI. Une cible est une mesure écrite à
 la main dans Power BI, rangée dans le dossier indiqué dans **⚙ Réglages → Mesures
-cibles**. Pour qu'elle existe dans une branche, coche **générer pour les cibles** sur
+cibles**. Pour qu'elle existe dans une branche, cocher **générer pour les cibles** sur
 la variation de cette branche.
 
 Sous les jetons `{…}`, la section **Attributs de TD_Indicateurs** se modifie sur
@@ -85,7 +85,7 @@ de les comparer :
 Weight cible écart = [Weight] - [Weight cible]
 ```
 
-Coche **générer pour les cibles** et décoche **générer pour les KPI** : sur un KPI,
+Cocher **générer pour les cibles** et décocher **générer pour les KPI** : sur un KPI,
 `{kpiRef}` et `{baseRef}` sont la même mesure et l'écart vaudrait 0.
 
 ### `{branch}` dans un nom de mesure
@@ -112,15 +112,15 @@ peut donc se comporter différemment pour chaque KPI.
 Tout se fait dans la section **Attributs de TD_Indicateurs** de la fenêtre **Jetons
 disponibles…**, sans ouvrir autre chose.
 
-Chaque jeton y est écrit comme dans le DAX, `<<unite>>`. Quand tu saisis un nom, les
+Chaque jeton y est écrit comme dans le DAX, `<<unite>>`. À la saisie d'un nom, les
 chevrons sont facultatifs.
 
-**Pour en ajouter un**, utilise la ligne sous le tableau : le nom du jeton, la colonne
+**Pour en ajouter un**, utiliser la ligne sous le tableau : le nom du jeton, la colonne
 et la valeur du KPI choisi, puis **Ajouter**. Si la colonne n'existe pas encore, elle
 est créée dans `TD_Indicateurs.xlsx`, et dans son tableau Excel s'il y en a un. Sans
 colonne indiquée, elle prend le nom du jeton.
 
-**Pour modifier**, écris directement dans les cases :
+**Pour modifier**, écrire directement dans les cases :
 
 | Case | Ce que ça change |
 |---|---|
@@ -158,7 +158,7 @@ Total Steps reste = [Total Steps] - 10000
 
 ### Du texte
 
-La valeur arrive sans guillemets : mets-les dans le DAX.
+La valeur arrive sans guillemets : les mettre dans le DAX.
 
 ```dax
 FORMAT({baseRef}, {baseFormatString}) & " <<unite>>"
@@ -222,8 +222,8 @@ Total Steps part du total =
 | `ALL('steps')` | ignore tous les filtres de la table |
 | `REMOVEFILTERS('steps')` | comme `ALL`, écrit pour un `CALCULATE` |
 
-Plusieurs tables : sépare-les par des virgules. Pour utiliser deux fonctions
-différentes, fais deux colonnes.
+Plusieurs tables : les séparer par des virgules. Pour utiliser deux fonctions
+différentes, faire deux colonnes.
 
 ### Les règles
 
@@ -231,5 +231,5 @@ différentes, fais deux colonnes.
   pourquoi. Aucune mesure à moitié écrite.
 - **Une cible lit la ligne de son KPI.**
 - **La valeur est figée à la génération.** Après un changement dans l'Excel,
-  relance **Générer les mesures**.
+  relancer **Générer les mesures**.
 - Les `<<attributs>>` ne sont **pas** remplacés dans `displayFolder`.

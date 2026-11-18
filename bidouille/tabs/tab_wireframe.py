@@ -1632,7 +1632,7 @@ class WireframeTab(QWidget):
         bouton_en_attente(
             self.btn_save, n > 0,
             en_attente=f"{n} élément(s) déplacé(s)/redimensionné(s) NON écrits : "
-                       "clique pour écrire les visual.json\n"
+                       "cliquer pour écrire les visual.json\n"
                        "(backup automatique ; annulable par Ctrl+Z).",
             au_repos="Écrit les positions modifiées dans les visual.json "
                      "(backup automatique ; annulable par Ctrl+Z).")
@@ -1673,7 +1673,7 @@ class WireframeTab(QWidget):
         self._dirty = set()
         self._update_dirty_ui()
         self._status(f"💾 {n} élément(s) écrit(s) (backup {backup_dir.name}), "
-                     "Ctrl+Z pour annuler. Rouvre le .pbip pour voir le résultat.")
+                     "Ctrl+Z pour annuler. Rouvrir le .pbip pour voir le résultat.")
 
     # ---- annulation (Ctrl+Z) -----------------------------------------------------
 

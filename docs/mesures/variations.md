@@ -2,9 +2,9 @@
 
 [Documentation](../README.md) › Mesures › **Variations** · voir aussi [Les jetons](jetons.md)
 
-Une **variation** est une recette de mesure. Tu l'écris une seule fois, et
+Une **variation** est une recette de mesure. On l'écrit une seule fois, et
 PBIdouille en génère une mesure pour chaque KPI, dans chaque branche, et pour
-les cibles si tu le demandes. Avec 5 KPI et une branche YTD, une variation
+les cibles lorsque nécessaire. Avec 5 KPI et une branche YTD, une variation
 donne 10 mesures dans Power BI.
 
 ![L'onglet Variations](../images/variations_formulaire.png)
@@ -18,11 +18,11 @@ Exemple : la variation d'un KPI par rapport au mois précédent.
 
 ### 1. Ajouter la variation
 
-Clique **Ajouter** sous la liste, et donne-lui un identifiant : `MoM %`.
+Cliquer **Ajouter** sous la liste, puis lui donner un identifiant : `MoM %`.
 
-L'identifiant n'est pas qu'un nom interne : c'est la valeur que verront tes
+L'identifiant n'est pas qu'un nom interne : c'est la valeur que verront les
 utilisateurs dans la colonne **Calcul** des paramètres de champ, et il sert à
-nommer le dossier d'affichage. Choisis-le comme un libellé.
+nommer le dossier d'affichage. Le choisir comme un libellé.
 
 ### 2. Nommer la mesure
 
@@ -43,7 +43,7 @@ RETURN DIVIDE(Actuel - Precedent, Precedent)
 
 Les [jetons](jetons.md) se colorent à la frappe : bleu pour `{…}`, vert pour
 `<<…>>`, **rouge souligné** pour un jeton inconnu. Sous l'éditeur, le bouton
-**Jetons disponibles…** montre ce que vaut chaque jeton pour le KPI de ton choix,
+**Jetons disponibles…** montre ce que vaut chaque jeton pour le KPI choisi,
 et où il se règle.
 
 ### 4. Choisir le format
@@ -53,25 +53,25 @@ détaillés plus bas.
 
 ### 5. Décider où elle s'applique
 
-Coche **dans les paramètres de champ** si elle doit être sélectionnable dans les
-segments. Dans **Portée**, laisse « générer pour les KPI ».
+Cocher **dans les paramètres de champ** si elle doit être sélectionnable dans les
+segments. Dans **Portée**, laisser « générer pour les KPI ».
 
 ### 6. Vérifier dans l'aperçu
 
-**Aperçu des noms générés** liste chaque mesure à venir. Déplie un nom : tu vois
+**Aperçu des noms générés** liste chaque mesure à venir. Déplier un nom pour voir
 son DAX final, jetons remplacés, et ses attributs. Rien n'est écrit à ce stade,
-et l'aperçu suit ce que tu tapes.
+et l'aperçu suit la saisie.
 
 ### 7. Sauvegarder, puis générer
 
 1. **Sauvegarder** écrit le `measures_config.json` (le générateur lit ce fichier,
    pas le formulaire).
-2. **Ferme Power BI Desktop.** Il ne relit les fichiers qu'à l'ouverture et
+2. **Fermer Power BI Desktop.** Il ne relit les fichiers qu'à l'ouverture et
    écraserait tout en enregistrant.
-3. Dans le panneau **Génération des mesures**, garde **Aperçu (dry-run)** coché et
-   clique **Générer les mesures** : le journal liste ce qui serait créé ou modifié.
-4. Décoche **Aperçu (dry-run)** et relance. Le modèle est sauvegardé avant l'écriture.
-5. Rouvre le `.pbip`.
+3. Dans le panneau **Génération des mesures**, garder **Aperçu (dry-run)** coché et
+   cliquer **Générer les mesures** : le journal liste ce qui serait créé ou modifié.
+4. Décocher **Aperçu (dry-run)** et relancer. Le modèle est sauvegardé avant l'écriture.
+5. Rouvrir le `.pbip`.
 
 ### Le résultat
 
@@ -138,7 +138,7 @@ Sans `displayFolder`, le dossier vient de **⚙ Réglages → Génération** :
 | `Weight YTD` | `_indicateurs\__YTD` | `_indicateurs\Weight\YTD` |
 | `Weight YTD MoM %` | `_indicateurs\__YTD\_MoM %` | `_indicateurs\Weight\YTD` |
 
-Dans `displayFolder`, tu peux utiliser `{folder}` (le dossier calculé),
+Dans `displayFolder`, on peut utiliser `{folder}` (le dossier calculé),
 `{baseFolder}`, `{base}`, `{variation}`, `{kpi}` et `{branch}`. Les `<<attributs>>`
 n'y sont **pas** remplacés.
 
@@ -169,18 +169,18 @@ Quand plusieurs filtres s'appliquent : **mais garder** l'emporte, puis
 Envelopper garde le DAX lisible, et un correctif sur la mesure Réel se répercute
 sans régénérer. Mais ce n'est pas toujours le même calcul : une variation qui
 fixe sa propre fenêtre de dates (`DATEADD`, `DATESINPERIOD`, `MAX({date})`) ne
-donne pas le même résultat. Si tu veux la variation **du cumul**, décoche
-« envelopper en branche » et compare les deux.
+donne pas le même résultat. Pour obtenir la variation **du cumul**, décocher
+« envelopper en branche » et comparer les deux.
 
 ## Modifier une variation existante
 
-| Ce que tu changes | Ce qui se passe à la génération | À surveiller |
+| Élément modifié | Ce qui se passe à la génération | À surveiller |
 |---|---|---|
 | DAX, format, description, dossier | Les mesures sont mises à jour, sous le même nom | Rien |
-| **namePattern** | Les mesures sont **renommées** : les anciens noms disparaissent | Les visuels qui citent une mesure directement perdent ce champ. Les paramètres de champ, eux, suivent. Relance **Propager** |
+| **namePattern** | Les mesures sont **renommées** : les anciens noms disparaissent | Les visuels qui citent une mesure directement perdent ce champ. Les paramètres de champ, eux, suivent. Relancer **Propager** |
 | **Identifiant** (Renommer) | Les noms ne bougent pas s'ils ne citent pas `{variation}` | La valeur **Calcul** change, donc les segments et filtres réglés sur l'ancienne valeur. Le dossier par défaut change aussi |
 | **dans les paramètres de champ** | La rangée entre dans les tables, ou en sort | Rien côté mesures |
-| **Supprimer** | Rien, tant que « Supprimer les orphelines » n'est pas coché | Avec la case, les mesures sont retirées du modèle. Vérifie d'abord qu'aucun visuel ne s'en sert |
+| **Supprimer** | Rien, tant que « Supprimer les orphelines » n'est pas coché | Avec la case, les mesures sont retirées du modèle. Vérifier d'abord qu'aucun visuel ne s'en sert |
 
 Si une mesure écrite à la main porte déjà le nom prévu, elle n'est pas touchée :
 le journal l'indique et la mesure générée est ignorée.

@@ -1,7 +1,7 @@
 # PBIdouille 🔧
 
-Une app de bureau pour les rapports Power BI au format **PBIP**. Elle écrit à
-ta place ce qui se répète dans un rapport : les mesures dérivées de chaque KPI
+Une app de bureau pour les rapports Power BI au format **PBIP**. Elle écrit
+automatiquement ce qui se répète dans un rapport : les mesures dérivées de chaque KPI
 (7d avg, PY, YTD…), les tables paramètre de champ, le formatage conditionnel
 recopié d'un KPI gabarit vers tous les autres, et le ménage de ce que plus
 rien n'utilise.
@@ -244,7 +244,7 @@ variation de la branche (⚙ Réglages → Branches).
 
 Les **cibles/objectifs** d'un KPI ont une DAX de **base** spécifique (value-at-
 close avec `LASTDATE`, source une table de cibles verticale filtrée par le nom
-du KPI…) : impossible à générer par gabarit. Tu crées donc **à la main** la
+du KPI…) : impossible à générer par gabarit. On crée donc **à la main** la
 cible **RACINE** par KPI (ex. `Weight cible`), toutes dans un **dossier dédié**.
 Le générateur la traite comme une **base supplémentaire** et la **décline** —
 chaque variation enveloppe `[Weight cible]`.
@@ -261,11 +261,11 @@ déclinée pour les KPI, les cibles, ou les deux. Une cible ne reçoit **que** c
 qui est coché « aux cibles » — typiquement pas la 7d avg ni la sparkline, mais
 le YTD et surtout l'**écart réel−cible**. Défauts : Aux KPI **coché**, Aux
 cibles **décoché** (comportement KPI inchangé ; les cibles ne prennent que ce
-que tu choisis).
+qui est choisi).
 
 **Écart réel−cible** via le jeton **`{kpiRef}`** = la mesure du KPI dans la
 même branche (`[Weight]` en Réel, `[Weight YTD]` en YTD) — à côté de `{baseRef}`
-= la cible (`[Weight cible]`). Tu écris deux variations « aux cibles » seulement
+= la cible (`[Weight cible]`). On écrit deux variations « aux cibles » seulement
 (Aux KPI décoché, sinon elles vaudraient 0) :
 
 | Variation | DAX | Donne |
@@ -276,8 +276,8 @@ même branche (`[Weight]` en Réel, `[Weight YTD]` en YTD) — à côté de `{ba
 En branche YTD, l'écart devient automatiquement `[Weight YTD] - [Weight cible
 YTD]` (le `{kpiRef}` suit la branche).
 
-⚠ **N'écris pas `[{kpi}] - {baseRef}`** : `{kpi}` est le KPI *racine*, sans
-branche, donc en YTD tu obtiendrais `[Weight] - [Weight cible YTD]` — le réel
+⚠ **Ne pas écrire `[{kpi}] - {baseRef}`** : `{kpi}` est le KPI *racine*, sans
+branche, donc en YTD on obtiendrait `[Weight] - [Weight cible YTD]`, soit le réel
 courant comparé à la cible de l'année à date. Les deux côtés doivent être dans
 la même branche : c'est `{kpiRef}` qu'il faut. (Voir le tableau des
 placeholders §4 ; l'aide-mémoire est aussi affiché sous la zone DAX de
@@ -286,13 +286,13 @@ l'onglet Mesures.)
 Au **paramètre de champ**, pour éviter toute collision avec les calculs du KPI
 (même Indicateur = paramètre ambigu que Power BI refuse) :
 - **Indicateur** = le KPI, retrouvé par le **préfixe du nom** (`Weight cible` →
-  base `Weight`, préfixe le plus long) — c'est ce qui te donne le bon filtre ;
+  base `Weight`, préfixe le plus long), ce qui donne le bon filtre ;
 - **Calcul** = **« Cible »** pour la racine, **« Cible écart »**, **« Cible
   écart % »**… pour les variations (préfixé par le libellé configuré) ;
 - **Branche** = gérée normalement (`Weight cible YTD` → Branche `YTD`, Calcul
   « Cible »).
 
-Règles : ne mets que la cible **racine** dans le dossier — une mesure qui
+Règles : ne mettre que la cible **racine** dans le dossier, car une mesure qui
 ressemble déjà à une variation/branche (`… YTD`, `… 7d avg`) est **ignorée**
 avec un avertissement (le générateur crée le reste). Une racine dont le préfixe
 ne correspond à **aucun** KPI est ignorée. Le dossier doit être **différent**
@@ -382,9 +382,9 @@ FORMAT({baseRef}, {baseFormatString}) & " pas"
 → FORMAT([Total Steps], "#,0") & " pas"
 ```
 
-Donne à la variation le format `"text"` (elle rend du texte). Le format est
-figé à la génération : si tu changes celui de la base dans Desktop,
-**régénère**. Une base sans format donne `""` (le nombre brut), avec un
+Donner à la variation le format `"text"` (elle rend du texte). Le format est
+figé à la génération : si celui de la base change dans Desktop,
+**régénérer**. Une base sans format donne `""` (le nombre brut), avec un
 avertissement au journal. Dans le champ **format** de la variation, c'est
 `{baseFormat}` qui sert (la section positive) ; dans le **DAX**, c'est
 `{baseFormatString}` (le format entier, négatifs compris).
@@ -442,7 +442,7 @@ aperçu montre le rendu en direct) :
 | `+` / `-` / (vide) | `+1 234` · `-1 234` · `0` — défaut |
 | `▲ ` / `▼ ` / (vide) | `▲ 1 234` · `▼ 1 234` · `0` |
 
-Avec une flèche, ne mets **pas** de `-` : la section négative affiche la valeur
+Avec une flèche, ne **pas** mettre de `-` : la section négative affiche la valeur
 en absolu, la flèche porte le sens. Tout symbole autre que `+` / `-` est
 automatiquement mis entre guillemets pour ne pas être lu comme un code de
 format (`#`, `0`, `.`, `,`, `%`, `E`…).
@@ -470,7 +470,7 @@ Le générateur ramène donc tout littéral à cette forme minimale
 | `0.0\ %` | `+0.0 \p\t\s;…` (pourcentage → points) |
 | symboles `▲ ` / `▼ ` | `\▲ #,0;\▼ #,0;#,0` |
 
-L'éditeur avertit si tu tapes des guillemets ou un `\` devant une espace. Le
+L'éditeur avertit si on tape des guillemets ou un `\` devant une espace. Le
 format de la mesure de **base** n'est jamais réécrit : il reste tel que Power
 BI l'a produit.
 
@@ -506,7 +506,7 @@ champ produit un backslash **littéral** à l'écran : l'éditeur avertit aussi 
 `\\`.
 
 ⚠ `deltaFallbackFormat` : si la mesure de **base n'a aucun `formatString`**
-(fréquent — Desktop n'en écrit un que si tu l'as réglé), le delta n'héritait de
+(fréquent : Desktop n'en écrit un que s'il a été réglé), le delta n'héritait de
 rien et n'avait donc **aucun format, donc aucun signe** — quels que soient les
 symboles. Le repli lui donne un format numérique pour que le signe apparaisse.
 `""` rétablit l'ancien comportement.
@@ -554,7 +554,7 @@ est partagé). Chaque changement est **écrit aussitôt** dans le fichier, comme
 liste « Dans ce rapport » suit l'ordre du config.
 
 Le chemin du fichier est retenu au niveau de **l'application**, pas du projet :
-pose-le sur un lecteur partagé et toute l'équipe y puise. Fichier absent ou
+le poser sur un lecteur partagé permet à toute l'équipe d'y puiser. Fichier absent ou
 illisible = bibliothèque vide, jamais une erreur ; « Publier » le crée.
 
 ### folderLayout — ranger par variation ou par KPI
@@ -672,8 +672,8 @@ Dans l'app : **⚙ Réglages → Branches**, case « Envelopper la variation Ré
 > | **décale** le contexte (`SAMEPERIODLASTYEAR`) | identique — `PY`, `YoY %`, `MTD` |
 > | **épingle** une fenêtre sur la borne du contexte (`MAX({date})`, `DATEADD`, `DATESINPERIOD`) | **autre sens** — `7d avg` enveloppé est le 7d avg ordinaire (la même valeur que `Weight 7d avg`), pas la moyenne 7 jours du cumul ; `Δ 7d` compare deux plages YTD décalées d'une semaine |
 >
-> Pour celles-là, décoche « envelopper en branche » sur la variation si c'est
-> la version « du cumul » que tu veux — ou exclus-la de la branche.
+> Pour celles-là, décocher « envelopper en branche » sur la variation si c'est
+> la version « du cumul » qui est voulue, ou l'exclure de la branche.
 
 Une variation dont le DAX cite **`{branch}`** (`[{kpi} {branch} PY]`) est
 toujours **recopiée**, case cochée ou non : elle a été écrite *pour* la
@@ -697,7 +697,7 @@ Réglages.
 
 Les mesures Switch qu'un modèle porte encore sont des **orphelines** comme les
 autres : retirées par une génération avec « Supprimer les orphelines »,
-gardées sinon. Le journal le dit en clair, avec leur nombre — vérifie avant
+gardées sinon. Le journal le dit en clair, avec leur nombre : vérifier avant
 qu'aucun visuel ne s'en sert.
 
 ### fieldParameter
@@ -962,7 +962,7 @@ Trois règles, dans `moteurs/xlsx_lecture.py` et la couche UI :
 
 Seule exception, assumée : **« Couleurs des KPI » écrit** dans le classeur.
 Cette écriture-là doit forcément prendre le fichier ; si Excel l'a ouvert, le
-dialogue le dit (« ferme-le et réessaie ») au lieu d'échouer en silence.
+dialogue le dit (« le fermer et réessayer ») au lieu d'échouer en silence.
 
 Un chemin **relatif** est résolu depuis le dossier du `.pbip` ; le sélecteur
 re-relativise automatiquement un fichier choisi dans le projet, pour que le
@@ -1015,10 +1015,10 @@ l'exécution, on **fige** la valeur au moment de la génération.
 }
 ```
 
-Dans le DAX d'une variation, écris **`<<label>>`** (ex. `<<direction>>`). À la
+Dans le DAX d'une variation, écrire **`<<label>>`** (ex. `<<direction>>`). À la
 génération, pour la mesure du KPI *X*, le jeton est remplacé par la valeur de la
 colonne (ligne `mesure == X` dans l'Excel). Valeur **brute** : un entier donne
-`1`/`-1` (pour du texte, quote toi-même : `"<<label>>"`). Un KPI absent de
+`1`/`-1` (pour du texte, ajouter les guillemets : `"<<label>>"`). Un KPI absent de
 l'Excel (ajouté au modèle, pas encore à l'Excel) → la mesure n'est **pas générée** (avertissement),
 pour ne jamais écrire du DAX cassé. Re-générer après avoir modifié l'Excel met
 les valeurs à jour. UI : **⚙ Réglages → Excel des indicateurs → « Attributs
@@ -1079,7 +1079,7 @@ retiré ».)
 est ancré à une mesure précise (`selector.metadata = "_mesures.Total Steps
 YoY %"`). Quand le slicer change de KPI, le CF disparaît.
 
-**Solution** : tu configures le CF UNE fois sur le KPI template dans Desktop ;
+**Solution** : on configure le CF UNE fois sur le KPI template dans Desktop ;
 le script clone l'entrée pour chaque KPI (selector + mesure CF adaptés).
 Plusieurs familles de KPI, des exceptions : c'est la **grille des sources**,
 plus bas.
@@ -1322,7 +1322,7 @@ formatage — le miroir : ce que la source ne porte plus est retiré. C'est voul
 quand on retire un réglage d'un gabarit ; sur une case qu'on croyait couverte,
 c'est une perte. La grille la marque d'un **coin orange**, le journal la
 chiffre avant la première passe. Cas typique : une cible que la base n'a pas →
-donne-la à tous les KPI depuis un KPI qui l'a.
+la donner à tous les KPI depuis un KPI qui l'a.
 
 #### Un gabarit de groupe se pose PAR-DESSUS la base
 
@@ -1401,10 +1401,10 @@ La fenêtre **ne sait pas fabriquer** une grille incohérente :
 - copier un KPI en fait le gabarit de cette variation ;
 - repeindre un gabarit emmène ceux qui le copiaient — ceux-là seulement : un
   groupe qui suivait son propre gabarit ne bouge pas ;
-- un KPI qui copie ailleurs **par ta règle** et que d'autres copient : ceux-là
-  copient directement la même source, ta règle tient ;
+- un KPI qui copie ailleurs **par une règle posée** et que d'autres copient : ceux-là
+  copient directement la même source, la règle tient ;
 - le **dernier** copieur parti, un gabarit redevient une case ordinaire ;
-- **ce que tu poses reste posé**, même égal à ce qui serait hérité — un PY
+- **ce qui est posé reste posé**, même égal à ce qui serait hérité : un PY
   « pour tous » posé avant tout groupe tient quand un groupe apparaît.
 
 Chaque action qui en entraîne d'autres le dit sous la grille. **Enregistrer**
@@ -1545,7 +1545,7 @@ le même avec et sans les tables du paramètre.
 ⚠ Limite connue : si le KPI **destination** n'a pas la cible correspondante
 (pas de `Body Fat % cible` dans le modèle), il n'existe aucun équivalent à
 propager ; le repli par nom s'applique et peut écrire un nom inexistant.
-Génère les cibles de **tous** les KPI visés avant de propager.
+Générer les cibles de **tous** les KPI visés avant de propager.
 
 **Les faces de branche suivent leur Réel.** Une entrée de branche à la place
 d'une entrée Réel du gabarit — même sélecteur, `Weight YTD PY` face à
@@ -1608,11 +1608,11 @@ couleur pour toutes les variations), pour distinguer les KPI d'un coup d'œil.
 
 - **Source des couleurs** : deux colonnes dans `TD_Indicateurs.xlsx` —
   `couleur_fill` (fond) et `couleur_text` (texte), code hex chacune, clé =
-  colonne des noms de mesures de base. Source unique — tu recolores dans Excel.
+  colonne des noms de mesures de base. Source unique : on recolore dans Excel.
   Combiner fond × texte donne beaucoup plus de combinaisons distinctes.
-- **Approche template** (comme propagate_cf) : applique à la main sur UN KPI un
+- **Approche template** (comme propagate_cf) : appliquer à la main sur UN KPI un
   **fond ET un texte** (Specific column → une série → Background color + Text
-  color), enregistre. Le script lit ce gabarit, **détecte** ses propriétés de
+  color), enregistrer. Le script lit ce gabarit, **détecte** ses propriétés de
   couleur (`backColor` = fond ; l'autre = texte, peu importe son nom) et le
   réplique sur **toutes** les mesures avec le fond/texte de chaque KPI. Si le
   gabarit n'a qu'un fond, seul le fond est appliqué (avertissement). Seules les
@@ -1621,7 +1621,7 @@ couleur pour toutes les variations), pour distinguer les KPI d'un coup d'œil.
   des matrices). Donc : les CF de propagate_cf (`objects.values`), les couleurs
   de séries des graphes en lignes (`objects.dataPoint`), les slicers, etc. sont
   **tous exclus automatiquement**. Le ciblage est naturel — aucune liste de GUID
-  à gérer : tu « cibles » une matrice juste en y appliquant la couleur sur une
+  à gérer : on « cible » une matrice juste en y appliquant la couleur sur une
   colonne (le gabarit EST le marqueur). Pas de gabarit = matrice ignorée.
 - **Ordre** : `propagate_cf.py` d'abord, puis ce script (il a le dernier mot
   sur les couleurs des matrices). Les deux ne se marchent pas dessus :
@@ -1965,7 +1965,7 @@ Tout ce que « Générer » produira, rangé comme cela se dérive : chaque KPI
   branche puis un sous-groupe par variation en branche (« YTD › PY »), et en
   tête les mesures écrites à la main. Chaque groupe compte ses mesures ; un
   filtre cache les groupes qui n'ont plus rien à montrer.
-- **La fiche**, sous l'arbre : clique une mesure pour voir son **DAX tel que
+- **La fiche**, sous l'arbre : cliquer une mesure pour voir son **DAX tel que
   « Générer » l'écrira** (jetons développés et colorés comme dans l'éditeur,
   enveloppe de branche comprise) et ses attributs, une table paramètre par
   ligne — format, dossier, description, catégorie, tables paramètre,
@@ -2139,9 +2139,9 @@ s'efface et le journal reste un journal.
 
 **La colonne cède sa place à l'éditeur de variations.** Dans *Mesures →
 Variations*, la colonne de droite accueille le DAX et l'aperçu des noms ; le
-journal y est replié par défaut. Le bouton **« ◂ 🚀 Lancements »** l'y rouvre — avec
-le bouton de génération — et il **reste ouvert dans Variations** tant que tu
-ne l'y refermes pas.
+journal y est replié par défaut. Le bouton **« ◂ 🚀 Lancements »** l'y rouvre, avec
+le bouton de génération, et il **reste ouvert dans Variations** tant qu'on
+ne l'y referme pas.
 
 **Les runs bavards se rangent dans des tiroirs.** Un run terminé qui a écrit
 plus de 6 lignes se **replie** sur sa bannière — `▶ 09:57:48  Propagation
@@ -2154,7 +2154,7 @@ encore. Le texte replié reste dans le document : copier ou chercher le
 trouve. (Les lignes sont masquées, pas retirées : Qt sait sauter un
 paragraphe invisible dans la mise en page.)
 
-Le bouton **« 🚀 Lancements ▸ »** est donc **ton** choix, retenu **par vue** (dans
+Le bouton **« 🚀 Lancements ▸ »** est donc un **choix de l'utilisateur**, retenu **par vue** (dans
 *Variations* / ailleurs) d'une session à l'autre, avec la largeur de la
 colonne. Un **run qui démarre remontre** la colonne sans toucher à ce choix —
 un outil qui écrit dans les fichiers sans qu'on voie ce qu'il fait, non ; un
@@ -2348,9 +2348,9 @@ vertical > 50 %) et empilées bord à bord, hauteurs ∝ **hauteur max** de chaq
 rangée ; chaque rangée est découpée en **cellules égales pleine largeur** (une
 rangée d'un seul élément — ex. une bande de slicers — prend toute la largeur).
 Une seule rangée/colonne = simple partage égal. Un groupe posé dans une
-cellule rééchelonne son contenu. Annulable (Ctrl+Z). NB : pense « grille » —
+cellule rééchelonne son contenu. Annulable (Ctrl+Z). NB : penser « grille » :
 un élément qui chevauche deux rangées (barre latérale) fusionne les rangées ;
-sélectionne alors ce que tu veux répartir. Le **nom d'un groupe** se replace
+sélectionner alors ce qu'il faut répartir. Le **nom d'un groupe** se replace
 en haut-droite quand on le redimensionne.
 
 **Grouper / Dégrouper** : Ctrl+clic (ou lasso depuis le fond) pour
@@ -2383,12 +2383,12 @@ préservés), **Desktop FERMÉ**, backup sous `_backupsPBIdouille\_wireframe_bac
 puis rouvrir le `.pbip`. **Annuler** relit le disque et jette les changements
 non sauvés.
 
-**Panneau « Gabarits »** (colonne droite, repliable) : choisis un **PBIP
+**Panneau « Gabarits »** (colonne droite, repliable) : choisir un **PBIP
 gabarit** (mémorisé par projet) — chaque **groupe racine** de ses pages est un
 modèle nommé (le nom = displayName du groupe, posé dans le volet Sélection de
 Desktop), les visuels racine isolés sont aussi proposés — leur nom = le
 **titre du visuel** (`visualContainerObjects.title`, celui que Desktop écrit
-quand tu titres le visuel ; ex. « Slicer_range », « Slicer_dropdown »), sinon
+quand on titre le visuel ; ex. « Slicer_range », « Slicer_dropdown »), sinon
 le type. **« Importer dans la
 page courante »** copie le sous-arbre complet dans le rapport : nouveaux ids
 20 hex, `parentGroupName` remappés, ids de filtres régénérés, **z/tabOrder
@@ -2436,7 +2436,7 @@ CF Δ 30d vit dans le dossier de Δ 30d), **dataCategory en dropdown**
 (ImageUrl/WebUrl), inFieldParameter, plus :
 
 - **éditeur DAX en clair** : le format JSON array-of-lines devient invisible
-  (colle ton bloc DAX, il est sérialisé en lignes à la sauvegarde ; round-trip
+  (on colle son bloc DAX, il est sérialisé en lignes à la sauvegarde ; round-trip
   fidèle, clés inconnues préservées). Les gestes d'un éditeur de code, aussi
   dans le **JSON brut** :
   - **TAB pose une tabulation**, large de **4 caractères** (Qt en donnait

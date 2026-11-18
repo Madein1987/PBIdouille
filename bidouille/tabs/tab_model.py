@@ -106,7 +106,7 @@ class ModelTab(QWidget):
         if not cfg_path.exists():
             self.lbl_hint.setText(
                 "Aucun measures_config.json chargé, attendu : " + str(cfg_path)
-                + "\nClique « Config… » dans la barre du haut pour choisir celui de CE rapport.")
+                + "\nCliquer sur « Config… » dans la barre du haut pour choisir celui de CE rapport.")
             self.lbl_hint.show()
             self.btn_generate.setEnabled(False)
             self.lbl_recap.setText("")

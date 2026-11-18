@@ -453,7 +453,7 @@ def complete_kpi_tables(portees, existing, bases, actif, log=print) -> dict:
             out[b] = tables
             deduits.append(f"{b} -> {', '.join(tables)}")
     if deduits:
-        log("Portée déduite du DAX (vérifie-la) : " + " · ".join(deduits))
+        log("Portée déduite du DAX (à vérifier) : " + " · ".join(deduits))
     return out
 
 
@@ -1566,7 +1566,7 @@ def _generate(model_dir, config, *, dry_run=None, remove_orphans=None, log=print
                           for s_ in fp_specs):
         log(f"⚠ table de correspondance « {lkp_table} » absente du modèle, "
             f"les tables paramètre afficheront le nom brut du KPI. "
-            f"Corrige fieldParameter.kpiLabelLookup.table.")
+            f"Corriger fieldParameter.kpiLabelLookup.table.")
     fp_kpi_col    = fp.get("kpiColumn") or "Indicateur"
     fp_calc_col   = fp.get("calcColumn") or "Calcul"
     fp_base_lbl   = fp.get("baseLabel") or "Base"
@@ -1578,7 +1578,7 @@ def _generate(model_dir, config, *, dry_run=None, remove_orphans=None, log=print
     variations = config.get("variations") or {}
     if not variations:
         raise SystemExit(
-            "La config n'a pas d'objet 'variations', importe-en depuis la "
+            "La config n'a pas d'objet 'variations', en importer depuis la "
             "bibliothèque (Mesures -> Bibliothèque…).")
     branches = dict(config.get("branches") or {})
 
@@ -1736,7 +1736,7 @@ def _generate(model_dir, config, *, dry_run=None, remove_orphans=None, log=print
                 in (token_to_text(tpl.get("dax")) or "")):
             log(f"⚠ variation '{vid}' : « {base_name} » n'a pas de format, "
                 "{baseFormatString} vaut \"\" (FORMAT rendra le nombre brut). "
-                "Donne-lui un format dans Desktop, puis régénère.")
+                "Lui donner un format dans Desktop, puis régénérer.")
         fmt = resolve_format(tpl.get("formatString"), base_fmt,
                              delta_symbols, delta_fallback)
         if not name or not dax:
@@ -1746,7 +1746,7 @@ def _generate(model_dir, config, *, dry_run=None, remove_orphans=None, log=print
             missing = re.findall(r"<<([^>]+)>>", dax + " " + (name or ""))
             manquants = ", ".join("<<" + m + ">>" for m in dict.fromkeys(missing))
             log(f"⚠ « {name} » non générée : {manquants} sans valeur pour "
-                f"« {kpi_lbl} », remplis sa colonne dans TD_Indicateurs.")
+                f"« {kpi_lbl} », remplir sa colonne dans TD_Indicateurs.")
             return None
 
         folder_var = tpl.get("folderVariation") or vid
@@ -1933,8 +1933,8 @@ def _generate(model_dir, config, *, dry_run=None, remove_orphans=None, log=print
             f"« {', '.join(sorted(anciens_sw))}… » encore dans le modèle "
             + ("seront supprimées avec les orphelines."
                if remove_orphans else
-               "restent en place, coche « Supprimer les orphelines » pour les "
-               "retirer (vérifie d'abord qu'aucun visuel ne s'en sert)."))
+               "restent en place, cocher « Supprimer les orphelines » pour les "
+               "retirer (vérifier d'abord qu'aucun visuel ne s'en sert)."))
 
     # -- mesures « cibles » : bases SUPPLÉMENTAIRES d'un dossier dédié ---------
     # L'utilisateur crée à la main la cible RACINE par KPI (ex. « Weight cible »,
@@ -1964,7 +1964,7 @@ def _generate(model_dir, config, *, dry_run=None, remove_orphans=None, log=print
             # à une variation/branche (le générateur les crée lui-même)
             if any(cname.endswith(" " + s) for s in var_branch_suffixes):
                 log(f"⚠ « {cname} » ressemble à une variation/branche, ignorée. "
-                    f"Ne mets que la cible RACINE (« <KPI> cible ») dans le dossier ; "
+                    f"Ne mettre que la cible RACINE (« <KPI> cible ») dans le dossier ; "
                     f"le générateur décline le reste.")
                 continue
             kpi = match_kpi(cname, bases_by_len)
@@ -1982,7 +1982,7 @@ def _generate(model_dir, config, *, dry_run=None, remove_orphans=None, log=print
             seen_folders = sorted({e["folder"] for e in existing.values()
                                    if e["folder"] and not e["annotation"]})
             log(f"⚠ Cibles ({cfolder}) : AUCUNE cible racine trouvée dans « {target_table} ». "
-                f"Vérifie : (1) tes cibles sont dans cette table ; (2) leur dossier "
+                f"À vérifier : (1) les cibles sont dans cette table ; (2) leur dossier "
                 f"correspond ; (3) leur nom commence par un KPI de base (ex. "
                 f"« Weight cible »). Dossiers présents : {', '.join(seen_folders) or '(aucun)'}.")
 
@@ -1998,7 +1998,7 @@ def _generate(model_dir, config, *, dry_run=None, remove_orphans=None, log=print
             sans_patron.add(branch_id)
             log(f"⚠ branche '{branch_id}' : son DAX ne cite pas sa base "
                 "({baseRef}), on ne peut pas en tirer d'enveloppe, ses variations "
-                "sont recopiées (substitution). Écris le patron dans ⚙ Réglages → "
+                "sont recopiées (substitution). Écrire le patron dans ⚙ Réglages → "
                 "Branches → Enveloppe pour envelopper.")
         allowed_set = set(allowed_vids)          # portée de la base (KPI ou cible)
         for vid in branch_variation_ids(branch_id, bdef):
@@ -2309,7 +2309,7 @@ def _generate(model_dir, config, *, dry_run=None, remove_orphans=None, log=print
                                f"à jour, {len(removed)} retirée(s)")
     log(f"Écrit : {', '.join(p.name for p, _ in to_write)}"
         + (f"  (backup : {backup_dir.name})" if backup_dir else ""))
-    log("Rouvre le .pbip dans Power BI Desktop pour charger le nouveau modèle.")
+    log("Rouvrir le .pbip dans Power BI Desktop pour charger le nouveau modèle.")
     return stats
 
 

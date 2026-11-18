@@ -68,7 +68,7 @@ class ApercuParametres(QWidget):
         self.matrice.setSelectionMode(QTableWidget.SingleSelection)
         self.matrice.verticalHeader().setDefaultSectionSize(22)
         self.matrice.setToolTip("Le nombre de rangées de chaque KPI dans chaque table.\n"
-                                "Clique une colonne ou une case : la table s'ouvre à droite.")
+                                "Cliquer sur une colonne ou une case : la table s'ouvre à droite.")
         self.matrice.cellClicked.connect(self._on_case)
         self.matrice.horizontalHeader().sectionClicked.connect(
             lambda c: self._demander(c, None))

@@ -215,7 +215,7 @@ check(f"… et son DAX cite la mesure Réel (« {reel['name']} »)",
 
 nom_v = next(n["name"] for n in var_k)
 check("rien de choisi : la fiche invite à choisir", not vue.fiche.ed_dax.isVisible()
-      and "Choisis" in vue.fiche.lbl_nom.text())
+      and "Choisir" in vue.fiche.lbl_nom.text())
 
 
 def ct_arbre(nom):

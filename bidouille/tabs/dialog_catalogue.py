@@ -273,7 +273,7 @@ class CatalogueDialog(QDialog):
         ids = self._choisis(self.lst_biblio)
         if not ids:
             QMessageBox.information(self, "Importer",
-                                    "Choisis au moins une variation à gauche.")
+                                    "Choisir au moins une variation à gauche.")
             return
         deja = [v for v in ids if v in (self.config.get("variations") or {})]
         if deja and QMessageBox.question(
@@ -292,18 +292,18 @@ class CatalogueDialog(QDialog):
                 self, "Importé",
                 f"{len(faits)} variation(s) ajoutée(s) au rapport :\n"
                 + ", ".join(faits)
-                + "\n\nPense à enregistrer le config.")
+                + "\n\nPenser à enregistrer le config.")
         self.reload()
 
     def _publier(self):
         ids = self._choisis(self.lst_rapport)
         if not ids:
             QMessageBox.information(self, "Publier",
-                                    "Choisis au moins une variation à droite.")
+                                    "Choisir au moins une variation à droite.")
             return
         if not self.chemin():
             QMessageBox.warning(self, "Publier",
-                                "Indique d'abord un fichier de bibliothèque.")
+                                "Indiquer d'abord un fichier de bibliothèque.")
             return
         faits = gm.export_variations(self.config, self.biblio, ids)
         gm.write_biblio(self.chemin(), self.biblio["variations"],

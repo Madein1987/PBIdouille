@@ -73,7 +73,7 @@ class CouleursDialog(QDialog):
         self.table.cellClicked.connect(self._on_cell_clicked)
         lay.addWidget(self.table, 1)
 
-        tip = QLabel("Clique une pastille Fond/Texte pour choisir la couleur, "
+        tip = QLabel("Cliquer sur une pastille Fond/Texte pour choisir la couleur, "
                      "clic droit conceptuel : bouton « Effacer » sur la cellule sélectionnée.")
         tip.setStyleSheet(f"color:{TEXT_DIM};")
         tip.setWordWrap(True)
@@ -167,7 +167,7 @@ class CouleursDialog(QDialog):
             name.setFlags(Qt.ItemIsEnabled)
             if not s["row"]:
                 name.setForeground(QBrush(QColor(TEXT_DIM)))
-                name.setToolTip("Ajoute une ligne avec cette mesure dans l'Excel "
+                name.setToolTip("Ajouter une ligne avec cette mesure dans l'Excel "
                                 "pour pouvoir lui donner des couleurs.")
             self.table.setItem(i, COL_KPI, name)
             self._set_swatch(i, COL_FILL, s["fill"], editable=bool(s["row"]))
@@ -188,7 +188,7 @@ class CouleursDialog(QDialog):
             item.setBackground(QBrush(QColor(SURFACE_ALT)))
             item.setForeground(QBrush(QColor(TEXT_DIM)))
         if not editable:
-            item.setToolTip("Ligne absente de l'Excel, ajoute-la d'abord.")
+            item.setToolTip("Ligne absente de l'Excel, l'ajouter d'abord.")
         self.table.setItem(row, col, item)
 
     def _set_preview(self, row: int, key: str):
@@ -282,7 +282,7 @@ class CouleursDialog(QDialog):
         except PermissionError:
             QMessageBox.critical(
                 self, "Excel verrouillé",
-                f"{self.xlsx.name} est ouvert dans Excel, ferme-le et réessaie.")
+                f"{self.xlsx.name} est ouvert dans Excel, le fermer et réessayer.")
             return
         except OSError as e:
             QMessageBox.critical(self, "Erreur d'écriture", str(e))
@@ -294,4 +294,4 @@ class CouleursDialog(QDialog):
             self, "Enregistré",
             f"{n} KPI écrits dans {self.xlsx.name} "
             f"(colonnes « {self.fill_col} » / « {self.text_col} »).\n"
-            "Lance « Colorer » pour appliquer au rapport.")
+            "Lancer « Colorer » pour appliquer au rapport.")

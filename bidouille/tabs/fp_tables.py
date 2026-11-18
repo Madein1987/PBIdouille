@@ -83,7 +83,7 @@ class EditeurTablesParametre(QWidget):
         self.b_retirer = QPushButton("Retirer")
         self.b_retirer.setToolTip(
             "Le générateur n'y touche plus. La table RESTE dans le modèle :\n"
-            "supprime-la dans Power BI Desktop si plus aucun visuel ne s'en sert.")
+            "la supprimer dans Power BI Desktop si plus aucun visuel ne s'en sert.")
         self.b_retirer.clicked.connect(self._retirer)
         for b in (self.b_ajouter, self.b_dupliquer, self.b_retirer):
             boutons.addWidget(b)
@@ -169,7 +169,7 @@ class EditeurTablesParametre(QWidget):
                                          "de lui-même, sauf à le décocher ici."),
                 (self.cmb_vars, "Variations :", "Les variations de la table (celles marquées « au paramètre »).\n"
                                                 "En décocher une l'écarte aussi de ses branches."),
-                (self.cmb_branches, "Branches :", "« (hors branche) » : le Réel et ses variations. Décoche-le pour\n"
+                (self.cmb_branches, "Branches :", "« (hors branche) » : le Réel et ses variations. Le décocher pour\n"
                                                   "une table qui ne montre que YTD, par exemple.")):
             cmb.setToolTip(tip)
             cmb.changed.connect(self._edite)
@@ -186,7 +186,7 @@ class EditeurTablesParametre(QWidget):
         g.setRowStretch(r, 1)
         h.addWidget(self.detail, 1)
 
-        self.lbl_vide = QLabel("Aucune table paramètre : clique « Ajouter ».")
+        self.lbl_vide = QLabel("Aucune table paramètre : cliquer sur « Ajouter ».")
         self.lbl_vide.setStyleSheet(f"color:{TEXT_DIM};")
         h.addWidget(self.lbl_vide, 1)
         self.set_base_label("")
@@ -291,7 +291,7 @@ class EditeurTablesParametre(QWidget):
             self, "Retirer une table",
             f"Retirer « {nom} » de la liste ?\n\n"
             "Le générateur n'y touchera plus, mais la table RESTE dans le\n"
-            "modèle : supprime-la dans Power BI Desktop si plus aucun visuel\n"
+            "modèle : la supprimer dans Power BI Desktop si plus aucun visuel\n"
             "ne s'en sert.")
         if rep != QMessageBox.Yes:
             return

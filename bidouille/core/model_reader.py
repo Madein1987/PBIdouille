@@ -107,8 +107,8 @@ def kpis(project) -> list:
             + ", ".join(cands)
             + (f" (config : {cfg})" if cfg.exists()
                else f" (AUCUN config chargé, attendu : {cfg})")
-            + ". Clique le bouton du chemin du config (sous la barre du projet) pour choisir le measures_config.json de CE rapport, "
-              "ou vérifie ses tables paramètre (⚙ Réglages)."
+            + ". Cliquer sur le bouton du chemin du config (sous la barre du projet) pour choisir le measures_config.json de CE rapport, "
+              "ou vérifier ses tables paramètre (⚙ Réglages)."
         )
     try:
         return _pcf.kpis_from_parameter(project.model_dir, name)

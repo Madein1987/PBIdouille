@@ -224,7 +224,7 @@ def step_list(slide, x, y, w, items, gap=0.78, size=15, color=GREEN):
 
 
 # ============================================================ 1. Titre
-s = new_slide("Présenter l'outil en une phrase : PBIdouille écrit à ta place ce qui se répète "
+s = new_slide("Présenter l'outil en une phrase : PBIdouille écrit automatiquement ce qui se répète "
               "dans un rapport Power BI : les mesures dérivées, les paramètres de champ et le "
               "formatage conditionnel KPI par KPI.")
 box(s, 0.6, 1.9, 0.9, 0.9, fill=GREEN, shape=MSO_SHAPE.OVAL)
@@ -535,7 +535,7 @@ text(s, 4.85, 5.3, 7.7, 0.9,
 box(s, 0.6, 6.4, 12.1, 0.55, fill=CARD2)
 text(s, 0.85, 6.4, 11.6, 0.55,
      [[("Dans l'app : ", {"bold": True, "color": GREEN}),
-       ("Variations → Jetons disponibles… Choisis un KPI ou une cible : chaque jeton "
+       ("Variations → Jetons disponibles… Choisir un KPI ou une cible : chaque jeton "
         "affiche sa valeur et où il se règle.", {})]],
      size=13, anchor=MSO_ANCHOR.MIDDLE)
 

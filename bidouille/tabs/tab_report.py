@@ -154,7 +154,7 @@ class ReportTab(QWidget):
         self.lbl_td_reglage.setTextInteractionFlags(Qt.LinksAccessibleByMouse)
         self.lbl_td_reglage.setToolTip(
             "L'Excel est défini UNE fois, dans le config, cet onglet ne fait\n"
-            "que le lire. Clique pour aller le régler.")
+            "que le lire. Cliquer pour aller le régler.")
         self.lbl_td_reglage.linkActivated.connect(
             lambda _lien: self.ouvrir_reglages.emit())
         fiche.addWidget(self.lbl_td_reglage, 2, 1)
@@ -234,7 +234,7 @@ class ReportTab(QWidget):
         self.lbl_sources.setToolTip(str(chemin))
         if not regles:
             self.lbl_sources.setText(
-                "Aucune : " + chemin.name + " absent. Ouvre la grille pour "
+                "Aucune : " + chemin.name + " absent. Ouvrir la grille pour "
                 "choisir le gabarit de base : c'est lui qui formate tout le "
                 "monde.")
             self.lbl_sources.setStyleSheet(f"color:{YELLOW};")
@@ -250,7 +250,7 @@ class ReportTab(QWidget):
             texte += "\nFichier : propagation.json, partagé par les rapports du dossier."
         else:
             texte += (f"\nFichier : « {chemin.name} », propre à ce rapport, "
-                      "enregistre la grille pour la partager via "
+                      "enregistrer la grille pour la partager via "
                       "propagation.json.")
         if erreurs:
             texte = "Problème : " + erreurs[0] + "\n" + texte
@@ -505,8 +505,8 @@ class ReportTab(QWidget):
         ne choisit pas de gabarit à la place de l'usager."""
         if propagate_cf.lire_regles(self._sources_path()):
             return True
-        self.journal.info("⚠ Aucune source de formatage : ouvre « Grille des "
-                          "sources… » et choisis au moins le gabarit de base.")
+        self.journal.info("⚠ Aucune source de formatage : ouvrir « Grille des "
+                          "sources… » et choisir au moins le gabarit de base.")
         return False
 
     def _run_propagate(self):

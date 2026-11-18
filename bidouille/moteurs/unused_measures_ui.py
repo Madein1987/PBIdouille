@@ -184,9 +184,9 @@ QTreeWidget::indicator:indeterminate {{
 
 
 COLS_TOOLTIP = (
-    "Coche pour supprimer. Colonne calculée → bloc TMDL retiré ; colonne\n"
+    "Cocher pour supprimer. Colonne calculée → bloc TMDL retiré ; colonne\n"
     "importée → retirée aussi de la requête Power Query (Table.RemoveColumns) ;\n"
-    "colonne d'une table calculée → non supprimable ici (édite le DAX).\n"
+    "colonne d'une table calculée → non supprimable ici (modifier le DAX).\n"
     "\n"
     "Une colonne citée par une AUTRE requête Power Query (clé de jointure,\n"
     "colonne développée) reste marquée utilisée : la retirer casserait\n"
@@ -390,7 +390,7 @@ class ChopChopPanel(QWidget):
         if info["generated"]:
             item.setToolTip(COL_NAME,
                 "Générée depuis measures_config.json : la supprimer ici est inutile\n"
-                "tant qu'elle y reste (elle sera recréée). Retire plutôt la variation\n"
+                "tant qu'elle y reste (elle sera recréée). Retirer plutôt la variation\n"
                 "dans l'onglet « Mesures » de BIdouille.")
 
         # détail : un enfant par référenceur distinct
@@ -847,7 +847,7 @@ class ChopChopPanel(QWidget):
         except ImportError:
             QMessageBox.warning(
                 self, "Excel non disponible",
-                "Ni pandas ni openpyxl n'est installé, exporte en CSV, "
+                "Ni pandas ni openpyxl n'est installé, exporter en CSV, "
                 "il s'ouvre directement dans Excel.")
             return
         except OSError as e:
@@ -1024,7 +1024,7 @@ class ChopChopWindow(QMainWindow):
             self.panel.set_pbip(pbip_path)
         else:
             self.panel.info.setText(
-                "Aucun projet valide, clique « Changer de rapport… » pour en choisir un.")
+                "Aucun projet valide, cliquer sur « Changer de rapport… » pour en choisir un.")
 
     def _choose_project(self):
         start_dir = str(um.PBIP_DIR) if um.PBIP_DIR.exists() else ""

@@ -158,7 +158,7 @@ class ExplorateurJetons(QWidget):
         v = QVBoxLayout(w)
         v.setContentsMargins(0, 6, 0, 0)
         titre = QLabel("<b>Attributs de TD_Indicateurs</b>"
-                       f"  <span style='color:{TEXT_MUTED}'>écris directement dans les "
+                       f"  <span style='color:{TEXT_MUTED}'>écrire directement dans les "
                        "cases, c'est la même liste que dans ⚙ Réglages</span>")
         v.addWidget(titre)
 
@@ -317,7 +317,7 @@ class ExplorateurJetons(QWidget):
         b = self._courante()
         if b is None:
             base, branche = self.choix()
-            suite = (f" Pour une cible, coche « générer pour les cibles » sur la "
+            suite = (f" Pour une cible, cocher « générer pour les cibles » sur la "
                      f"variation {branche}." if any(
                          x["nom"] == base and x["cible"]
                          for x in self._donnees.get("bases") or []) else "")

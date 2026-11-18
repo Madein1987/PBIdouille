@@ -166,9 +166,9 @@ class SourcesDialog(QDialog):
             "base : il en reçoit d'abord tout, puis ses propres réglages "
             "l'emportent, et ses KPI copient le résultat. La ligne <b>Tous "
             "les KPI</b> donne un gabarit par variation, pour tout le monde "
-            "(aux groupes, par leur gabarit). Sélectionne des cases "
+            "(aux groupes, par leur gabarit). Sélectionner des cases "
             "(clic-glisser, ou un en-tête de ligne ou de colonne), puis "
-            "choisis ce qu'elles copient.")
+            "choisir ce qu'elles copient.")
         intro.setWordWrap(True)
         intro.setStyleSheet(f"color:{TEXT_DIM};")
         lay.addWidget(intro)
@@ -179,7 +179,7 @@ class SourcesDialog(QDialog):
         self.cmb_base.addItems([AUCUN] + self.grille.kpis)
         self.cmb_base.setCurrentText(self.grille.base or AUCUN)
         self.cmb_base.setToolTip(
-            "Le KPI que tu formates en entier dans Desktop, et que tous les\n"
+            "Le KPI formaté en entier dans Desktop, et que tous les\n"
             "autres copient, sauf ce qu'une règle plus précise décide.")
         self.cmb_base.currentTextChanged.connect(self._changer_base)
         haut.addWidget(self.cmb_base)
@@ -225,7 +225,7 @@ class SourcesDialog(QDialog):
         self.btn_main = QPushButton(A_LA_MAIN)
         self.btn_main.setToolTip(
             "Les cases sélectionnées ne copient rien : chaque KPI garde ce\n"
-            "que tu as formaté sur lui dans Desktop.")
+            "qui a été formaté sur lui dans Desktop.")
         self.btn_main.clicked.connect(lambda: self._appliquer(pc.MANUEL))
         self.btn_retirer = QPushButton("Retirer la règle")
         self.btn_retirer.setToolTip(
@@ -429,7 +429,7 @@ class SourcesDialog(QDialog):
                 # pas) : rien ne sera copié — la case le montre, en retrait
                 encre, ital = TEXT_MUTED, True
                 info += (f"\nMais « {s} » n'a pas de mesure « {v} » : rien ne "
-                         "sera copié. Choisis un KPI qui l'a (ligne « Tous "
+                         "sera copié. Choisir un KPI qui l'a (ligne « Tous "
                          "les KPI », par exemple).")
         n = sum((reglages.get((k, v)) or {}).values())
         if s not in (None, k):
@@ -524,7 +524,7 @@ class SourcesDialog(QDialog):
         lignes = ["Problème : " + e for e in erreurs]
         if not erreurs:
             if not (g.base or g.groupes or g.cases or g.lignes or g.colonnes):
-                lignes.append("Choisis le gabarit de base : c'est lui que "
+                lignes.append("Choisir le gabarit de base : c'est lui que "
                               "tout le monde copie.")
             else:
                 court = g.resume_court()
@@ -614,7 +614,7 @@ class SourcesDialog(QDialog):
     def nouveau_groupe(self, nom=None):
         kpis = self.kpis_selectionnes()
         if not kpis:
-            self._apres(["Sélectionne d'abord des lignes de KPI : ce seront "
+            self._apres(["Sélectionner d'abord des lignes de KPI : ce seront "
                          "les membres du groupe."])
             return
         if nom is None:
@@ -722,7 +722,7 @@ class SourcesDialog(QDialog):
             QMessageBox.warning(
                 self, "Sources du formatage",
                 "Le fichier n'a pas été écrit :\n\n· " + "\n· ".join(erreurs)
-                + "\n\nCorrige d'abord, une propagation sur des règles "
+                + "\n\nCorriger d'abord, une propagation sur des règles "
                   "incohérentes réécrirait le rapport de travers.")
             return
         try:

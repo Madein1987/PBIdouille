@@ -251,7 +251,7 @@ class FicheMesure(QWidget):
     à droite, en lecture seule, en chasse fixe, coloré comme dans l'éditeur
     et sélectionnable (copier un bout de DAX est ce qu'on y fait le plus)."""
 
-    VIDE = "Choisis une mesure pour voir son DAX et ses attributs."
+    VIDE = "Choisir une mesure pour voir son DAX et ses attributs."
 
     def __init__(self, parent=None):
         super().__init__(parent)

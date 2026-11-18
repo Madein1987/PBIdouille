@@ -409,7 +409,7 @@ def resoudre_groupes(groupes, tous_les_kpis, log=print) -> list:
         raise SystemExit(
             "KPI revendiqué par deux groupes : "
             + " ; ".join(f"« {k} » ({a} et {b})" for k, a, b in conflits)
-            + ".\nRetire-le de l'un des deux.")
+            + ".\nLe retirer de l'un des deux.")
 
     # 3. le groupe par défaut ramasse le reste
     if defauts:
@@ -1559,7 +1559,7 @@ def propagate(report_dir, template_kpi, *, branches=BRANCHES, targets=None,
         for nom in sorted(communes):
             log("  = " + nom)
         log("  (si l'une d'elles DEVRAIT avoir une variante, c'est qu'elle "
-            "manque au modèle : génère-la, puis relance.)")
+            "manque au modèle : la générer, puis relancer.)")
 
     if backup_dir is not None and session_a_nous:
         # manifeste : d'où venait chaque copie -> restauration en un clic
@@ -2135,7 +2135,7 @@ class Sources:
                 if k in g.groupe_de:
                     g.erreurs.append(
                         f"« {k} » est dans deux groupes, « {g.groupe_de[k]} » "
-                        f"et « {nom} », retire-le de l'un des deux.")
+                        f"et « {nom} », le retirer de l'un des deux.")
                     continue
                 g.groupe_de[k] = nom
                 membres.append(k)
@@ -2448,12 +2448,12 @@ class Sources:
         if s == self.base and self.niveau(k, v)[0] == "base":
             return (f"« {s} » est le gabarit de base : les KPI qui le suivent "
                     f"copient son {quoi}, il ne peut pas lui-même le copier "
-                    f"de {s2_}. Donne {quoi} à tous les KPI depuis {s2_} "
-                    f"(ligne « Tous les KPI »), ou mets « {s} » à la main "
+                    f"de {s2_}. Donner {quoi} à tous les KPI depuis {s2_} "
+                    f"(ligne « Tous les KPI »), ou mettre « {s} » à la main "
                     "pour cette variation.")
         return (f"« {k} » copie {quoi} de « {s} », qui le copie lui-même de "
                 f"{s2_} : une copie de copie dépendrait de l'ordre des "
-                f"passes. Fais copier « {k} » directement de {s2_}, ou mets "
+                f"passes. Faire copier « {k} » directement de {s2_}, ou mettre "
                 f"« {s} » à la main pour cette variation.")
 
     # ---- comptes rendus --------------------------------------------------------
@@ -2849,7 +2849,7 @@ class Sources:
         premier d'entre eux. Rend les phrases à montrer (ou une erreur)."""
         nom = (nom or "").strip()
         if not nom:
-            return ["Donne un nom au groupe."]
+            return ["Donner un nom au groupe."]
         if nom in self.groupes:
             return [f"Un groupe s'appelle déjà « {nom} »."]
         self.groupes[nom] = {"kpis": [], "base": None, "colonnes": {},
@@ -3157,7 +3157,7 @@ def propagate_regles(report_dir, regles=None, *, branches=BRANCHES,
     if not regles:
         raise SystemExit(
             "Aucune source de formatage : " + str(chemin) + " est absent ou "
-            "vide.\nOuvre la grille des sources (onglet Rapport) et choisis "
+            "vide.\nOuvrir la grille des sources (onglet Rapport) et choisir "
             "au moins le gabarit de base.")
     if variations is None:
         variations = variations_du_config(_config_voisin(report_dir))
@@ -3241,7 +3241,7 @@ def propagate_groupes(report_dir, groupes=None, *, branches=BRANCHES,
     resolus = resoudre_groupes(groupes, ctx["kpis_connus"], log)
     if not resolus:
         raise SystemExit(
-            "Aucun groupe de propagation utilisable, vérifie " + str(chemin)
+            "Aucun groupe de propagation utilisable, vérifier " + str(chemin)
             + "\n(un groupe = un nom, un gabarit, et ses KPI ; une liste de "
               "KPI vide ramasse tous ceux qui restent).")
 

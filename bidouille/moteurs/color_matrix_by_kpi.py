@@ -302,14 +302,14 @@ def colorize(report_dir=REPORT_DIR, model_dir=MODEL_DIR, xlsx=TD_XLSX, *,
 
     if total == 0:
         log("Aucune matrice avec un gabarit de couleur « specific column ». "
-            "Applique fond + texte sur une série de la matrice voulue, "
-            "enregistre, relance.")
+            "Appliquer fond + texte sur une série de la matrice voulue, "
+            "enregistrer, relancer.")
     else:
         if warned:
             log("⚠ Un gabarit n'avait QU'UN fond (pas de texte), seul le fond a "
-                "été appliqué. Ajoute une couleur de texte sur la série gabarit "
-                "puis relance pour colorer le texte aussi.")
-        log(f"Terminé : {total} entrées écrites. Rouvre le .pbip.")
+                "été appliqué. Ajouter une couleur de texte sur la série gabarit "
+                "puis relancer pour colorer le texte aussi.")
+        log(f"Terminé : {total} entrées écrites. Rouvrir le .pbip.")
     return total
 
 
