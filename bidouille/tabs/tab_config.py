@@ -68,7 +68,7 @@ from tabs.dialog_guide import bouton_schema
 from tabs.arbre_mesures import ArbreMesures
 from tabs.apercu_parametres import ApercuParametres
 from tabs.fiche_mesure import ROLE_HTML, DelegueRiche, ajouter_attributs
-from tabs.explorateur_jetons import ExplorateurJetons
+from tabs.explorateur_jetons import FenetreJetons
 
 import generate_measures as gm   # scan_cibles : mêmes règles que la génération
 
@@ -99,7 +99,7 @@ COULEURS_APERCU = {"etiquette": TEXT_MUTED, "racine": TEXT_DIM,
                    "branche": BLUE, "variation": ACCENT}
 JETON_NOM = re.compile(r"\{(base|kpi|variation|branch)\}")
 
-# jetons <<…>> INTÉGRÉS : ceux de la portée par KPI (kpiTables). Tirés du
+# jetons <<…>> INTÉGRÉS : ceux de l'ancien réglage kpiTables. Tirés du
 # moteur lui-même, pour ne pas diverger de ce qu'il sait remplacer.
 JETONS_PORTEE = frozenset(gm.kpi_table_tokens(["t"]))
 EACH_DEBUT = re.compile(r"<<each\s")
@@ -786,17 +786,21 @@ class ConfigTab(QWidget):
         dv.addWidget(self.lbl_lint)
 
         # les jetons, avec ce qu'ils valent pour le KPI ou la cible qu'on
-        # choisit : REPLIÉ par défaut, il sert à l'écriture du DAX
-        self.explorateur_jetons = ExplorateurJetons()
+        # choisit : une fenêtre à part, à garder ouverte à côté du DAX
+        self.fenetre_jetons = FenetreJetons(self)
+        self.explorateur_jetons = self.fenetre_jetons.explorateur
         self.explorateur_jetons.besoin.connect(self._rafraichir_jetons)
         self.explorateur_jetons.inserer.connect(self._inserer_jeton)
+        self.explorateur_jetons.declarer.connect(self._declarer_attribut)
+        self.btn_jetons = QPushButton("Jetons disponibles…")
+        self.btn_jetons.setToolTip("Ce que vaut chaque jeton pour le KPI ou la cible\n"
+                                   "de ton choix, et où il se règle.")
+        self.btn_jetons.clicked.connect(self.fenetre_jetons.montrer)
         rang_jetons = QHBoxLayout()
-        rang_jetons.addWidget(self._collapsible("Jetons disponibles",
-                                                self.explorateur_jetons))
+        rang_jetons.addWidget(self.btn_jetons)
         rang_jetons.addWidget(bouton_schema(self, "jetons"))
         rang_jetons.addStretch()
         dv.addLayout(rang_jetons)
-        dv.addWidget(self.explorateur_jetons)
         droite.addWidget(gb_dax)
 
         gb_apercu = QGroupBox("Aperçu des noms générés")
@@ -1182,9 +1186,9 @@ class ConfigTab(QWidget):
         ("delta", "Formats « delta »"),
     )
     # les groupes d'une page, quand elle en a plusieurs : les attributs codés
-    # en dur et la portée par KPI sont des COLONNES de l'Excel des
-    # indicateurs — ils se règlent avec lui, pas trois pages plus loin
-    GROUPES_PAGE = {"excel": ("excel", "attributs", "portee")}
+    # en dur sont des COLONNES de l'Excel des indicateurs : ils se règlent
+    # avec lui, pas trois pages plus loin
+    GROUPES_PAGE = {"excel": ("excel", "attributs")}
     # les pages dont le groupe prend toute la hauteur (des listes à parcourir)
     PAGES_PLEINES = ("branches",)
 
@@ -1252,7 +1256,7 @@ class ConfigTab(QWidget):
         tdv = QVBoxLayout(gb_td)
         tdv.addWidget(self._resume(
             "Le classeur qui décrit tes KPI, une ligne par mesure de base, "
-            "défini ici une fois, utilisé par tout l'outil (attributs, portée, "
+            "défini ici une fois, utilisé par tout l'outil (attributs, "
             "couleurs des matrices, ordre des KPI)."))
         ligne1 = QHBoxLayout()
         self.g_td_path = QLineEdit()
@@ -1282,7 +1286,6 @@ class ConfigTab(QWidget):
             "Le classeur qui décrit tes KPI, une ligne par mesure de base.\n"
             "Défini ICI une seule fois, et utilisé par TOUT l'outil :\n\n"
             "  · jetons <<label>> figés dans le DAX (colonnes ci-dessous) ;\n"
-            "  · portée par KPI (<<allTables>>, <<each …>>) ;\n"
             "  · couleurs des matrices par KPI (onglet Rapport).\n\n"
             "L'onglet Rapport lit ce réglage au lieu d'avoir le sien :\n"
             "un seul endroit à tenir à jour, et plus de divergence possible.\n\n"
@@ -1462,60 +1465,14 @@ class ConfigTab(QWidget):
         cv.addLayout(c_btns)
         groupes["cibles"] = gb_c
 
-        # -- portée par KPI --
-        # une ligne : colonne + déduction. Le mode d'emploi est derrière le ⓘ.
-        gb_t = QGroupBox("Portée par KPI")
-        tv_groupe = QVBoxLayout(gb_t)
-        tv_groupe.addWidget(self._resume(
-            "Les tables propres à chaque KPI, pour les variations qui "
-            "retirent ou gardent des filtres (part du total, moyenne toutes "
-            "catégories…)."))
-        tv = QHBoxLayout()
-        tv_groupe.addLayout(tv)
-        self.g_kpitables_col = QLineEdit()
-        self.g_kpitables_col.setPlaceholderText("vide = aucune portée déclarée")
-        self.g_kpitables_col.textChanged.connect(self._mark_dirty)
-        self.g_kpitables_auto = QCheckBox("déduire du DAX si la colonne ne dit rien")
-        self.g_kpitables_auto.setToolTip(
-            "Pour un KPI sans portée déclarée, lit les tables citées par le DAX\n"
-            "de sa mesure de base : SUM('weight obs'[weight]) donne « weight obs ».\n"
-            "Ce qui est déduit est écrit au journal, à vérifier : la déduction\n"
-            "voit TOUTES les tables citées, y compris une table de dates servant\n"
-            "à un filtre, ce qui n'est pas toujours la portée voulue.\n"
-            "La colonne, elle, n'est jamais écrasée.")
-        self.g_kpitables_auto.stateChanged.connect(self._mark_dirty)
-        tv.addWidget(QLabel("Colonne de TD_Indicateurs :"))
-        tv.addWidget(self.g_kpitables_col, 1)
-        tv.addWidget(self.g_kpitables_auto)
-        tv.addWidget(self._help("Portée par KPI", (
-            "Donne à chaque KPI la liste de SES tables, pour les variations qui\n"
-            "manipulent les filtres (part du total, moyenne toutes catégories…).\n\n"
-            "SOURCE : une colonne de TD_Indicateurs où chaque KPI liste ses\n"
-            "tables séparées par des virgules : « steps, dim_Date ». L'attribut\n"
-            "vit ainsi avec LE RAPPORT, alors que ce measures_config.json voyage\n"
-            "d'un rapport à l'autre. Faute de colonne, coche « déduire du DAX ».\n\n"
-            "DANS LE DAX D'UNE VARIATION : le jeton générique :\n"
-            "   <<each ALLSELECTED({table})>>\n"
-            "répète TON fragment une fois par table, séparé par des virgules :\n"
-            "   1 table  -> ALLSELECTED('steps')\n"
-            "   2 tables -> ALLSELECTED('steps'), ALLSELECTED('dim_Date')\n"
-            "La fonction vient de toi : ALL, ALLSELECTED, REMOVEFILTERS,\n"
-            "ALLEXCEPT, VALUES, CROSSFILTER… {table} = 'steps' (référence DAX),\n"
-            "{tableName} = steps (nom nu). {table} peut revenir plusieurs fois :\n"
-            "   <<each ALLEXCEPT({table}, {table}[Date])>>\n\n"
-            "Raccourcis, si tu ne veux rien écrire : <<allTables>>,\n"
-            "<<removeFilters>>, <<tables>> (la liste nue).\n\n"
-            "Cellule vide et déduction inactive = ce KPI n'a pas la variation\n"
-            "(le journal le nomme).")))
-        groupes["portee"] = gb_t
-
         # -- attributs codés en dur (au lieu de LOOKUPVALUE) --
         gb_hc = QGroupBox("Attributs codés en dur (au lieu de LOOKUPVALUE)")
         hcv = QVBoxLayout(gb_hc)
-        note_hc = QLabel("Dans le DAX d'une variation, écris « <<label>> » : à la génération il "
-                         "est remplacé par la valeur de la colonne pour le KPI (lue dans l'Excel), "
-                         "au lieu d'un LOOKUPVALUE coûteux. Ex. <<direction>> → 1 / -1 "
-                         "(texte : quote toi-même « \"<<label>>\" »).")
+        note_hc = QLabel("N'importe quelle colonne de l'Excel peut devenir un jeton. Dans une "
+                         "variation, « <<label>> » est remplacé par la valeur de la colonne pour "
+                         "le KPI : un nombre, un texte (entre guillemets dans le DAX), un nom de "
+                         "variable, ou du DAX propre à chaque KPI, jetons compris. "
+                         "Cellule vide : pas de mesure pour ce KPI.")
         note_hc.setWordWrap(True)
         note_hc.setStyleSheet(f"color:{TEXT_DIM};")
         hcv.addWidget(note_hc)
@@ -1701,11 +1658,12 @@ class ConfigTab(QWidget):
         v.addLayout(bas)
         return dlg
 
-    def ouvrir_reglages(self, page: str = "") -> bool:
+    def ouvrir_reglages(self, page: str = "", preparer=None) -> bool:
         """⚙ Réglages : les réglages globaux, dans leur fenêtre.
 
         `page` : la page à montrer (clé de PAGES_REGLAGES) ; vide = celle où
-        on l'avait laissée.
+        on l'avait laissée. `preparer` : appelé juste avant d'afficher (pour
+        pré-remplir une ligne).
 
         Ouvrir d'abord la vue en cours dans le config (un JSON brut invalide
         arrête tout, comme pour changer de vue). « Enregistrer » écrit le
@@ -1729,6 +1687,8 @@ class ConfigTab(QWidget):
         self.lbl_reglages_fichier.setText(str(self.project.config_json))
         if page:
             self.aller_reglages(page)
+        if preparer:
+            preparer()
         dlg = self._dlg_reglages
         ok = (dlg.exec_() if hasattr(dlg, "exec_") else dlg.exec()) == QDialog.Accepted
         if not ok:
@@ -1839,10 +1799,6 @@ class ConfigTab(QWidget):
         self.g_hc_table.setRowCount(0)
         for label, col in (hc.get("tokens") or {}).items():
             self._hc_add_row(label, col)
-
-        _kt = self._config.get("kpiTables") or {}
-        self.g_kpitables_col.setText(_kt.get("column", "") or "")
-        self.g_kpitables_auto.setChecked(bool(_kt.get("fromMeasureDax")))
 
         self.g_cible_table.setRowCount(0)
         for spec in (self._config.get("kpiMeasureFolders") or []):
@@ -2081,24 +2037,6 @@ class ConfigTab(QWidget):
                 hcd.pop("tokens", None)
             if not hcd:                              # tout vide -> pas de bloc
                 self._config.pop("hardcodedAttributes", None)
-
-        # portée par KPI : nom de colonne + déduction (le reste de la spec —
-        # xlsx, keyColumn — est préservé s'il existe)
-        col = self.g_kpitables_col.text().strip()
-        auto = self.g_kpitables_auto.isChecked()
-        if col or auto:
-            spec = dict(self._config.get("kpiTables") or {})
-            if col:
-                spec["column"] = col
-            else:
-                spec.pop("column", None)
-            if auto:
-                spec["fromMeasureDax"] = True
-            else:
-                spec.pop("fromMeasureDax", None)
-            self._config["kpiTables"] = spec
-        else:
-            self._config.pop("kpiTables", None)
 
         # mesures cibles (dossier dédié)
         cibles = []
@@ -2751,6 +2689,17 @@ class ConfigTab(QWidget):
         self.ed_dax.insertPlainText(jeton)
         self.ed_dax.setFocus()
 
+    def _declarer_attribut(self, colonne: str = "") -> None:
+        """⚙ Réglages, à la page de l'Excel ; une colonne choisie y arrive
+        déjà sur sa ligne, il ne reste qu'à enregistrer."""
+        def preparer():
+            if colonne:
+                self._hc_add_row(colonne, colonne)
+            page = self.reglages_pages.currentWidget()
+            QTimer.singleShot(0, lambda: page.ensureWidgetVisible(self.g_hc_table))
+        self.ouvrir_reglages("excel", preparer)
+        self._rafraichir_jetons()
+
     def _details_apercu(self) -> None:
         """Le DAX et les attributs de chaque nom de l'aperçu, tirés du
         GÉNÉRATEUR en aperçu sur le config en mémoire + le formulaire en
@@ -2913,6 +2862,7 @@ class ConfigTab(QWidget):
             combo.addItems(([""] if combo is self.g_td_order else []) + entetes)
             combo.setCurrentText(courant)
             combo.blockSignals(False)
+        self._hc_reload_columns()        # les attributs déjà listés aussi
 
     def _kind_vocabulary(self) -> list:
         """Types proposés : ceux que le formatString permet de déduire."""

@@ -611,8 +611,8 @@ app.processEvents()
 check("l'apercu des noms aussi",
       onglet.arbre_apercu.fontInfo().family() == "Consolas")
 from qtpy.QtWidgets import QLabel                                 # noqa: E402
-check("l'explorateur des jetons aussi",
-      onglet.explorateur_jetons.arbre.fontInfo().family() == "Consolas")
+from tabs.explorateur_jetons import POLICE_CODE                  # noqa: E402
+check("les jetons de l'explorateur aussi", POLICE_CODE.family() == "Consolas")
 from qtpy.QtWidgets import QGroupBox                              # noqa: E402
 gb_dax = [g for g in onglet.findChildren(QGroupBox) if g.title() == "DAX"][0]
 from core.theme import TITRE_POLICE                              # noqa: E402

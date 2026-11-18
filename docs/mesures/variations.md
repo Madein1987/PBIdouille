@@ -42,8 +42,9 @@ RETURN DIVIDE(Actuel - Precedent, Precedent)
 ```
 
 Les [jetons](jetons.md) se colorent à la frappe : bleu pour `{…}`, vert pour
-`<<…>>`, **rouge souligné** pour un jeton inconnu. Sous l'éditeur, **Jetons
-disponibles** montre ce que vaut chaque jeton pour le KPI de ton choix.
+`<<…>>`, **rouge souligné** pour un jeton inconnu. Sous l'éditeur, le bouton
+**Jetons disponibles…** montre ce que vaut chaque jeton pour le KPI de ton choix,
+et où il se règle.
 
 ### 4. Choisir le format
 

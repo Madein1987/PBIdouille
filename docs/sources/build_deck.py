@@ -504,27 +504,30 @@ for i, (t, d, a, b) in enumerate(tok):
 box(s, 7.8, 1.5, 4.9, 3.55, fill=CARD2, line=GREEN, lw=1.25, radius=0.04)
 text(s, 8.05, 1.62, 4.45, 0.62,
      [[("<<colonne>>", {"font": MONO, "color": GREEN, "bold": True, "size": 15})],
-      [("n'importe quelle colonne de TD_Indicateurs", {"size": 12.5, "bold": True})]], size=13)
+      [("n'importe quelle colonne de TD_Indicateurs", {"size": 12.5, "bold": True})],
+      [("à déclarer dans ⚙ Réglages → Excel des indicateurs", {"size": 10, "color": MUTED})]],
+     size=13)
 usages = [("une valeur", "* <<direction>>", "* 1   ou   * -1"),
           ("un texte", "& \" <<unite>>\"", "& \" kg\"   ou   & \" pas\""),
           ("un nom de variable", "VAR <<var_nom>> = …", "VAR _poids = …"),
           ("du DAX propre au KPI", "<<agregat>>", "AVERAGEX(…)   ou   SUMX(…)")]
 for i, (u, ecrit, donne) in enumerate(usages):
-    y = 2.36 + i * 0.66
-    text(s, 8.05, y, 4.5, 0.62,
+    y = 2.5 + i * 0.63
+    text(s, 8.05, y, 4.5, 0.6,
          [[(u, {"size": 11, "color": MUTED})],
           [(ecrit, {"font": MONO, "size": 11, "color": GREEN}),
            ("  →  ", {"size": 10, "color": MUTED}),
            (donne, {"font": MONO, "size": 10, "color": TEXT})]], size=11)
 
-# -- les tables du KPI --
+# -- des filtres propres à chaque KPI : un attribut comme un autre --
 box(s, 0.6, 5.2, 12.1, 1.05, fill=CARD, radius=0.06)
 text(s, 0.85, 5.36, 4.0, 0.9,
-     [[("Les tables du KPI", {"bold": True, "size": 14})],
-      [("colonne de TD_Indicateurs ; ta fonction est répétée pour chaque table",
-        {"size": 11, "color": MUTED})]], size=13)
-text(s, 4.85, 5.36, 7.7, 0.9,
-     [[("<<each ALLSELECTED({table})>>", {"color": GREEN, "bold": True, "size": 12})],
+     [[("Des filtres par KPI", {"bold": True, "size": 14})],
+      [("la colonne filtres porte ceux de chaque KPI", {"size": 11, "color": MUTED})]], size=13)
+text(s, 4.85, 5.3, 7.7, 0.9,
+     [[("CALCULATE({baseRef}, ", {"color": BLUE, "bold": True, "size": 12}),
+       ("<<filtres>>", {"color": GREEN, "bold": True, "size": 12}),
+       (")", {"color": BLUE, "bold": True, "size": 12})],
       [("Weight        ", {"color": MUTED}), ("ALLSELECTED('Weight LOCF')", {})],
       [("Total Steps   ", {"color": MUTED}), ("ALLSELECTED('steps'), ALLSELECTED('dim_Date')", {})]],
      size=10.5, font=MONO)
@@ -532,8 +535,8 @@ text(s, 4.85, 5.36, 7.7, 0.9,
 box(s, 0.6, 6.4, 12.1, 0.55, fill=CARD2)
 text(s, 0.85, 6.4, 11.6, 0.55,
      [[("Dans l'app : ", {"bold": True, "color": GREEN}),
-       ("Variations → Jetons disponibles. Choisis un KPI ou une cible et une branche : "
-        "chaque jeton affiche sa valeur.", {})]],
+       ("Variations → Jetons disponibles… Choisis un KPI ou une cible : chaque jeton "
+        "affiche sa valeur et où il se règle.", {})]],
      size=13, anchor=MSO_ANCHOR.MIDDLE)
 
 # ============================================================ 9. Éditer une variation

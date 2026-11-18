@@ -1440,9 +1440,10 @@ def apercu_jetons(model_dir, config, variation="", cache_excel=None) -> dict:
             _CACHE_LIGNES = avant
     deja = {str(c).lower() for c in declares.values()}
     jetons = dict(declares)
-    # <<tables>> & cie sont des jetons de portée : une colonne du même nom (la
-    # colonne de portée s'appelle souvent « tables ») ne doit pas les masquer
-    reserves = set(kpi_table_tokens(["t"]))
+    # l'ancien réglage kpiTables : ses jetons ne sont sondés que s'il est là,
+    # et une colonne du même nom (souvent « tables ») ne doit pas les masquer
+    portee = list(JETONS_PORTEE) if cfg.get("kpiTables") else []
+    reserves = set(kpi_table_tokens(["t"])) if portee else set()
     for c in colonnes:
         if c.lower() not in deja and ">" not in c and c not in jetons                 and c not in reserves:
             jetons[c] = c
@@ -1456,7 +1457,7 @@ def apercu_jetons(model_dir, config, variation="", cache_excel=None) -> dict:
     variations[_VARIATION_SONDE] = dict(modele, namePattern="{base} " + _VARIATION_SONDE,
                                         dax=_SEP_SONDE.join(JETONS_DAX))
     sondes: dict = {}
-    for i, jeton in enumerate([a["jeton"] for a in attributs] + list(JETONS_PORTEE)):
+    for i, jeton in enumerate([a["jeton"] for a in attributs] + portee):
         vid = f"{_VARIATION_SONDE} {i}"
         sondes[vid] = jeton
         variations[vid] = dict(modele, namePattern="{base} " + vid, dax=jeton)
@@ -1496,7 +1497,7 @@ def apercu_jetons(model_dir, config, variation="", cache_excel=None) -> dict:
         else:
             b["valeurs"][sondes[vid]] = n.get("dax")
     return {"bases": list(bases.values()), "attributs": attributs,
-            "portee": list(JETONS_PORTEE)}
+            "portee": portee}
 
 
 def _generate(model_dir, config, *, dry_run=None, remove_orphans=None, log=print) -> dict:
@@ -1724,10 +1725,9 @@ def _generate(model_dir, config, *, dry_run=None, remove_orphans=None, log=print
             return None
         if "<<" in dax or "<<" in (name or ""):
             missing = re.findall(r"<<([^>]+)>>", dax + " " + (name or ""))
-            quoi = "portée" if any("each" in x or "able" in x for x in missing) else missing
-            log(f"⚠ « {name} » non générée : {quoi} sans valeur pour "
-                f"« {kpi_lbl} », remplis sa colonne dans TD_Indicateurs, ou "
-                f"coche « déduire du DAX » (⚙ Réglages → Portée par KPI).")
+            manquants = ", ".join("<<" + m + ">>" for m in dict.fromkeys(missing))
+            log(f"⚠ « {name} » non générée : {manquants} sans valeur pour "
+                f"« {kpi_lbl} », remplis sa colonne dans TD_Indicateurs.")
             return None
 
         folder_var = tpl.get("folderVariation") or vid

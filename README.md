@@ -884,127 +884,36 @@ disparaissent de la liste, donc on voit avant de générer. Le journal résume :
 
 Le filtre s'applique aussi aux **branches**.
 
-### kpiTables — variations à PORTÉE (ALL / REMOVEFILTERS)
+### Filtres propres à chaque KPI
 
 Certaines variations doivent **retirer les filtres** des tables du KPI : part du
-total, moyenne toutes catégories, indice base 100… Le problème : chaque KPI vit
-sur des tables différentes — parfois une, parfois plusieurs — alors que le DAX
-d'une variation s'écrit **une seule fois** pour tous les KPI.
+total, moyenne toutes catégories, indice base 100… Chaque KPI vit sur ses propres
+tables, alors que le DAX d'une variation s'écrit une seule fois. La réponse est un
+**attribut** (`hardcodedAttributes`, plus bas) : une colonne de TD_Indicateurs qui
+porte directement les filtres de chaque KPI.
 
-La liste se déclare dans **TD_Indicateurs** — une colonne où chaque KPI liste
-ses tables, séparées par des virgules :
-
-| mesure | libelle_indicateur | tables |
-|---|---|---|
-| Weight | Poids | `weight obs` |
-| Total Steps | Pas | `steps, dim_Date` |
-| Body Fat % | Gras | *(vide)* |
-
-et le config ne retient que le **nom de la colonne** :
-
-```json
-"kpiTables": { "column": "tables", "fromMeasureDax": false }
-```
-
-C'est le point important : `measures_config.json` **voyage d'un rapport à
-l'autre**, alors que les noms de KPI, eux, changent. Mettre la portée dans le
-config le rendrait faux dès sa réutilisation ; dans TD_Indicateurs, l'attribut
-vit avec le rapport et le config reste générique. (Même principe que
-`kpiLabelLookup` et `hardcodedAttributes`.)
-
-Une seule ligne dans **⚙ Réglages → Excel des indicateurs → Portée par KPI** : le nom
-de la colonne (le détail est derrière le ⓘ). Excel absent ou colonne inconnue ?
-Avertissement au journal, génération poursuivie — jamais d'arrêt brutal.
-
-#### Le jeton générique `<<each …>>`
-
-C'est **toi** qui écris la fonction DAX ; l'outil ne fait que la **répéter une
-fois par table**, séparée par des virgules :
-
-```
-CALCULATE({baseRef}, <<each ALLSELECTED({table})>>)
-```
-
-| Tables du KPI | Résultat |
+| mesure | filtres |
 |---|---|
-| `weight obs` | `ALLSELECTED('weight obs')` |
-| `steps, dim_Date` | `ALLSELECTED('steps'), ALLSELECTED('dim_Date')` |
-
-N'importe quelle fonction passe — `ALL`, `ALLSELECTED`, `REMOVEFILTERS`,
-`ALLEXCEPT`, `VALUES`, `CROSSFILTER`… — parce que rien n'est codé en dur côté
-outil. Deux substitutions dans le fragment :
-
-| Dans le fragment | Vaut |
-|---|---|
-| `{table}` | la référence DAX → `'steps'` |
-| `{tableName}` | le nom nu → `steps` |
-
-`{table}` peut revenir plusieurs fois dans le fragment :
+| Weight | `ALLSELECTED('Weight LOCF')` |
+| Total Steps | `ALLSELECTED('steps'), ALLSELECTED('dim_Date')` |
+| Body Fat % | *(vide : pas de mesure)* |
 
 ```
-<<each ALLEXCEPT({table}, {table}[Date])>>
-  →  ALLEXCEPT('steps', 'steps'[Date]), ALLEXCEPT('dim_Date', 'dim_Date'[Date])
+DIVIDE({baseRef}, CALCULATE({baseRef}, <<filtres>>))
 ```
 
-Plusieurs `<<each …>>` peuvent coexister dans un même DAX. Le fragment ne peut
-pas contenir `>>` (fin du jeton).
-
-**Raccourcis** pour les cas courants, si tu ne veux rien écrire :
-`<<allTables>>` (= `<<each ALL({table})>>`), `<<removeFilters>>`, et
-`<<tables>>` (la liste nue : `'steps', 'dim_Date'`).
-
-#### Déduire la portée du DAX
-
-Case **« déduire du DAX si la colonne ne dit rien »** : pour un KPI sans portée
-déclarée, les tables sont lues dans le DAX de sa mesure de base —
-`SUM('weight obs'[weight])` donne `weight obs`. Une référence de mesure
-(`[Weight]`) n'est pas une table et n'est pas retenue.
-
-La colonne n'est **jamais** écrasée : la déduction ne comble que les trous. Ce
-qu'elle trouve part au journal, à vérifier :
-
 ```
-Portée déduite du DAX (vérifie-la) : Average Steps -> steps · Weight -> Weight LOCF
-```
-
-⚠ Elle voit **toutes** les tables citées, y compris une table technique ou une
-table de dates servant à un filtre — ce n'est pas toujours la portée voulue.
-Pratique pour démarrer ou pour un modèle simple ; la colonne reste la référence
-dès qu'on veut être précis.
-
-Un KPI **sans** portée déclarée (cellule vide) ne reçoit tout simplement pas la
-variation, et le journal dit lequel et pourquoi — pas de mesure à moitié
-construite. Les
-**cibles** héritent de la portée de leur KPI.
-
-#### Recette complète : « % du total »
-
-C'est le cas qui combine tout — portée par KPI, jeton générique, filtre de type.
-
-| Réglage | Valeur |
-|---|---|
-| namePattern | `{base} % du total` |
-| DAX | `DIVIDE({baseRef}, CALCULATE({baseRef}, <<each ALLSELECTED({table})>>))` |
-| formatString | `#,0.0 %` |
-| Portée | ☑ KPI |
-| types de base | nombre, devise (pas `pourcentage`) |
-| exclure si le nom contient | `ratio, /, taux` |
-| mais garder | *(vide, ou les exceptions à rattraper)* |
-
-`ALLSELECTED` (et non `ALL`) pour que le total suive les filtres du rapport —
-le « total » est celui de la sélection en cours. Le résultat, par KPI :
-
-```
-Weight % du total       = DIVIDE([Weight], CALCULATE([Weight], ALLSELECTED('weight obs')))
-Total Steps % du total  = DIVIDE([Total Steps], CALCULATE([Total Steps],
+Weight part du total       = DIVIDE([Weight], CALCULATE([Weight], ALLSELECTED('Weight LOCF')))
+Total Steps part du total  = DIVIDE([Total Steps], CALCULATE([Total Steps],
                                    ALLSELECTED('steps'), ALLSELECTED('dim_Date')))
 ```
 
-et **rien** pour `Body Fat %`, qui est déjà un pourcentage.
+Voir [Les jetons](docs/mesures/jetons.md#des-filtres-propres-à-chaque-kpi).
 
-> `hardcodedAttributes` lit d'autres colonnes du même Excel pour figer un
-> attribut quelconque dans le DAX (jetons `<<label>>`). `kpiTables` réutilise
-> son `xlsx` et son `keyColumn` par défaut : une seule source d'attributs.
+L'ancien réglage « Portée par KPI » a quitté l'interface, puisqu'un attribut fait
+le même travail. Un config qui porte encore un bloc `kpiTables` et des jetons
+`<<each …>>`, `<<allTables>>`, `<<removeFilters>>` ou `<<tables>>` **continue de
+générer les mêmes mesures** ; le bloc se modifie dans le JSON brut.
 
 ### indicateursXlsx — l'Excel des indicateurs, défini UNE fois
 
@@ -1064,7 +973,6 @@ Qui s'en sert :
 | Usage | Colonnes |
 |---|---|
 | jetons `<<label>>` figés dans le DAX | `keyColumn` + celles de `hardcodedAttributes.tokens` |
-| portée par KPI (`<<each …>>`) | `keyColumn` + celle de `kpiTables.column` |
 | **couleurs des matrices** (onglet Rapport) | `keyColumn`, `fillColumn`, `textColumn` |
 | **ordre des KPI** dans les tables paramètre | `keyColumn`, `orderColumn` |
 
@@ -2313,7 +2221,7 @@ bidouille\
     tab_config.py       onglet « Mesures » (Variations, JSON brut) + la fenêtre ⚙ Réglages
     arbre_mesures.py    Mesures → « Arbre des mesures » (par KPI / par variation)
     fiche_mesure.py     DAX et attributs d'une mesure générée (fiche, aperçu dépliable)
-    explorateur_jetons.py  « Jetons disponibles » : ce que vaut chaque jeton, par KPI ou cible
+    explorateur_jetons.py  « Jetons disponibles… » : valeur et réglage de chaque jeton
     apercu_parametres.py  Mesures → « Paramètres de champ », ce que les tables contiendront
     fp_tables.py        l'éditeur de la liste des tables paramètre
     tab_model.py        panneau « Génération des mesures », posé en tête du journal (generate_measures.py)
@@ -2503,8 +2411,8 @@ dans la barre du haut : ils servent aussi à l'onglet Rapport (l'Excel des
 indicateurs, par exemple), ils n'avaient rien à faire sous les Mesures.
 Une **barre latérale** y mène à une page par sujet (Génération, Excel des
 indicateurs, Branches, Mesures cibles, Formats « delta ») au lieu d'un long défilement où tout se voyait à la fois. La page **Excel
-des indicateurs** porte aussi les **Attributs codés en dur** et la **Portée
-par KPI** : ce sont des colonnes du même classeur. La page **Branches** prend
+des indicateurs** porte aussi les **Attributs codés en dur** : ce sont des
+colonnes du même classeur. La page **Branches** prend
 toute la hauteur, en deux colonnes (les branches à gauche, ce qu'applique
 celle qui est choisie à droite). La fenêtre rouvre sur la dernière page vue.
 **Enregistrer** y écrit le config, comme « Sauvegarder » — avec tout ce qui
@@ -2546,7 +2454,7 @@ CF Δ 30d vit dans le dossier de Δ 30d), **dataCategory en dropdown**
     et une règle de thème plus précise reprend la main ;
 - **jetons surlignés à la frappe** : `{connus}` en bleu, `<<attributs>>`
   connus en vert, **inconnus en rouge souligné**. Sont connus les jetons du
-  générateur, ceux de la portée par KPI (`<<tables>>`, `<<allTables>>`,
+  générateur, ceux de l'ancien réglage `kpiTables` (`<<tables>>`, `<<allTables>>`,
   `<<removeFilters>>`, et `{table}` **dans** un `<<each …>>`) et les
   `<<labels>>` déclarés dans **⚙ Réglages → Excel des indicateurs**
   (Attributs codés en dur) —
@@ -2556,10 +2464,11 @@ CF Δ 30d vit dans le dossier de Δ 30d), **dataCategory en dropdown**
   qui est rouge est exactement ce qu'il signale — `{jeton}` inconnu, et
   maintenant `<<attribut>>` non déclaré (la génération sauterait la mesure).
   `{table}` dans un `<<each …>>` n'y est plus signalé à tort ;
-- **explorateur des jetons** sous la zone DAX, **replié** par défaut (un clic
-  sur « Jetons disponibles ») : on choisit un KPI ou une cible et une branche,
-  et chaque jeton affiche sa valeur, tirée de la génération à blanc
-  (`generate_measures.apercu_jetons`). Double-clic : le jeton part dans le DAX.
+- **fenêtre des jetons** (bouton « Jetons disponibles… » sous le DAX, non
+  modale) : on choisit un KPI ou une cible et une branche, et chaque jeton
+  affiche sa valeur, tirée de la génération à blanc
+  (`generate_measures.apercu_jetons`), et le réglage qui le décide. Double-clic :
+  le jeton part dans le DAX, ou une colonne non déclarée s'ouvre dans ⚙ Réglages.
   Ailleurs, les explications longues vivent derrière un **ⓘ**
   (survol = infobulle, clic = fenêtre) plutôt qu'en paragraphes permanents ;
 - **aperçu des mesures générées** sans toucher au modèle — il suit la **portée

@@ -5,7 +5,7 @@ Le mode d'emploi, onglet par onglet.
 ## Mesures
 
 - [Variations](mesures/variations.md) : créer une mesure, et ce que chaque réglage change dans Power BI
-- [Les jetons](mesures/jetons.md) : `{base}`, `<<attributs>>` de TD_Indicateurs, tables du KPI
+- [Les jetons](mesures/jetons.md) : `{base}`, `<<attributs>>` de TD_Indicateurs, et où chacun se règle
 
 ## À venir
 

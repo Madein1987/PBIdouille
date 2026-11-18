@@ -5,26 +5,46 @@
 Une variation s'écrit une seule fois. Les **jetons** sont les parties qui changent
 d'un KPI à l'autre : la génération les remplace pour chaque KPI, cible et branche.
 
-| Dans l'éditeur | Jeton | D'où vient la valeur |
-|---|---|---|
-| bleu | `{base}`, `{date}`… | du modèle et de la variation |
-| vert | `<<unite>>`, `<<each …>>`… | de **TD_Indicateurs** |
-| rouge souligné | un jeton inconnu | une faute de frappe, ou un attribut pas encore déclaré |
+Il y en a deux familles, reconnaissables à leur couleur dans l'éditeur DAX :
+
+| Couleur | Jetons | Ce que c'est | Où ça se règle |
+|---|---|---|---|
+| Bleu | `{base}`, `{date}`, `{kpiRef}`… | Fournis par l'outil | Rien à créer : voir [le tableau](#où-se-règle-chaque-jeton) |
+| Vert | `<<unite>>`, `<<filtres>>`… | N'importe quelle colonne de TD_Indicateurs | **⚙ Réglages → Excel des indicateurs → Attributs codés en dur** |
+| Rouge souligné | | Faute de frappe, ou attribut pas encore déclaré | |
 
 ## Voir ce que vaut un jeton
 
-Dans **Mesures › Variations**, ouvre **Jetons disponibles** sous le DAX. Choisis un
-KPI **ou une cible**, puis une branche : chaque jeton affiche sa valeur. Un
-double-clic insère le jeton dans le DAX.
+Dans **Mesures › Variations**, clique **Jetons disponibles…** sous le DAX. La fenêtre
+reste ouverte à côté de l'éditeur.
+
+1. Choisis une **mesure** (un KPI, ou une cible sous son KPI) et une **branche**.
+2. Lis la **valeur** de chaque jeton pour cette mesure, et **où elle se règle**.
+3. **Double-clique** un jeton pour l'insérer dans le DAX.
+
+Les colonnes de TD_Indicateurs pas encore déclarées sont en gris, avec ce qu'elles
+vaudraient. Un double-clic ouvre ⚙ Réglages avec la ligne déjà remplie : il ne reste
+qu'à enregistrer.
+
+![La fenêtre des jetons, sur la cible Weight cible en YTD](../images/jetons_explorateur_cible.png)
 
 Ces valeurs viennent de la génération elle-même : c'est ce qui sera écrit.
 
-![L'explorateur, sur la cible Weight cible en YTD](../images/jetons_explorateur_cible.png)
+## Où se règle chaque jeton
 
-Le même écran sur le KPI `Weight` en YTD : `{base}` et `{baseRef}` changent, `{kpi}`
-et `{kpiRef}` non.
+| Jeton | Vient de | Où le changer |
+|---|---|---|
+| `{base}`, `{baseRef}` | la mesure traitée | KPI : **⚙ Réglages → Génération** (`sourceTable`, `sourceFolder`). Cible : **⚙ Réglages → Mesures cibles**. Branche : **⚙ Réglages → Branches** |
+| `{kpi}` | le KPI | **⚙ Réglages → Génération** (`sourceTable`, `sourceFolder`) |
+| `{kpiRef}` | le KPI, dans la branche | **⚙ Réglages → Génération**, et **⚙ Réglages → Branches** |
+| `{branch}` | la branche | **⚙ Réglages → Branches** |
+| `{variation}` | l'identifiant de la variation | La liste des variations (**Renommer**) |
+| `{date}` | la colonne de dates | **⚙ Réglages → Génération** (`dateColumn`) |
+| `{deltaScale}`, `{baseFormatString}` | le format de la mesure de base | Dans Power BI Desktop, puis régénérer |
+| `<<attribut>>` | une colonne de TD_Indicateurs | **⚙ Réglages → Excel des indicateurs → Attributs codés en dur** |
 
-![L'explorateur, sur le KPI Weight en YTD](../images/jetons_explorateur_kpi.png)
+Le classeur lui-même se choisit en haut de la même page,
+**⚙ Réglages → Excel des indicateurs**, avec sa colonne clé (`mesure` par défaut).
 
 ## Les jetons `{…}`
 
@@ -32,7 +52,7 @@ et `{kpiRef}` non.
 |---|---|---|---|---|---|
 | `{base}` | la mesure traitée | `Weight` | `Weight YTD` | `Weight cible` | `Weight cible YTD` |
 | `{baseRef}` | la même, en référence DAX | `[Weight]` | `[Weight YTD]` | `[Weight cible]` | `[Weight cible YTD]` |
-| `{kpi}` | le KPI racine | `Weight` | `Weight` | `Weight` | `Weight` |
+| `{kpi}` | le KPI | `Weight` | `Weight` | `Weight` | `Weight` |
 | `{kpiRef}` | le KPI, dans la branche | `[Weight]` | `[Weight YTD]` | `[Weight]` | `[Weight YTD]` |
 | `{branch}` | la branche | *(rien)* | `YTD` | *(rien)* | `YTD` |
 
@@ -80,18 +100,25 @@ toujours recopiée, jamais enveloppée.
 ## Les jetons `<<…>>` : n'importe quelle colonne de TD_Indicateurs
 
 Chaque colonne de `TD_Indicateurs.xlsx` peut devenir un jeton. Sa valeur est celle
-de la ligne du KPI, et elle est **écrite telle quelle** à la place du jeton.
+de la ligne du KPI, **écrite telle quelle** à la place du jeton. Une même variation
+peut donc se comporter différemment pour chaque KPI.
 
-Pour en déclarer un : **⚙ Réglages → Excel des indicateurs → Attributs codés en
-dur**, un nom de jeton et sa colonne. Dans **Jetons disponibles**, les colonnes pas
-encore déclarées apparaissent en gris, avec ce qu'elles vaudraient.
+### Créer un attribut
+
+1. **Dans l'Excel**, ajoute une colonne et remplis-la pour chaque KPI. Enregistre.
+2. **Dans ⚙ Réglages → Excel des indicateurs → Attributs codés en dur**, clique
+   **Ajouter** : un label (le nom du jeton) et la colonne. Si la colonne n'apparaît
+   pas, clique **↻** à côté du chemin de l'Excel. Puis **Enregistrer**.
+3. **Dans le DAX**, écris `<<label>>`. Il passe au vert.
+
+Raccourci : dans **Jetons disponibles…**, double-clique la colonne en gris.
 
 Exemple de `TD_Indicateurs` :
 
-| mesure | direction | unite | var_nom | agregat |
-|---|---|---|---|---|
-| Weight | 1 | kg | `_poids` | `AVERAGEX(VALUES({date}), {baseRef})` |
-| Total Steps | 1 | pas | `_pas` | `SUMX(VALUES({date}), {baseRef})` |
+| mesure | direction | unite | var_nom | agregat | filtres |
+|---|---|---|---|---|---|
+| Weight | 1 | kg | `_poids` | `AVERAGEX(VALUES({date}), {baseRef})` | `ALLSELECTED('Weight LOCF')` |
+| Total Steps | 1 | pas | `_pas` | `SUMX(VALUES({date}), {baseRef})` | `ALLSELECTED('steps'), ALLSELECTED('dim_Date')` |
 
 ### Une valeur
 
@@ -142,41 +169,13 @@ Total Steps tendance =
     RETURN valeur * 1
 ```
 
-### Les règles
+### Des filtres propres à chaque KPI
 
-- **Cellule vide : pas de mesure** pour ce KPI, et le journal dit laquelle et
-  pourquoi. Aucune mesure à moitié écrite.
-- **Une cible lit la ligne de son KPI.**
-- **La valeur est figée à la génération.** Après un changement dans l'Excel,
-  relance **Générer les mesures**.
-- Les `<<attributs>>` ne sont **pas** remplacés dans `displayFolder`.
-
-## Les tables du KPI : `ALLSELECTED` et compagnie
-
-Certaines mesures doivent retirer les filtres **des tables du KPI**, par exemple
-pour une part du total. Or chaque KPI vit sur ses propres tables, parfois plusieurs.
-
-### 1. Déclarer les tables
-
-Dans TD_Indicateurs, une colonne liste les tables de chaque KPI, séparées par des
-virgules :
-
-| mesure | tables |
-|---|---|
-| Weight | `Weight LOCF` |
-| Total Steps | `steps, dim_Date` |
-
-Indique cette colonne dans **⚙ Réglages → Excel des indicateurs → Portée par KPI**.
-La case **déduire du DAX** complète les KPI sans valeur à partir du DAX de leur
-mesure de base : vérifie ce qu'elle trouve dans le journal.
-
-### 2. Écrire `<<each …>>`
-
-Tu écris la fonction, et elle est répétée **pour chaque table** du KPI. `{table}`
-est la table en référence DAX, `{tableName}` son nom seul.
+Pour une part du total, chaque KPI doit retirer les filtres de **ses** tables. La
+colonne `filtres` les porte, avec la fonction voulue :
 
 ```dax
-DIVIDE({baseRef}, CALCULATE({baseRef}, <<each ALLSELECTED({table})>>))
+DIVIDE({baseRef}, CALCULATE({baseRef}, <<filtres>>))
 ```
 
 ```dax
@@ -187,21 +186,20 @@ Total Steps part du total =
     DIVIDE([Total Steps], CALCULATE([Total Steps], ALLSELECTED('steps'), ALLSELECTED('dim_Date')))
 ```
 
-### Quelle fonction choisir
-
-| Dans `<<each …>>` | Le total calculé |
+| Dans la cellule | Le total calculé |
 |---|---|
-| `ALLSELECTED({table})` | **suit les segments** : le total de ce que l'utilisateur a sélectionné |
-| `ALL({table})` | ignore tous les filtres de la table |
-| `REMOVEFILTERS({table})` | comme `ALL`, écrit pour un `CALCULATE` |
+| `ALLSELECTED('steps')` | **suit les segments** : le total de ce que l'utilisateur a sélectionné |
+| `ALL('steps')` | ignore tous les filtres de la table |
+| `REMOVEFILTERS('steps')` | comme `ALL`, écrit pour un `CALCULATE` |
 
-### Les raccourcis
+Plusieurs tables : sépare-les par des virgules. Pour utiliser deux fonctions
+différentes, fais deux colonnes.
 
-| Jeton | `Total Steps` |
-|---|---|
-| `<<tables>>` | `'steps', 'dim_Date'` |
-| `<<allTables>>` | `ALL('steps'), ALL('dim_Date')` |
-| `<<removeFilters>>` | `REMOVEFILTERS('steps'), REMOVEFILTERS('dim_Date')` |
+### Les règles
 
-Un KPI sans table déclarée ne reçoit pas la mesure, et une cible utilise les tables
-de son KPI.
+- **Cellule vide : pas de mesure** pour ce KPI, et le journal dit laquelle et
+  pourquoi. Aucune mesure à moitié écrite.
+- **Une cible lit la ligne de son KPI.**
+- **La valeur est figée à la génération.** Après un changement dans l'Excel,
+  relance **Générer les mesures**.
+- Les `<<attributs>>` ne sont **pas** remplacés dans `displayFolder`.

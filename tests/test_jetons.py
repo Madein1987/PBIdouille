@@ -8,11 +8,12 @@ Vérifie :
      ce que la génération écrirait, sans toucher au config ni au modèle ;
   2. toutes les colonnes de TD_Indicateurs sont des <<attributs>> possibles,
      déclarés ou non ; une cellule vide n'a pas de valeur ;
-  3. les jetons de portée suivent les tables du KPI ;
+  3. les filtres par KPI passent par un attribut ; un ancien kpiTables reste lu ;
   4. un attribut sert de nom de variable DAX, et une cellule peut porter du
      DAX, jetons compris ;
   5. renommer l'id d'une variation ne laisse pas deux mesures du même nom ;
-  6. l'explorateur : KPI et cibles au choix, valeurs, insertion dans le DAX.
+  6. l'explorateur : KPI et cibles au choix, valeurs, où chaque jeton se
+     règle, insertion dans le DAX, déclaration d'une colonne.
 
 Travaille sur une COPIE du projet de démonstration, magasin de réglages jetable.
 """
@@ -74,6 +75,8 @@ AJOUTS = {
     "calcul": {"Weight": "AVERAGEX(VALUES({date}), {baseRef})",
                "Total Steps": "SUMX(VALUES({date}), {baseRef})"},
     "tables": {"Weight": "Weight LOCF", "Total Steps": "steps, dim_Date"},
+    "filtres": {"Weight": "ALLSELECTED('Weight LOCF')",
+                "Total Steps": "ALLSELECTED('steps'), ALLSELECTED('dim_Date')"},
 }
 for j, (col, vals) in enumerate(AJOUTS.items()):
     k = len(entetes) + 1 + j
@@ -90,8 +93,7 @@ ajouter_cibles(MODELE, ["Weight"], variations=(), branches=())
 conf["kpiMeasureFolders"] = [{"folder": "_cibles", "calcul": "Cible"}]
 conf["variations"]["YTD"]["appliesToCibles"] = True      # la cible a son YTD
 conf["hardcodedAttributes"] = {"tokens": {"unite": "unite", "var_nom": "var_nom",
-                                          "calcul": "calcul"}}
-conf["kpiTables"] = {"column": "tables"}
+                                          "calcul": "calcul", "filtres": "filtres"}}
 (copie / "measures_config.json").write_text(json.dumps(conf, ensure_ascii=False, indent=2),
                                             encoding="utf-8")
 
@@ -145,14 +147,27 @@ check("une valeur par KPI", v("Weight", "", "<<unite>>") == "kg"
 check("une cible lit la ligne de son KPI", v("Weight cible", "", "<<unite>>") == "kg")
 check("cellule vide : pas de valeur", v("Body Fat %", "", "<<unite>>") is None)
 
-print("3. les tables du KPI")
-check("<<tables>> : une table", v("Weight", "", "<<tables>>") == "'Weight LOCF'")
-check("<<allTables>> : un ALL par table",
-      v("Total Steps", "", "<<allTables>>") == "ALL('steps'), ALL('dim_Date')")
-check("<<each …>> répète ta fonction",
-      v("Total Steps", "", "<<each ALLSELECTED({table})>>")
+print("3. les filtres par KPI")
+check("sans kpiTables, pas de jetons de portée", ap["portee"] == [])
+check("une colonne « tables » est un attribut comme un autre",
+      "<<tables>>" in attr and v("Weight", "", "<<tables>>") == "Weight LOCF")
+cp = copy.deepcopy(conf)
+cp["variations"]["Part"] = {"namePattern": "{base} part", "formatString": "0.0 %",
+                            "dax": "DIVIDE({baseRef}, CALCULATE({baseRef}, <<filtres>>))"}
+part = {n["name"]: n for n in gm.generate(MODELE, cp, dry_run=True, remove_orphans=False,
+                                          log=lambda *a: None)["arbre"]}
+check("<<filtres>> donne ses filtres à chaque KPI",
+      "ALLSELECTED('steps'), ALLSELECTED('dim_Date')" in part["Total Steps part"]["dax"]
+      and "ALLSELECTED('Weight LOCF')" in part["Weight part"]["dax"])
+check("KPI sans filtres : pas de mesure", "Body Fat % part" not in part)
+ancien = copy.deepcopy(conf)
+ancien["kpiTables"] = {"column": "tables"}
+ap2 = gm.apercu_jetons(MODELE, ancien, "PY")
+p2 = {(b["nom"], b["branche"]): b["valeurs"] for b in ap2["bases"]}
+check("un ancien kpiTables reste lu : <<allTables>>",
+      p2[("Total Steps", "")]["<<allTables>>"] == "ALL('steps'), ALL('dim_Date')")
+check("… et <<each …>>", p2[("Total Steps", "")]["<<each ALLSELECTED({table})>>"]
       == "ALLSELECTED('steps'), ALLSELECTED('dim_Date')")
-check("sans table déclarée : pas de valeur", v("Body Fat %", "", "<<tables>>") is None)
 
 print("4. un attribut dans le DAX")
 c2 = copy.deepcopy(conf)
@@ -194,7 +209,8 @@ print("6. l'explorateur")
 from qtpy.QtWidgets import QApplication                          # noqa: E402
 app = QApplication.instance() or QApplication([])
 import tabs.tab_config as tc                                     # noqa: E402
-from tabs.explorateur_jetons import COL_JETON, COL_VALEUR        # noqa: E402
+from tabs.explorateur_jetons import (COL_JETON, COL_OU,          # noqa: E402
+                                     COL_VALEUR, ROLE_COLONNE)
 from core.project import Project                                 # noqa: E402
 
 ct = tc.ConfigTab()
@@ -221,13 +237,50 @@ check("la liste suit : {base} et {kpi} diffèrent",
       L["{base}"].text(COL_VALEUR) == "Weight cible YTD"
       and L["{kpi}"].text(COL_VALEUR) == "Weight")
 check("… {kpiRef} vise le KPI dans la branche", L["{kpiRef}"].text(COL_VALEUR) == "[Weight YTD]")
-check("la note explique la cible", "Cible" in ex.lbl_note.text())
-check("un attribut non déclaré le dit", "à déclarer" in L["<<direction>>"].text(2))
+check("la note explique la cible", "est une cible" in ex.lbl_note.text())
+check("{date} dit où il se règle", "dateColumn" in L["{date}"].text(COL_OU))
+check("{base} d'une cible renvoie aux Mesures cibles", "Mesures cibles" in L["{base}"].text(COL_OU))
+check("{branch} renvoie aux Branches", "Branches" in L["{branch}"].text(COL_OU))
+check("un attribut déclaré renvoie à sa page",
+      "Attributs codés en dur" in L["<<unite>>"].text(COL_OU))
+check("une colonne non déclarée propose de l'être",
+      "déclarer" in L["<<direction>>"].text(COL_OU))
 ex.choisir("Body Fat %", "")
 check("une cellule vide le dit", "vide" in lignes()["<<unite>>"].text(COL_VALEUR))
 ct.ed_dax.setPlainText("")
 ex._on_double_clic(lignes()["{baseRef}"])
 check("double-clic : le jeton part dans le DAX", ct.ed_dax.toPlainText() == "{baseRef}")
+check("le bouton ouvre une fenêtre non modale",
+      not ct.fenetre_jetons.isModal() and ct.btn_jetons.text().startswith("Jetons disponibles"))
+vu = []
+
+
+def faux_exec():
+    vu.append((ct.reglages_nav.currentItem().data(tc.Qt.UserRole),
+               [ct.g_hc_table.item(r, 0).text() for r in range(ct.g_hc_table.rowCount())]))
+    return tc.QDialog.Rejected
+
+
+ct._dlg_reglages.exec_ = faux_exec
+ct._dlg_reglages.exec = faux_exec
+ex._on_double_clic(lignes()["<<direction>>"])
+check("double-clic sur une colonne : ⚙ Réglages, page Excel, ligne déjà posée",
+      vu and vu[0][0] == "excel" and "direction" in vu[0][1])
+check("… et Annuler ne l'a pas déclarée",
+      "direction" not in ct._config["hardcodedAttributes"]["tokens"])
+ct._load_global()
+ct._hc_add_row("essai", "unite")
+ct._td_entetes_cache = list(ct._td_entetes_cache) + ["colonne_neuve"]
+ct._td_reload_columns()
+combo = ct.g_hc_table.cellWidget(ct.g_hc_table.rowCount() - 1, 1)
+check("↻ : une colonne ajoutée à l'Excel arrive aussi dans les attributs déjà listés",
+      combo.findText("colonne_neuve") >= 0 and combo.currentText() == "unite")
+check("la portée n'a plus de réglage", not hasattr(ct, "g_kpitables_col"))
+ct._config["kpiTables"] = {"column": "tables"}
+ct._load_global()
+ct._commit_global()
+check("… mais un kpiTables existant survit à un passage dans les Réglages",
+      ct._config.get("kpiTables") == {"column": "tables"})
 ct._set_dirty(False)
 ct.deleteLater()
 

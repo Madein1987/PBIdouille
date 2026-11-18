@@ -270,10 +270,10 @@ check("chaque page porte ses groupes (un seul, sauf l'Excel)",
       all(len(groupes_de(i)) == len(tc.ConfigTab.GROUPES_PAGE.get(c, (c,)))
           for i, c in enumerate(cles)))
 excel = groupes_de(cles.index("excel"))
-check(f"la page Excel porte aussi les attributs et la portée ({len(excel)} groupes)",
+check(f"la page Excel porte aussi les attributs ({len(excel)} groupes)",
       excel[0].startswith("Excel des indicateurs")
       and any(t.startswith("Attributs codés en dur") for t in excel)
-      and any(t.startswith("Portée par KPI") for t in excel))
+      and not any(t.startswith("Portée par KPI") for t in excel))
 check("plus de page à part pour les attributs ni la portée",
       "attributs" not in cles and "portee" not in cles)
 
