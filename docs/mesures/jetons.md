@@ -10,7 +10,7 @@ Il y en a deux familles, reconnaissables à leur couleur dans l'éditeur DAX :
 | Couleur | Jetons | Ce que c'est | Où ça se règle |
 |---|---|---|---|
 | Bleu | `{base}`, `{date}`, `{kpiRef}`… | Fournis par l'outil | Rien à créer : voir [le tableau](#où-se-règle-chaque-jeton) |
-| Vert | `<<unite>>`, `<<filtres>>`… | N'importe quelle colonne de TD_Indicateurs | **⚙ Réglages → Excel des indicateurs → Attributs codés en dur** |
+| Vert | `<<unite>>`, `<<filtres>>`… | N'importe quelle colonne de TD_Indicateurs | Directement dans la fenêtre **Jetons disponibles…** (ou **⚙ Réglages → Excel des indicateurs**, c'est la même liste) |
 | Rouge souligné | | Faute de frappe, ou attribut pas encore déclaré | |
 
 ## Voir ce que vaut un jeton
@@ -22,9 +22,13 @@ reste ouverte à côté de l'éditeur.
 2. Lis la **valeur** de chaque jeton pour cette mesure, et **où elle se règle**.
 3. **Double-clique** un jeton pour l'insérer dans le DAX.
 
-Les colonnes de TD_Indicateurs pas encore déclarées sont en gris, avec ce qu'elles
-vaudraient. Un double-clic ouvre ⚙ Réglages avec la ligne déjà remplie : il ne reste
-qu'à enregistrer.
+Les cibles du rapport apparaissent sous leur KPI. Une cible est une mesure écrite à
+la main dans Power BI, rangée dans le dossier indiqué dans **⚙ Réglages → Mesures
+cibles**. Pour qu'elle existe dans une branche, coche **générer pour les cibles** sur
+la variation de cette branche.
+
+Sous les jetons `{…}`, la section **Attributs de TD_Indicateurs** se modifie sur
+place : voir [Créer et modifier un attribut](#créer-et-modifier-un-attribut).
 
 ![La fenêtre des jetons, sur la cible Weight cible en YTD](../images/jetons_explorateur_cible.png)
 
@@ -41,7 +45,7 @@ Ces valeurs viennent de la génération elle-même : c'est ce qui sera écrit.
 | `{variation}` | l'identifiant de la variation | La liste des variations (**Renommer**) |
 | `{date}` | la colonne de dates | **⚙ Réglages → Génération** (`dateColumn`) |
 | `{deltaScale}`, `{baseFormatString}` | le format de la mesure de base | Dans Power BI Desktop, puis régénérer |
-| `<<attribut>>` | une colonne de TD_Indicateurs | **⚙ Réglages → Excel des indicateurs → Attributs codés en dur** |
+| `<<attribut>>` | une colonne de TD_Indicateurs | La section **Attributs de TD_Indicateurs** de la fenêtre, ou **⚙ Réglages → Excel des indicateurs → Attributs codés en dur** |
 
 Le classeur lui-même se choisit en haut de la même page,
 **⚙ Réglages → Excel des indicateurs**, avec sa colonne clé (`mesure` par défaut).
@@ -103,27 +107,53 @@ Chaque colonne de `TD_Indicateurs.xlsx` peut devenir un jeton. Sa valeur est cel
 de la ligne du KPI, **écrite telle quelle** à la place du jeton. Une même variation
 peut donc se comporter différemment pour chaque KPI.
 
-### Créer un attribut
+### Créer et modifier un attribut
 
-1. **Dans l'Excel**, ajoute une colonne et remplis-la pour chaque KPI. Enregistre.
-2. **Dans ⚙ Réglages → Excel des indicateurs → Attributs codés en dur**, clique
-   **Ajouter** : un label (le nom du jeton) et la colonne. Si la colonne n'apparaît
-   pas, clique **↻** à côté du chemin de l'Excel. Puis **Enregistrer**.
-3. **Dans le DAX**, écris `<<label>>`. Il passe au vert.
+Tout se fait dans la section **Attributs de TD_Indicateurs** de la fenêtre **Jetons
+disponibles…**, sans ouvrir autre chose.
 
-Raccourci : dans **Jetons disponibles…**, double-clique la colonne en gris.
+Chaque jeton y est écrit comme dans le DAX, `<<unite>>`. Quand tu saisis un nom, les
+chevrons sont facultatifs.
+
+**Pour en ajouter un**, utilise la ligne sous le tableau : le nom du jeton, la colonne
+et la valeur du KPI choisi, puis **Ajouter**. Si la colonne n'existe pas encore, elle
+est créée dans `TD_Indicateurs.xlsx`, et dans son tableau Excel s'il y en a un. Sans
+colonne indiquée, elle prend le nom du jeton.
+
+**Pour modifier**, écris directement dans les cases :
+
+| Case | Ce que ça change |
+|---|---|
+| **Jeton** | Le nom du jeton. Le DAX qui citait l'ancien nom est à corriger |
+| **Colonne de l'Excel** | La colonne lue. Un nom nouveau crée la colonne |
+| **Valeur pour…** | La cellule du KPI choisi, dans l'Excel. Pour une cible, celle de son KPI |
+
+**Insérer** met le jeton dans le DAX, et **✕** le retire sans toucher à la colonne.
+`direction` est toujours proposé : s'il n'est pas déclaré, il est grisé, et **＋** le
+déclare.
+
+Cette liste est celle de **⚙ Réglages → Excel des indicateurs → Attributs codés en
+dur** : un changement ici s'y retrouve, et inversement. Le classeur est sauvegardé
+avant chaque écriture (**Sauvegardes…**, onglet ChopChop), et **Excel doit être
+fermé** pour écrire dedans ; sinon la fenêtre le dit et rien ne change. Le config est
+enregistré avec, sauf s'il avait déjà des modifications en attente.
 
 Exemple de `TD_Indicateurs` :
 
-| mesure | direction | unite | var_nom | agregat | filtres |
-|---|---|---|---|---|---|
-| Weight | 1 | kg | `_poids` | `AVERAGEX(VALUES({date}), {baseRef})` | `ALLSELECTED('Weight LOCF')` |
-| Total Steps | 1 | pas | `_pas` | `SUMX(VALUES({date}), {baseRef})` | `ALLSELECTED('steps'), ALLSELECTED('dim_Date')` |
+| mesure | direction | objectif | unite | var_nom | agregat | filtres |
+|---|---|---|---|---|---|---|
+| Weight | 1 | 180 | kg | `_poids` | `AVERAGEX(VALUES({date}), {baseRef})` | `ALLSELECTED('Weight LOCF')` |
+| Total Steps | 1 | 10000 | pas | `_pas` | `SUMX(VALUES({date}), {baseRef})` | `ALLSELECTED('steps'), ALLSELECTED('dim_Date')` |
 
 ### Une valeur
 
 ```dax
-{baseRef} * <<direction>>
+{baseRef} - <<objectif>>
+```
+
+```dax
+Weight reste = [Weight] - 180
+Total Steps reste = [Total Steps] - 10000
 ```
 
 ### Du texte

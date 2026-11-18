@@ -72,6 +72,12 @@ for s in (".Report", ".SemanticModel"):
     shutil.copytree(PBI / (PROJ + s), c / (PROJ + s))
 for f in (PROJ + ".pbip", "TD_Indicateurs.xlsx", "measures_config.json"):
     shutil.copy2(PBI / f, c / f)
+# la grille est d'abord vérifiée sans cible (elles arrivent plus bas) : celles
+# que le projet de démonstration déclare n'y ont pas leur place
+_conf = json.loads((c / "measures_config.json").read_text(encoding="utf-8"))
+_conf.pop("kpiMeasureFolders", None)
+(c / "measures_config.json").write_text(json.dumps(_conf, ensure_ascii=False, indent=2),
+                                        encoding="utf-8")
 R = c / (PROJ + ".Report")
 
 from qtpy.QtWidgets import QApplication, QMessageBox          # noqa: E402

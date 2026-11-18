@@ -55,6 +55,7 @@ BACKUP_ROOTS = {
     "_tmdl_backups": "ChopChop",
     "_propagate_backups": "Propagation",
     "_wireframe_backups": "Wireframe",
+    "_indicateurs_backups": "Excel des indicateurs",
 }
 
 # dossier parent qui les rassemble, à la racine du projet
@@ -109,6 +110,13 @@ def tool_roots(project_root, roots=None) -> list:
             if base.is_dir():
                 out.append(base)
     return out
+
+
+def abandonner(session) -> None:
+    """Oublie une session dont l'écriture a échoué : rien n'a changé, sa copie
+    ne décrit aucune opération."""
+    if session.dir.exists():
+        shutil.rmtree(session.dir, ignore_errors=True)
 
 
 class BackupSession:

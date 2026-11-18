@@ -1397,6 +1397,7 @@ JETONS_DAX = ("{base}", "{baseRef}", "{kpi}", "{kpiRef}", "{branch}", "{variatio
 JETONS_PORTEE = ("<<tables>>", "<<allTables>>", "<<removeFilters>>",
                  "<<each ALLSELECTED({table})>>")
 _VARIATION_SONDE = "⟦jetons⟧"
+ATTRIBUT_TOUJOURS_PROPOSE = "direction"
 _SEP_SONDE = "⟦|⟧"
 
 
@@ -1408,12 +1409,14 @@ def apercu_jetons(model_dir, config, variation="", cache_excel=None) -> dict:
     à blanc en fait. L'aperçu ne peut donc pas diverger de « Générer ». Une
     sonde par <<jeton>> : un attribut vide pour un KPI ne fait tomber que lui.
 
-    Toutes les colonnes de l'Excel sont sondées, déclarées ou non : on voit ce
-    qu'un attribut vaudrait avant de le déclarer.
+    Les attributs sondés sont ceux qui sont déclarés, plus `direction`, proposé
+    même s'il ne l'est pas. Les cibles sont celles du rapport, dans les branches
+    où elles sont générées.
 
     Rend {"bases": [{nom, mesure, kpi, branche, cible, valeurs}],
-    "attributs": [{jeton, colonne, declare}], "portee": [jetons]}. `valeurs` :
-    jeton -> texte, ou None si ce KPI n'a pas de valeur."""
+    "attributs": [{jeton, colonne, declare, absente, valeurs}],
+    "portee": [jetons], "colonnes": [en-têtes de l'Excel]}.
+    `valeurs` : jeton -> texte, ou None si ce KPI n'a pas de valeur."""
     global _CACHE_LIGNES
     import copy
     model_dir = Path(model_dir)
@@ -1439,17 +1442,33 @@ def apercu_jetons(model_dir, config, variation="", cache_excel=None) -> dict:
         finally:
             _CACHE_LIGNES = avant
     deja = {str(c).lower() for c in declares.values()}
-    jetons = dict(declares)
-    # l'ancien réglage kpiTables : ses jetons ne sont sondés que s'il est là,
-    # et une colonne du même nom (souvent « tables ») ne doit pas les masquer
     portee = list(JETONS_PORTEE) if cfg.get("kpiTables") else []
-    reserves = set(kpi_table_tokens(["t"])) if portee else set()
-    for c in colonnes:
-        if c.lower() not in deja and ">" not in c and c not in jetons                 and c not in reserves:
-            jetons[c] = c
+    jetons = dict(declares)
+    attributs = [{"jeton": "<<" + lab + ">>", "colonne": col, "declare": True,
+                  "absente": False} for lab, col in declares.items()]
+    dir_ = ATTRIBUT_TOUJOURS_PROPOSE
+    if dir_ not in deja and dir_ not in jetons:
+        trouvee = next((c for c in colonnes if c.lower() == dir_), None)
+        if trouvee:
+            jetons[dir_] = trouvee
+        attributs.append({"jeton": "<<" + dir_ + ">>", "colonne": trouvee or dir_,
+                          "declare": False, "absente": trouvee is None})
     bloc["tokens"] = jetons
-    attributs = [{"jeton": "<<" + lab + ">>", "colonne": col, "declare": lab in declares}
-                 for lab, col in jetons.items()]
+
+    # la valeur BRUTE de chaque cellule : celle qu'on édite dans la fenêtre
+    cle_xlsx = bloc.get("keyColumn") or td["keyColumn"]
+    avant = _CACHE_LIGNES
+    _CACHE_LIGNES = cache_excel
+    try:
+        for a in attributs:
+            a["valeurs"] = {}
+            if not a["absente"] and xlsx.exists():
+                try:
+                    a["valeurs"] = read_attribute_map(xlsx, cle_xlsx, a["colonne"])
+                except (SystemExit, Exception):
+                    a["valeurs"] = {}
+    finally:
+        _CACHE_LIGNES = avant
 
     variations = cfg.setdefault("variations", {})
     modele = {"inFieldParameter": False, "appliesToKpi": True, "appliesToCibles": True,
@@ -1457,7 +1476,7 @@ def apercu_jetons(model_dir, config, variation="", cache_excel=None) -> dict:
     variations[_VARIATION_SONDE] = dict(modele, namePattern="{base} " + _VARIATION_SONDE,
                                         dax=_SEP_SONDE.join(JETONS_DAX))
     sondes: dict = {}
-    for i, jeton in enumerate([a["jeton"] for a in attributs] + portee):
+    for i, jeton in enumerate([a["jeton"] for a in attributs if not a["absente"]] + portee):
         vid = f"{_VARIATION_SONDE} {i}"
         sondes[vid] = jeton
         variations[vid] = dict(modele, namePattern="{base} " + vid, dax=jeton)
@@ -1497,7 +1516,7 @@ def apercu_jetons(model_dir, config, variation="", cache_excel=None) -> dict:
         else:
             b["valeurs"][sondes[vid]] = n.get("dax")
     return {"bases": list(bases.values()), "attributs": attributs,
-            "portee": portee}
+            "portee": portee, "colonnes": colonnes}
 
 
 def _generate(model_dir, config, *, dry_run=None, remove_orphans=None, log=print) -> dict:

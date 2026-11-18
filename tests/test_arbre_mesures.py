@@ -113,7 +113,8 @@ check(f"{K} -> sa mesure de branche {B}", len(br_k) >= 1 and br_k[0]["branche"] 
 sous_br = [n for n in st["arbre"] if n["parent"] == br_k[0]["name"]]
 check(f"la mesure de branche -> ses variations en branche ({len(sous_br)})",
       sous_br and all(n["branche"] == B and n["type"] == "variation" for n in sous_br))
-cible = [n for n in st["arbre"] if n["type"] == "cible"]
+# celle de K : le projet de démonstration peut avoir les siennes
+cible = [n for n in st["arbre"] if n["type"] == "cible" and n["kpi"] == K]
 check(f"la cible racine est sous son KPI ({K})",
       len(cible) == 1 and cible[0]["parent"] == K)
 check("… et les variations de la cible sont sous elle",

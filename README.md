@@ -2468,7 +2468,9 @@ CF Δ 30d vit dans le dossier de Δ 30d), **dataCategory en dropdown**
   modale) : on choisit un KPI ou une cible et une branche, et chaque jeton
   affiche sa valeur, tirée de la génération à blanc
   (`generate_measures.apercu_jetons`), et le réglage qui le décide. Double-clic :
-  le jeton part dans le DAX, ou une colonne non déclarée s'ouvre dans ⚙ Réglages.
+  le jeton part dans le DAX. La section **Attributs de TD_Indicateurs** s'y
+  modifie sur place (jeton, colonne, valeur du KPI, ajout), synchronisée avec
+  ⚙ Réglages ; une colonne nouvelle est créée dans l'Excel, classeur sauvegardé ;
   Ailleurs, les explications longues vivent derrière un **ⓘ**
   (survol = infobulle, clic = fenêtre) plutôt qu'en paragraphes permanents ;
 - **aperçu des mesures générées** sans toucher au modèle — il suit la **portée

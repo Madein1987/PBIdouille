@@ -505,7 +505,7 @@ box(s, 7.8, 1.5, 4.9, 3.55, fill=CARD2, line=GREEN, lw=1.25, radius=0.04)
 text(s, 8.05, 1.62, 4.45, 0.62,
      [[("<<colonne>>", {"font": MONO, "color": GREEN, "bold": True, "size": 15})],
       [("n'importe quelle colonne de TD_Indicateurs", {"size": 12.5, "bold": True})],
-      [("à déclarer dans ⚙ Réglages → Excel des indicateurs", {"size": 10, "color": MUTED})]],
+      [("à ajouter dans Variations → Jetons disponibles…", {"size": 10, "color": MUTED})]],
      size=13)
 usages = [("une valeur", "* <<direction>>", "* 1   ou   * -1"),
           ("un texte", "& \" <<unite>>\"", "& \" kg\"   ou   & \" pas\""),

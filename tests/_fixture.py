@@ -63,6 +63,8 @@ def ajouter_cibles(semantic_dir, kpis, field_parameter="P_Indicateurs_parCalcul"
             noms.append((f"{racine} {v}", None))
             noms += [(f"{racine} {b} {v}", None) for b in branches]
         for nom, dos in noms:
+            if f"\tmeasure '{nom}' =" in texte:     # le projet l'a déjà
+                continue
             ajouts.append(f"\tmeasure '{nom}' = 0\n"
                           + (f"\t\tdisplayFolder: {dos}\n" if dos else "")
                           + f"\t\tlineageTag: cible-{len(ajouts)}\n\n")

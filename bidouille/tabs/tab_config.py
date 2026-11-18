@@ -68,8 +68,10 @@ from tabs.dialog_guide import bouton_schema
 from tabs.arbre_mesures import ArbreMesures
 from tabs.apercu_parametres import ApercuParametres
 from tabs.fiche_mesure import ROLE_HTML, DelegueRiche, ajouter_attributs
-from tabs.explorateur_jetons import FenetreJetons
+from tabs.explorateur_jetons import FenetreJetons, nom_attribut
 
+import backup_restore as br
+import xlsx_lecture as xl
 import generate_measures as gm   # scan_cibles : mêmes règles que la génération
 
 # index des sous-onglets de l'onglet « Mesures » (la génération n'a plus
@@ -791,7 +793,11 @@ class ConfigTab(QWidget):
         self.explorateur_jetons = self.fenetre_jetons.explorateur
         self.explorateur_jetons.besoin.connect(self._rafraichir_jetons)
         self.explorateur_jetons.inserer.connect(self._inserer_jeton)
-        self.explorateur_jetons.declarer.connect(self._declarer_attribut)
+        self.explorateur_jetons.attribut_ajoute.connect(self._attribut_ajoute)
+        self.explorateur_jetons.attribut_renomme.connect(self._attribut_renomme)
+        self.explorateur_jetons.attribut_colonne.connect(self._attribut_colonne)
+        self.explorateur_jetons.attribut_valeur.connect(self._attribut_valeur)
+        self.explorateur_jetons.attribut_retire.connect(self._attribut_retire)
         self.btn_jetons = QPushButton("Jetons disponibles…")
         self.btn_jetons.setToolTip("Ce que vaut chaque jeton pour le KPI ou la cible\n"
                                    "de ton choix, et où il se règle.")
@@ -1477,7 +1483,7 @@ class ConfigTab(QWidget):
         note_hc.setStyleSheet(f"color:{TEXT_DIM};")
         hcv.addWidget(note_hc)
         self.g_hc_table = QTableWidget(0, 2)
-        self.g_hc_table.setHorizontalHeaderLabels(["Label (jeton <<…>>)", "Colonne"])
+        self.g_hc_table.setHorizontalHeaderLabels(["Jeton", "Colonne"])
         self.g_hc_table.verticalHeader().setVisible(False)
         self.g_hc_table.setMaximumHeight(130)
         hh = self.g_hc_table.horizontalHeader()
@@ -1658,12 +1664,11 @@ class ConfigTab(QWidget):
         v.addLayout(bas)
         return dlg
 
-    def ouvrir_reglages(self, page: str = "", preparer=None) -> bool:
+    def ouvrir_reglages(self, page: str = "") -> bool:
         """⚙ Réglages : les réglages globaux, dans leur fenêtre.
 
         `page` : la page à montrer (clé de PAGES_REGLAGES) ; vide = celle où
-        on l'avait laissée. `preparer` : appelé juste avant d'afficher (pour
-        pré-remplir une ligne).
+        on l'avait laissée.
 
         Ouvrir d'abord la vue en cours dans le config (un JSON brut invalide
         arrête tout, comme pour changer de vue). « Enregistrer » écrit le
@@ -1687,8 +1692,6 @@ class ConfigTab(QWidget):
         self.lbl_reglages_fichier.setText(str(self.project.config_json))
         if page:
             self.aller_reglages(page)
-        if preparer:
-            preparer()
         dlg = self._dlg_reglages
         ok = (dlg.exec_() if hasattr(dlg, "exec_") else dlg.exec()) == QDialog.Accepted
         if not ok:
@@ -2025,7 +2028,7 @@ class ConfigTab(QWidget):
         for r in range(self.g_hc_table.rowCount()):
             item = self.g_hc_table.item(r, 0)
             combo = self.g_hc_table.cellWidget(r, 1)
-            label = item.text().strip() if item else ""
+            label = nom_attribut(item.text()) if item else ""
             col = combo.currentText().strip() if combo else ""
             if label and col:
                 tokens[label] = col
@@ -2134,7 +2137,7 @@ class ConfigTab(QWidget):
     def _hc_add_row(self, label, column):
         r = self.g_hc_table.rowCount()
         self.g_hc_table.insertRow(r)
-        self.g_hc_table.setItem(r, 0, QTableWidgetItem(label))
+        self.g_hc_table.setItem(r, 0, QTableWidgetItem(f"<<{label}>>" if label else ""))
         self.g_hc_table.setCellWidget(r, 1, self._hc_make_combo(column))
         self._mark_dirty()
 
@@ -2521,7 +2524,10 @@ class ConfigTab(QWidget):
         # le MÊME repérage que la coloration : ce qui est rouge dans
         # l'éditeur est exactement ce que cette ligne signale
         chevrons = set(JETONS_PORTEE) | self._chevrons_connus()
+        # recolorer touche le document : ce n'est pas une modification
+        self.ed_dax.blockSignals(True)
         self.surligneur.definir_chevrons(self._chevrons_connus())
+        self.ed_dax.blockSignals(False)
         inconnus_acc, inconnus_chev = set(), set()
         for t in texts:
             for d, f, genre, connu in reperer_jetons(
@@ -2689,16 +2695,146 @@ class ConfigTab(QWidget):
         self.ed_dax.insertPlainText(jeton)
         self.ed_dax.setFocus()
 
-    def _declarer_attribut(self, colonne: str = "") -> None:
-        """⚙ Réglages, à la page de l'Excel ; une colonne choisie y arrive
-        déjà sur sa ligne, il ne reste qu'à enregistrer."""
-        def preparer():
-            if colonne:
-                self._hc_add_row(colonne, colonne)
-            page = self.reglages_pages.currentWidget()
-            QTimer.singleShot(0, lambda: page.ensureWidgetVisible(self.g_hc_table))
-        self.ouvrir_reglages("excel", preparer)
+    # ---- attributs de TD_Indicateurs, édités dans la fenêtre des jetons ------
+    # La même liste que ⚙ Réglages → Excel des indicateurs : le config en
+    # mémoire, que la fenêtre des Réglages relit à chaque ouverture.
+
+    def _jetons_attributs(self) -> dict:
+        return self._config.setdefault("hardcodedAttributes", {}).setdefault("tokens", {})
+
+    def _excel_attributs(self) -> tuple:
+        td = gm.indicateurs_xlsx(self._config, self.project.folder)
+        bloc = self._config.get("hardcodedAttributes") or {}
+        xlsx = Path(bloc.get("xlsx") or td["path"])
+        if not xlsx.is_absolute():
+            xlsx = self.project.folder / xlsx
+        return xlsx, bloc.get("keyColumn") or td["keyColumn"]
+
+    def _ecrire_excel(self, action, resume) -> bool:
+        """`action(sauvegarde)` écrit l'Excel ; le classeur est sauvegardé
+        avant. Un échec se dit dans la fenêtre, sans boîte de dialogue."""
+        ex = self.explorateur_jetons
+        xlsx = self._excel_attributs()[0]
+        session = br.BackupSession(br.backup_root(self.project.folder, "_indicateurs_backups"),
+                                   "Excel des indicateurs", self.project.folder)
+        try:
+            action(session.save)
+        except PermissionError:
+            br.abandonner(session)
+            ex.message(f"{xlsx.name} est ouvert dans Excel : ferme-le et réessaie.", True)
+            return False
+        except (OSError, ValueError) as e:
+            br.abandonner(session)
+            ex.message(str(e), True)
+            return False
+        session.close(resume)
+        self._td_entetes(force=True)
+        return True
+
+    def _colonne_excel(self, colonne, valeurs=None):
+        """Le vrai nom de `colonne` dans l'Excel, en la créant au besoin ;
+        None si la création échoue."""
+        xlsx, cle = self._excel_attributs()
+        lignes = xl.lire_lignes(xlsx, max_rows=1) if xlsx.exists() else []
+        for h in (lignes[0] if lignes else ()):
+            if h is not None and str(h).strip().lower() == colonne.lower():
+                return str(h).strip()
+        if not self._ecrire_excel(
+                lambda sauve: xl.ajouter_colonne(xlsx, cle, colonne, valeurs, sauve),
+                f"colonne « {colonne} » ajoutée"):
+            return None
+        return colonne
+
+    def _attributs_changes(self, texte, sale) -> None:
+        """Après un changement de la liste : enregistre le config, sauf s'il
+        portait déjà des modifications, qui restent à sauvegarder."""
+        bloc = self._config.get("hardcodedAttributes")
+        if isinstance(bloc, dict) and not bloc.get("tokens"):
+            bloc.pop("tokens", None)
+            if not bloc:
+                self._config.pop("hardcodedAttributes", None)
+        if sale:
+            self._set_dirty(True)
+            texte += " À sauvegarder avec le reste du config."
+        else:
+            self._save()
+        self._refresh_lint_preview()
         self._rafraichir_jetons()
+        self.explorateur_jetons.message(texte)
+
+    @staticmethod
+    def _nom_attribut_invalide(nom) -> bool:
+        return not nom or any(c in nom for c in "<>{}")
+
+    def _attribut_ajoute(self, label, colonne, valeur, kpi) -> None:
+        ex = self.explorateur_jetons
+        if not self.project:
+            return
+        colonne = colonne or label
+        if self._nom_attribut_invalide(label) or self._nom_attribut_invalide(colonne):
+            ex.message("Donne un nom de jeton, sans < > ni { }.", True)
+            return
+        jetons = self._jetons_attributs()
+        if label in jetons:
+            ex.message(f"Le jeton <<{label}>> existe déjà.", True)
+            return
+        sale = self._dirty
+        v = xl.valeur_cellule(valeur)
+        vraie = self._colonne_excel(colonne, {kpi: v} if v is not None and kpi else None)
+        if vraie is None:
+            self._rafraichir_jetons()
+            return
+        if v is not None and kpi and vraie != colonne:     # colonne déjà là
+            xlsx, cle = self._excel_attributs()
+            if not self._ecrire_excel(
+                    lambda sauve: xl.ecrire_cellule(xlsx, cle, kpi, vraie, v, sauve),
+                    f"{kpi} · {vraie}"):
+                return
+        jetons[label] = vraie
+        ex.vider_ajout()
+        self._attributs_changes(f"<<{label}>> est prêt à utiliser.", sale)
+
+    def _attribut_renomme(self, ancien, nouveau) -> None:
+        ex = self.explorateur_jetons
+        jetons = self._jetons_attributs()
+        if self._nom_attribut_invalide(nouveau) or nouveau in jetons or ancien not in jetons:
+            ex.message(f"Impossible de renommer en « {nouveau} » : nom vide, "
+                       "déjà pris ou avec < > { }.", True)
+            self._rafraichir_jetons()
+            return
+        sale = self._dirty
+        bloc = self._config["hardcodedAttributes"]
+        bloc["tokens"] = {(nouveau if k == ancien else k): v for k, v in jetons.items()}
+        self._attributs_changes(f"<<{ancien}>> s'appelle maintenant <<{nouveau}>>. "
+                                "Le DAX qui citait l'ancien nom est à corriger.", sale)
+
+    def _attribut_colonne(self, label, colonne) -> None:
+        ex = self.explorateur_jetons
+        jetons = self._jetons_attributs()
+        if label not in jetons or self._nom_attribut_invalide(colonne):
+            ex.message("Nom de colonne invalide.", True)
+            self._rafraichir_jetons()
+            return
+        sale = self._dirty
+        vraie = self._colonne_excel(colonne)
+        if vraie is None:
+            self._rafraichir_jetons()
+            return
+        jetons[label] = vraie
+        self._attributs_changes(f"<<{label}>> lit maintenant la colonne {vraie}.", sale)
+
+    def _attribut_valeur(self, label, colonne, kpi, valeur) -> None:
+        xlsx, cle = self._excel_attributs()
+        v = xl.valeur_cellule(valeur)
+        if self._ecrire_excel(lambda sauve: xl.ecrire_cellule(xlsx, cle, kpi, colonne, v, sauve),
+                              f"{kpi} · {colonne}"):
+            self.explorateur_jetons.message(f"{kpi} : {colonne} mis à jour dans {xlsx.name}.")
+        self._rafraichir_jetons()
+
+    def _attribut_retire(self, label) -> None:
+        sale = self._dirty
+        self._jetons_attributs().pop(label, None)
+        self._attributs_changes(f"<<{label}>> est retiré. La colonne reste dans l'Excel.", sale)
 
     def _details_apercu(self) -> None:
         """Le DAX et les attributs de chaque nom de l'aperçu, tirés du
