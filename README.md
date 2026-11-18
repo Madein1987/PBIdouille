@@ -11,6 +11,7 @@ PBIR pour le rapport). Rien d'autre à installer qu'un Python et Qt ; Power BI
 Desktop doit être **fermé** pendant une écriture, puisqu'il ne relit les
 fichiers qu'à l'ouverture.
 
+- **[Documentation, onglet par onglet](docs/README.md)** : [Variations](docs/mesures/variations.md) · [Jetons](docs/mesures/jetons.md)
 - [En images](#en-images)
 - [Démarrage rapide](#démarrage-rapide)
 - [1. Vue d'ensemble](#1-vue-densemble) · [2. Les composants](#2-les-composants)
@@ -40,8 +41,9 @@ déclarée *branche* (YTD) devient à son tour une base.
 
 ### Les jetons du DAX
 
-Une variation s'écrit une fois, avec des jetons (`{baseRef}`, `{kpiRef}`,
-`{date}`…) que la génération remplace pour chaque KPI.
+Une variation s'écrit une fois, avec des jetons que la génération remplace pour
+chaque KPI : `{baseRef}`, `{kpiRef}`, `{date}`…, et `<<n'importe quelle colonne>>`
+de TD_Indicateurs. [Tout sur les jetons](docs/mesures/jetons.md).
 
 ![Les jetons à connaître](bidouille/aide/jetons.png)
 
@@ -170,7 +172,7 @@ doublon. Tout ce qui est réécrit est d'abord sauvegardé.
 | `bidouille\tabs\` | les onglets et leurs fenêtres |
 | `bidouille\aide\` | les images du guide intégré |
 | `tests\` | les suites de tests (chacune finit par « TOUT OK ») ; `test_python38.py` garde l'app lisible en Python 3.8 |
-| `docs\` | le guide PowerPoint ; `docs\sources\build_deck.py` le reconstruit, `exporter_aide.ps1` en tire les images de `bidouille\aide\` (PowerPoint requis) |
+| `docs\` | [la documentation](docs/README.md), le guide PowerPoint ; `docs\sources\build_deck.py` le reconstruit, `exporter_aide.ps1` en tire les images de `bidouille\aide\` (PowerPoint requis) |
 
 Côté projet, à côté du `.pbip` : `measures_config.json` (variations,
 branches, paramètres de champ, réglages), `TD_Indicateurs.xlsx` (l'Excel des
@@ -1111,8 +1113,13 @@ colonne (ligne `mesure == X` dans l'Excel). Valeur **brute** : un entier donne
 `1`/`-1` (pour du texte, quote toi-même : `"<<label>>"`). Un KPI absent de
 l'Excel (ajouté au modèle, pas encore à l'Excel) → la mesure n'est **pas générée** (avertissement),
 pour ne jamais écrire du DAX cassé. Re-générer après avoir modifié l'Excel met
-les valeurs à jour. UI : **⚙ Réglages → « Attributs
+les valeurs à jour. UI : **⚙ Réglages → Excel des indicateurs → « Attributs
 codés en dur »** (colonne au menu déroulant, label à côté).
+
+Une cellule peut contenir du **DAX, jetons compris** (`SUMX(VALUES({date}),
+{baseRef})`) : l'attribut est remplacé avant les `{jetons}`. Il sert aussi dans le
+nom et la description de la mesure, mais pas dans `displayFolder`. Voir
+[Les jetons](docs/mesures/jetons.md).
 
 ---
 
@@ -2306,6 +2313,7 @@ bidouille\
     tab_config.py       onglet « Mesures » (Variations, JSON brut) + la fenêtre ⚙ Réglages
     arbre_mesures.py    Mesures → « Arbre des mesures » (par KPI / par variation)
     fiche_mesure.py     DAX et attributs d'une mesure générée (fiche, aperçu dépliable)
+    explorateur_jetons.py  « Jetons disponibles » : ce que vaut chaque jeton, par KPI ou cible
     apercu_parametres.py  Mesures → « Paramètres de champ », ce que les tables contiendront
     fp_tables.py        l'éditeur de la liste des tables paramètre
     tab_model.py        panneau « Génération des mesures », posé en tête du journal (generate_measures.py)
@@ -2548,11 +2556,11 @@ CF Δ 30d vit dans le dossier de Δ 30d), **dataCategory en dropdown**
   qui est rouge est exactement ce qu'il signale — `{jeton}` inconnu, et
   maintenant `<<attribut>>` non déclaré (la génération sauterait la mesure).
   `{table}` dans un `<<each …>>` n'y est plus signalé à tort ;
-- **aide-mémoire des jetons** sous la zone DAX, **replié** par défaut (un clic
-  sur « Jetons disponibles ») : il sert à l'écriture du DAX, pas en permanence.
-  Il porte l'opposition qui compte : `{kpi}` = KPI racine **sans** branche,
-  `{kpiRef}` = le KPI **dans** la branche courante (le piège de l'écart
-  réel−cible). Ailleurs, les explications longues vivent derrière un **ⓘ**
+- **explorateur des jetons** sous la zone DAX, **replié** par défaut (un clic
+  sur « Jetons disponibles ») : on choisit un KPI ou une cible et une branche,
+  et chaque jeton affiche sa valeur, tirée de la génération à blanc
+  (`generate_measures.apercu_jetons`). Double-clic : le jeton part dans le DAX.
+  Ailleurs, les explications longues vivent derrière un **ⓘ**
   (survol = infobulle, clic = fenêtre) plutôt qu'en paragraphes permanents ;
 - **aperçu des mesures générées** sans toucher au modèle — il suit la **portée
   cochée** : une variation « aux cibles » seulement montre les cibles réelles du

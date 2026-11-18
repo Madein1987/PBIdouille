@@ -68,6 +68,7 @@ from tabs.dialog_guide import bouton_schema
 from tabs.arbre_mesures import ArbreMesures
 from tabs.apercu_parametres import ApercuParametres
 from tabs.fiche_mesure import ROLE_HTML, DelegueRiche, ajouter_attributs
+from tabs.explorateur_jetons import ExplorateurJetons
 
 import generate_measures as gm   # scan_cibles : mêmes règles que la génération
 
@@ -89,24 +90,6 @@ KNOWN_PLACEHOLDERS = {
     "variationRef",     # enveloppe de branche : la mesure Réel de la variation
 }
 
-# aide-mémoire affiché sous le DAX : ce que vaut chaque jeton, avec l'exemple
-# qui compte — la DIFFÉRENCE entre {kpi} (racine, sans branche) et {kpiRef}
-# (mesure du KPI DANS la branche courante). C'est le piège de l'écart
-# réel−cible : en branche YTD, [{kpi}] compare le réel COURANT à la cible YTD.
-TOKENS_HELP = (
-    "Jetons, exemple : cible « Weight cible », branche YTD\n"
-    "  {base}     nom de la base traitée .......... Weight cible YTD\n"
-    "  {baseRef}  ↳ en référence DAX .............. [Weight cible YTD]\n"
-    "  {kpi}      KPI racine, SANS branche ........ Weight\n"
-    "  {kpiRef}   ↳ le KPI DANS la branche ........ [Weight YTD]\n"
-    "  {branch}   branche courante ................ YTD\n"
-    "      en Réel, rien, pas même l'espace devant : [{kpi} cible {branch}]\n"
-    "      vise [Weight cible], et [Weight cible YTD] en branche\n"
-    "  {variation} id de la variation · {date} colonne de dates\n"
-    "  {deltaScale} 100 si le format est un %, sinon 1\n"
-    "  {baseFormatString} format de la base, en chaîne DAX : \"#,0.0\"\n"
-    "      FORMAT({baseRef}, {baseFormatString}) & \" pas\""
-)
 PLACEHOLDER_RE = re.compile(r"\{([A-Za-z_][A-Za-z0-9_]*)\}")
 
 # l'aperçu des noms générés, en couleur : la racine (KPI ou cible) telle
@@ -791,7 +774,7 @@ class ConfigTab(QWidget):
                           "ligne (2e appui : colonne 0).\n\n"
                           "Jetons : {connus} en bleu · <<attributs>> en vert ·\n"
                           "INCONNUS en rouge souligné. Un <<attribut>> se déclare\n"
-                          "dans ⚙ Réglages → Attributs codés en dur.")
+                          "dans ⚙ Réglages → Excel des indicateurs.")
         dv = QVBoxLayout(gb_dax)
         self.ed_dax = DaxEdit()
         self.surligneur = SurligneurJetons(self.ed_dax.document())
@@ -802,19 +785,18 @@ class ConfigTab(QWidget):
         self.lbl_lint.setStyleSheet(f"color:{YELLOW};")
         dv.addWidget(self.lbl_lint)
 
-        # aide-mémoire des jetons : REPLIÉ par défaut (il sert à l'écriture du
-        # DAX, pas en permanence) — c'est là qu'est expliqué le piège
-        # {kpi} / {kpiRef} de l'écart réel−cible en branche
-        lbl_tokens = QLabel(TOKENS_HELP)
-        police_code(lbl_tokens, petit=True)   # ses colonnes s'alignent
-        lbl_tokens.setStyleSheet(f"color:{TEXT_DIM};")
-        lbl_tokens.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        # les jetons, avec ce qu'ils valent pour le KPI ou la cible qu'on
+        # choisit : REPLIÉ par défaut, il sert à l'écriture du DAX
+        self.explorateur_jetons = ExplorateurJetons()
+        self.explorateur_jetons.besoin.connect(self._rafraichir_jetons)
+        self.explorateur_jetons.inserer.connect(self._inserer_jeton)
         rang_jetons = QHBoxLayout()
-        rang_jetons.addWidget(self._collapsible("Jetons disponibles", lbl_tokens))
+        rang_jetons.addWidget(self._collapsible("Jetons disponibles",
+                                                self.explorateur_jetons))
         rang_jetons.addWidget(bouton_schema(self, "jetons"))
         rang_jetons.addStretch()
         dv.addLayout(rang_jetons)
-        dv.addWidget(lbl_tokens)
+        dv.addWidget(self.explorateur_jetons)
         droite.addWidget(gb_dax)
 
         gb_apercu = QGroupBox("Aperçu des noms générés")
@@ -2448,6 +2430,7 @@ class ConfigTab(QWidget):
                 ", ".join(v.get("includeNameContains") or []))
             self.ed_dax.setPlainText(dax_to_text(v.get("dax")))
         self._loading = False
+        self.explorateur_jetons.set_variation(self._current or "")
         self._refresh_lint_preview()
 
     def _commit_form(self):
@@ -2617,8 +2600,8 @@ class ConfigTab(QWidget):
         if inconnus_chev:
             avertissements.append(
                 "⚠ Attribut(s) inconnu(s) : " + ", ".join(sorted(inconnus_chev))
-                + ", à déclarer dans ⚙ Réglages → Attributs codés en "
-                  "dur (connus : " + (", ".join("<<%s>>" % c for c in sorted(chevrons))
+                + ", à déclarer dans ⚙ Réglages → Excel des "
+                  "indicateurs (connus : " + (", ".join("<<%s>>" % c for c in sorted(chevrons))
                                      or "aucun") + ").")
         # Double backslash dans un format : presque toujours une correction de
         # trop. Le JSON brut AFFICHE « \\ » là où le format n'en contient qu'un
@@ -2743,6 +2726,30 @@ class ConfigTab(QWidget):
         if self._minuterie_apercu.isActive():
             self._minuterie_apercu.stop()
             self._details_apercu()
+
+    def _rafraichir_jetons(self) -> None:
+        """Les valeurs de l'explorateur de jetons : la génération à blanc,
+        sur une copie du config (cf. generate_measures.apercu_jetons)."""
+        ex = self.explorateur_jetons
+        if not self.project or not self.project.model_dir.exists():
+            ex.erreur("Ouvre un projet .pbip pour voir ce que valent les jetons.")
+            return
+        try:
+            donnees = gm.apercu_jetons(self.project.model_dir, self._config,
+                                       self._current or "",
+                                       cache_excel=self._cache_excel)
+        except SystemExit as e:
+            ex.erreur("Aperçu impossible : " + str(e))
+            return
+        except Exception as e:              # un config en cours d'écriture
+            ex.erreur(f"Aperçu impossible : {type(e).__name__} : {e}")
+            return
+        fp = self._config.get("fieldParameter") or {}
+        ex.afficher(donnees, fp.get("noBranchLabel") or "Réel")
+
+    def _inserer_jeton(self, jeton: str) -> None:
+        self.ed_dax.insertPlainText(jeton)
+        self.ed_dax.setFocus()
 
     def _details_apercu(self) -> None:
         """Le DAX et les attributs de chaque nom de l'aperçu, tirés du

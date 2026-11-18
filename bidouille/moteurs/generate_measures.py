@@ -1391,6 +1391,114 @@ def generate(model_dir, config, *, dry_run=None, remove_orphans=None, log=print,
         _CACHE_LIGNES = avant
 
 
+# les jetons {…} du DAX, dans l'ordre où on les présente
+JETONS_DAX = ("{base}", "{baseRef}", "{kpi}", "{kpiRef}", "{branch}", "{variation}",
+              "{date}", "{deltaScale}", "{baseFormatString}")
+JETONS_PORTEE = ("<<tables>>", "<<allTables>>", "<<removeFilters>>",
+                 "<<each ALLSELECTED({table})>>")
+_VARIATION_SONDE = "⟦jetons⟧"
+_SEP_SONDE = "⟦|⟧"
+
+
+def apercu_jetons(model_dir, config, variation="", cache_excel=None) -> dict:
+    """Ce que vaut chaque jeton, pour chaque KPI, cible et branche.
+
+    Rien n'est recalculé ici : on ajoute à une COPIE du config des variations
+    « sondes » dont le DAX n'est que des jetons, et on lit ce que la génération
+    à blanc en fait. L'aperçu ne peut donc pas diverger de « Générer ». Une
+    sonde par <<jeton>> : un attribut vide pour un KPI ne fait tomber que lui.
+
+    Toutes les colonnes de l'Excel sont sondées, déclarées ou non : on voit ce
+    qu'un attribut vaudrait avant de le déclarer.
+
+    Rend {"bases": [{nom, mesure, kpi, branche, cible, valeurs}],
+    "attributs": [{jeton, colonne, declare}], "portee": [jetons]}. `valeurs` :
+    jeton -> texte, ou None si ce KPI n'a pas de valeur."""
+    global _CACHE_LIGNES
+    import copy
+    model_dir = Path(model_dir)
+    cfg = copy.deepcopy(config or {})
+    td = indicateurs_xlsx(cfg, model_dir.parent)
+    bloc = cfg.get("hardcodedAttributes")
+    if not isinstance(bloc, dict):
+        bloc = cfg["hardcodedAttributes"] = {}
+    declares = dict(bloc.get("tokens") or {})
+    xlsx = Path(bloc.get("xlsx") or td["path"])
+    if not xlsx.is_absolute():
+        xlsx = model_dir.parent / xlsx
+    colonnes: list = []
+    if xlsx.exists():
+        avant = _CACHE_LIGNES
+        _CACHE_LIGNES = cache_excel         # même cache que la génération
+        try:
+            lignes = _lignes_excel(xlsx)
+            colonnes = [str(c).strip() for c in (lignes[0] if lignes else ())
+                        if c is not None and str(c).strip()]
+        except Exception:
+            colonnes = []
+        finally:
+            _CACHE_LIGNES = avant
+    deja = {str(c).lower() for c in declares.values()}
+    jetons = dict(declares)
+    # <<tables>> & cie sont des jetons de portée : une colonne du même nom (la
+    # colonne de portée s'appelle souvent « tables ») ne doit pas les masquer
+    reserves = set(kpi_table_tokens(["t"]))
+    for c in colonnes:
+        if c.lower() not in deja and ">" not in c and c not in jetons                 and c not in reserves:
+            jetons[c] = c
+    bloc["tokens"] = jetons
+    attributs = [{"jeton": "<<" + lab + ">>", "colonne": col, "declare": lab in declares}
+                 for lab, col in jetons.items()]
+
+    variations = cfg.setdefault("variations", {})
+    modele = {"inFieldParameter": False, "appliesToKpi": True, "appliesToCibles": True,
+              "wrapInBranch": False, "formatString": "inherit"}
+    variations[_VARIATION_SONDE] = dict(modele, namePattern="{base} " + _VARIATION_SONDE,
+                                        dax=_SEP_SONDE.join(JETONS_DAX))
+    sondes: dict = {}
+    for i, jeton in enumerate([a["jeton"] for a in attributs] + list(JETONS_PORTEE)):
+        vid = f"{_VARIATION_SONDE} {i}"
+        sondes[vid] = jeton
+        variations[vid] = dict(modele, namePattern="{base} " + vid, dax=jeton)
+    # une branche restreinte doit quand même recevoir les sondes
+    cfg["branches"] = {b: {k: v for k, v in d.items()
+                           if k not in ("variations", "excludeVariations")}
+                       if isinstance(d, dict) else {}
+                       for b, d in (cfg.get("branches") or {}).items()}
+    cfg["fieldParameter"] = {"enabled": False}      # sans objet ici
+
+    st = generate(model_dir, cfg, dry_run=True, remove_orphans=False,
+                  log=lambda *a, **k: None, cache_excel=cache_excel)
+    arbre = {n["name"]: n for n in st.get("arbre") or []}
+
+    def racine(nom):
+        n = arbre.get(nom)
+        # une mesure de branche descend de sa base ; une cible, elle, est
+        # une racine à part entière (son parent est son KPI)
+        while n and n.get("type") == "branche" and n.get("parent") in arbre:
+            nom, n = n["parent"], arbre[n["parent"]]
+        return nom
+
+    bases: dict = {}
+    for n in st.get("arbre") or []:
+        vid = n.get("variation") or ""
+        if not vid.startswith(_VARIATION_SONDE):
+            continue
+        mesure = n["parent"]
+        cle = (racine(mesure), n.get("branche") or "")
+        b = bases.setdefault(cle, {
+            "nom": cle[0], "mesure": mesure, "kpi": n.get("kpi"), "branche": cle[1],
+            "cible": bool(n.get("cible")),
+            "valeurs": {j: None for j in sondes.values()}})
+        if vid == _VARIATION_SONDE:
+            for j, v in zip(JETONS_DAX, (n.get("dax") or "").split(_SEP_SONDE)):
+                b["valeurs"][j] = variation if j == "{variation}" else v
+        else:
+            b["valeurs"][sondes[vid]] = n.get("dax")
+    return {"bases": list(bases.values()), "attributs": attributs,
+            "portee": list(JETONS_PORTEE)}
+
+
 def _generate(model_dir, config, *, dry_run=None, remove_orphans=None, log=print) -> dict:
     """Génère mesures + tables paramètre dans les TMDL de `model_dir`
     d'après `config` (dict du measures_config.json). Retourne les stats.
@@ -1555,6 +1663,15 @@ def _generate(model_dir, config, *, dry_run=None, remove_orphans=None, log=print
         def expand(s):
             if s is None:
                 return None
+            # attributs de TD_Indicateurs : <<label>> -> valeur pour ce KPI (si
+            # trouvée ; sinon le jeton reste et process() saute la mesure en
+            # avertissant). AVANT les autres jetons : une cellule peut porter
+            # du DAX, donc {baseRef} ou {date}.
+            for label, valmap in hc.items():
+                tok = "<<" + label + ">>"
+                v = valmap.get(kpi_lbl)
+                if tok in s and v is not None:
+                    s = s.replace(tok, v)
             # {branch} d'abord : il emporte son espace, avant que les autres
             # jetons ne deviennent du texte
             s = remplacer_branche(s, branch_id)
@@ -1581,13 +1698,6 @@ def _generate(model_dir, config, *, dry_run=None, remove_orphans=None, log=print
                   .replace("{variation}", vid)
                   .replace("{deltaScale}", delta_scale)
                   .replace("{baseFormatString}", chaine_dax(base_fmt)))
-            # attributs codés en dur : <<label>> -> valeur pour ce KPI (si trouvée ;
-            # sinon le jeton reste et process() saute la mesure en avertissant)
-            for label, valmap in hc.items():
-                tok = "<<" + label + ">>"
-                v = valmap.get(kpi_lbl)
-                if tok in s and v is not None:
-                    s = s.replace(tok, v)
             # portée par KPI (config, pas Excel) : les cibles héritent de celle
             # de LEUR KPI, puisque kpi_lbl vaut le KPI même pour « Weight cible »
             portee = kpi_tables.get(kpi_lbl)
@@ -1947,8 +2057,12 @@ def _generate(model_dir, config, *, dry_run=None, remove_orphans=None, log=print
             info = measure_info(ctext)
             tag = info["annotation"]
             if tag:
-                if tag in planned:
-                    continue          # remplacée par la version recalculée
+                # remplacée par la version recalculée. Le NOM compte aussi : une
+                # variation dont l'id a changé garde ses noms sous une autre
+                # annotation, et la laisser ferait deux mesures du même nom,
+                # que Power BI refuse de charger.
+                if tag in planned or info["name"] in planned_names:
+                    continue
                 if remove_orphans:
                     removed.append(info["name"])
                     continue          # orpheline supprimée

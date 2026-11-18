@@ -470,37 +470,71 @@ text(s, 0.6, 6.45, 12, 0.6,
      size=13, color=MUTED)
 
 # ============================================================ 8. Jetons
-s = new_slide("Les jetons sont remplacés à la génération. Le piège classique : {kpi} reste la racine "
-              "sans branche, alors que {kpiRef} suit la branche. Pour un écart réel−cible, c'est {kpiRef}.")
+s = new_slide("Les jetons sont remplacés à la génération, pour chaque KPI, cible et branche. Les {jetons} "
+              "viennent du modèle et de la variation, en bleu comme dans l'éditeur. Les <<jetons>>, en "
+              "vert, viennent de TD_Indicateurs : n'importe quelle colonne, donc une valeur, un nom de "
+              "variable ou même du DAX différent par KPI. Dans l'app, « Jetons disponibles » montre ce "
+              "que vaut chaque jeton pour le KPI ou la cible qu'on choisit.")
 title(s, "Les jetons à connaître", "Mesures")
-tok = [("{base}", "nom de la base traitée", "Weight YTD"),
-       ("{baseRef}", "la même, en référence DAX", "[Weight YTD]"),
-       ("{kpi}", "le KPI racine, sans branche", "Weight"),
-       ("{kpiRef}", "le KPI dans la branche courante", "[Weight YTD]"),
-       ("{branch}", "la branche (rien en Réel, espace compris)", "YTD"),
-       ("{date}", "la colonne de dates du modèle", "'dim_Date'[Date]"),
-       ("<<direction>>", "un attribut figé depuis TD_Indicateurs", "1  ou  -1")]
-for i, (t, d, ex) in enumerate(tok):
-    y = 1.8 + i * 0.6
-    box(s, 0.6, y, 7.6, 0.52, fill=CARD if i % 2 == 0 else BG)
-    text(s, 0.8, y, 1.9, 0.52, t, size=15, font=MONO, color=GREEN if t.startswith("{") else BLUE,
-         anchor=MSO_ANCHOR.MIDDLE)
-    text(s, 2.75, y, 3.0, 0.52, d, size=13, anchor=MSO_ANCHOR.MIDDLE)
-    text(s, 5.85, y, 2.3, 0.52, ex, size=13, font=MONO, color=MUTED, anchor=MSO_ANCHOR.MIDDLE)
-text(s, 0.8, 6.15, 7.4, 0.4, "Exemples lus pour la base Weight, en branche YTD.", size=12, color=MUTED)
-box(s, 8.6, 1.8, 4.1, 4.15, fill=CARD2, line=ORANGE, lw=1.5)
-text(s, 8.9, 2.0, 3.6, 0.5, "⚠  Le piège", size=20, font=HEAD, color=ORANGE)
-text(s, 8.9, 2.6, 3.6, 3.3,
-     [[("Écart réel − cible, en YTD :", {"bold": True})],
-      [("", {"size": 6})],
-      [("✗  [{kpi}] - {baseRef}", {"font": MONO, "color": RED, "size": 13})],
-      [("[Weight] - [Weight cible YTD]", {"font": MONO, "color": MUTED, "size": 11})],
-      [("deux périodes différentes", {"size": 12, "color": MUTED, "italic": True})],
-      [("", {"size": 8})],
-      [("✓  {kpiRef} - {baseRef}", {"font": MONO, "color": GREEN, "size": 13})],
-      [("[Weight YTD] - [Weight cible YTD]", {"font": MONO, "color": MUTED, "size": 11})]],
-     size=14)
-text(s, 8.6, 6.15, 4.1, 0.4, "Aide-mémoire complet sous la zone DAX (« Jetons disponibles »).", size=12, color=MUTED)
+
+# -- {…} : KPI et cible côte à côte --
+text(s, 0.6, 1.5, 6.9, 0.3, [[("{…}", {"font": MONO, "color": BLUE, "bold": True}),
+                              ("   le modèle et la variation", {"color": MUTED})]], size=14)
+X = (0.6, 1.95, 4.05, 5.75)
+W_ = (1.35, 2.1, 1.7, 1.75)
+for x, t in zip(X[2:], ("Weight YTD", "Weight cible YTD")):
+    text(s, x + 0.08, 1.88, 1.7, 0.28, t, size=11, bold=True, color=TEXT)
+tok = [("{base}", "la mesure traitée", "Weight YTD", "Weight cible YTD"),
+       ("{baseRef}", "la même, en référence", "[Weight YTD]", "[Weight cible YTD]"),
+       ("{kpi}", "le KPI racine", "Weight", "Weight"),
+       ("{kpiRef}", "le KPI, dans la branche", "[Weight YTD]", "[Weight YTD]"),
+       ("{branch}", "la branche", "YTD", "YTD"),
+       ("{date}", "la colonne de dates", "'dim_Date'[Date]", "'dim_Date'[Date]")]
+for i, (t, d, a, b) in enumerate(tok):
+    y = 2.2 + i * 0.47
+    box(s, 0.6, y, 6.9, 0.42, fill=CARD if i % 2 == 0 else BG, radius=0.12)
+    text(s, X[0] + 0.1, y, W_[0], 0.42, t, size=12, font=MONO, color=BLUE, anchor=MSO_ANCHOR.MIDDLE)
+    text(s, X[1] + 0.05, y, W_[1], 0.42, d, size=11.5, anchor=MSO_ANCHOR.MIDDLE)
+    text(s, X[2] + 0.08, y, W_[2], 0.42, a, size=10, font=MONO, color=MUTED, anchor=MSO_ANCHOR.MIDDLE)
+    diff = a != b
+    text(s, X[3] + 0.08, y, W_[3], 0.42, b, size=10, font=MONO, color=BLUE if diff else MUTED,
+         bold=diff, anchor=MSO_ANCHOR.MIDDLE)
+
+# -- <<…>> : n'importe quelle colonne --
+box(s, 7.8, 1.5, 4.9, 3.55, fill=CARD2, line=GREEN, lw=1.25, radius=0.04)
+text(s, 8.05, 1.62, 4.45, 0.62,
+     [[("<<colonne>>", {"font": MONO, "color": GREEN, "bold": True, "size": 15})],
+      [("n'importe quelle colonne de TD_Indicateurs", {"size": 12.5, "bold": True})]], size=13)
+usages = [("une valeur", "* <<direction>>", "* 1   ou   * -1"),
+          ("un texte", "& \" <<unite>>\"", "& \" kg\"   ou   & \" pas\""),
+          ("un nom de variable", "VAR <<var_nom>> = …", "VAR _poids = …"),
+          ("du DAX propre au KPI", "<<agregat>>", "AVERAGEX(…)   ou   SUMX(…)")]
+for i, (u, ecrit, donne) in enumerate(usages):
+    y = 2.36 + i * 0.66
+    text(s, 8.05, y, 4.5, 0.62,
+         [[(u, {"size": 11, "color": MUTED})],
+          [(ecrit, {"font": MONO, "size": 11, "color": GREEN}),
+           ("  →  ", {"size": 10, "color": MUTED}),
+           (donne, {"font": MONO, "size": 10, "color": TEXT})]], size=11)
+
+# -- les tables du KPI --
+box(s, 0.6, 5.2, 12.1, 1.05, fill=CARD, radius=0.06)
+text(s, 0.85, 5.36, 4.0, 0.9,
+     [[("Les tables du KPI", {"bold": True, "size": 14})],
+      [("colonne de TD_Indicateurs ; ta fonction est répétée pour chaque table",
+        {"size": 11, "color": MUTED})]], size=13)
+text(s, 4.85, 5.36, 7.7, 0.9,
+     [[("<<each ALLSELECTED({table})>>", {"color": GREEN, "bold": True, "size": 12})],
+      [("Weight        ", {"color": MUTED}), ("ALLSELECTED('Weight LOCF')", {})],
+      [("Total Steps   ", {"color": MUTED}), ("ALLSELECTED('steps'), ALLSELECTED('dim_Date')", {})]],
+     size=10.5, font=MONO)
+
+box(s, 0.6, 6.4, 12.1, 0.55, fill=CARD2)
+text(s, 0.85, 6.4, 11.6, 0.55,
+     [[("Dans l'app : ", {"bold": True, "color": GREEN}),
+       ("Variations → Jetons disponibles. Choisis un KPI ou une cible et une branche : "
+        "chaque jeton affiche sa valeur.", {})]],
+     size=13, anchor=MSO_ANCHOR.MIDDLE)
 
 # ============================================================ 9. Éditer une variation
 s = new_slide("Une variation = un gabarit de mesure. On l'écrit une fois ; l'aperçu à droite "

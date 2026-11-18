@@ -611,10 +611,8 @@ app.processEvents()
 check("l'apercu des noms aussi",
       onglet.arbre_apercu.fontInfo().family() == "Consolas")
 from qtpy.QtWidgets import QLabel                                 # noqa: E402
-jetons = [l for l in onglet.findChildren(QLabel)
-          if l.text().startswith("Jetons, exemple")]
-check("l'aide-memoire des jetons aussi (ses colonnes pointillees s'alignent)",
-      jetons and jetons[0].fontInfo().family() == "Consolas")
+check("l'explorateur des jetons aussi",
+      onglet.explorateur_jetons.arbre.fontInfo().family() == "Consolas")
 from qtpy.QtWidgets import QGroupBox                              # noqa: E402
 gb_dax = [g for g in onglet.findChildren(QGroupBox) if g.title() == "DAX"][0]
 from core.theme import TITRE_POLICE                              # noqa: E402
