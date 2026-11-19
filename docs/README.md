@@ -7,10 +7,11 @@ Le mode d'emploi, onglet par onglet.
 - [Variations](mesures/variations.md) : créer une mesure, et ce que chaque réglage change dans Power BI
 - [Les jetons](mesures/jetons.md) : `{base}`, `<<attributs>>` de TD_Indicateurs, et où chacun se règle
 - [Arbre des mesures](mesures/arbre.md) : tout ce que la génération produira, et le DAX final de chaque mesure
+- [Paramètres de champ](mesures/parametres-champ.md) : créer les tables d'un segment, et voir ce qu'elles contiendront
 
 ## À venir
 
-Paramètres de champ, Rapport, Sources de données, ChopChop.
+Rapport, Sources de données, ChopChop.
 
 ## Aussi
 

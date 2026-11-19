@@ -1,6 +1,6 @@
 # Mesures › Arbre des mesures
 
-[Documentation](../README.md) › Mesures › **Arbre des mesures** · voir aussi [Variations](variations.md), [Les jetons](jetons.md)
+[Documentation](../README.md) › Mesures › **Arbre des mesures** · voir aussi [Variations](variations.md), [Les jetons](jetons.md), [Paramètres de champ](parametres-champ.md)
 
 L'**arbre des mesures** montre tout ce que **Générer les mesures** produira, rangé
 selon l'origine de chaque mesure. Il sert à vérifier le résultat avant d'écrire
@@ -74,7 +74,7 @@ dans la fiche.
 
 ### Paramètres
 
-**◆** indique que la mesure est dans au moins une table paramètre de champ. Un
+**◆** indique que la mesure est dans au moins une [table paramètre de champ](parametres-champ.md). Un
 chiffre s'y ajoute quand il y en a plusieurs : **◆ 4** veut dire quatre tables, et
 l'infobulle les nomme. Une colonne vide veut dire que la mesure n'est dans aucune
 table.
