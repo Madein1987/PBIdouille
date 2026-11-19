@@ -441,7 +441,9 @@ class BidouilleWindow(QMainWindow):
         # le NOM seulement (le chemin est en infobulle) : c'est la barre, donc
         # la largeur minimale de la fenêtre, qui cède ainsi de la place au
         # journal
-        self.btn_projet.setText("📂 " + project.name + "  ▾")
+        # le FICHIER, extension comprise : on voit que c'est un .pbip qu'on
+        # choisit, comme le 📄 du config à côté
+        self.btn_projet.setText("📂 " + project.pbip.name + "  ▾")
         self.btn_projet.setToolTip(str(project.pbip) + "\n\nCliquer pour ouvrir un "
                                    "rapport récent ou un autre.")
         self.btn_sauvegardes.setEnabled(True)
@@ -513,7 +515,7 @@ class BidouilleWindow(QMainWindow):
             titre.setEnabled(False)
             # deux versions d'un rapport portent souvent le même nom : leur
             # dossier les distingue
-            noms = [Path(p).stem for p in recents]
+            noms = [Path(p).name for p in recents]
             for p, nom in zip(recents, noms):
                 libelle = nom + (f"   ·  {Path(p).parent.name}" if noms.count(nom) > 1 else "")
                 a = m.addAction(libelle)

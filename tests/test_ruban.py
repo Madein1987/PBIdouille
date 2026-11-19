@@ -88,7 +88,8 @@ print("1. une seule ligne")
 check("le rapport ouvert est la copie", fen.project and fen.project.pbip == UN)
 check("ni étiquette ni liste « Récents » à part",
       not hasattr(fen, "project_label") and not hasattr(fen, "cmb_recents"))
-check("le bouton nomme le rapport", PROJ in fen.btn_projet.text())
+check("le bouton nomme le fichier du rapport, extension comprise",
+      (PROJ + ".pbip") in fen.btn_projet.text())
 check("le chemin complet est en infobulle", str(UN) in fen.btn_projet.toolTip())
 check("le config est sur la même ligne que le rapport",
       abs(fen.btn_config.geometry().center().y()
@@ -104,7 +105,8 @@ fen.menu_projet.aboutToShow.emit()
 actions = [a for a in fen.menu_projet.actions() if not a.isSeparator()]
 textes = [a.text() for a in actions]
 recents = [a for a in actions if a.isCheckable()]
-check("il liste les deux récents", len(recents) == 2)
+check("il liste les deux récents, par leur fichier",
+      len(recents) == 2 and all(a.text().startswith(PROJ + ".pbip") for a in recents))
 check("deux homonymes se distinguent par leur dossier",
       any("v2" in a.text() for a in recents) and len(set(a.text() for a in recents)) == 2)
 check("le rapport ouvert est coché, et lui seul",
