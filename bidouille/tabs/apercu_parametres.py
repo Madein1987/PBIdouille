@@ -15,7 +15,7 @@ mémoire et les réglages en cours : on voit ce que « Générer » écrira.
 from __future__ import annotations
 
 from qtpy.QtCore import Qt, Signal
-from qtpy.QtGui import QBrush, QColor, QFont
+from qtpy.QtGui import QBrush, QColor, QFont, QFontMetrics
 from qtpy.QtWidgets import (
     QGroupBox,
     QHBoxLayout,
@@ -37,6 +37,9 @@ COULEUR_ETAT = {"nouvelle": ACCENT, "modifiée": YELLOW, "vide": YELLOW,
                 "source introuvable": YELLOW}
 # colonnes du contenu
 C_AFFICHAGE, C_MESURE, C_CALCUL, C_BRANCHE, C_ORDRE = range(5)
+# autour du nom d'une table, dans l'en-tête de la matrice : le padding du thème
+# et les marges du style
+MARGE_ENTETE = 28
 
 
 class ApercuParametres(QWidget):
@@ -153,11 +156,14 @@ class ApercuParametres(QWidget):
         """Le contenu de la table `nom` ; `kpi` : la faire défiler jusqu'à
         ce KPI."""
         self._courante = nom or ""
-        # la colonne de la table ouverte se reconnaît dans la matrice
+        # la colonne de la table ouverte se reconnaît dans la matrice. La police
+        # part de celle de l'en-tête : celle d'un élément neuf n'est pas celle
+        # que le thème affiche
+        base = self.matrice.horizontalHeader().font()
         for c in range(self.matrice.columnCount()):
             h = self.matrice.horizontalHeaderItem(c)
             if h is not None:
-                f = QFont(h.font())
+                f = QFont(base)
                 f.setBold(h.text() == self._courante)
                 h.setFont(f)
                 h.setForeground(QBrush(QColor(ACCENT if h.text() == self._courante
@@ -262,7 +268,18 @@ class ApercuParametres(QWidget):
                     case.setToolTip(f"{k} n'est pas dans {t['name']}.")
                     case.setForeground(QBrush(QColor(TEXT_MUTED)))
                 m.setItem(li, c, case)
-        m.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeToContents)
+        # chaque colonne a la largeur de son nom EN GRAS : le nom reste entier
+        # quand sa table est ouverte, et les colonnes ne bougent pas au choix
+        h = m.horizontalHeader()
+        h.ensurePolished()
+        h.setSectionResizeMode(QHeaderView.Interactive)
+        gras = QFont(h.font())
+        gras.setBold(True)
+        mesure = QFontMetrics(gras)
+        for c, t in enumerate(self._tables):
+            largeur = (mesure.horizontalAdvance(t["name"])
+                       if hasattr(mesure, "horizontalAdvance") else mesure.width(t["name"]))
+            h.resizeSection(c, largeur + MARGE_ENTETE)
         m.verticalHeader().setSectionResizeMode(QHeaderView.ResizeToContents)
 
     # ---- gestes ----------------------------------------------------------------

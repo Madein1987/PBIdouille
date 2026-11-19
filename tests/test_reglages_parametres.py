@@ -50,6 +50,7 @@ exiger_projet(PBI, PROJET_DEMO, "measures_config.json")
 reglages_jetables("parametres")
 
 from qtpy.QtCore import Qt                                       # noqa: E402
+from qtpy.QtGui import QFont, QFontMetrics                       # noqa: E402
 from qtpy.QtWidgets import QApplication, QDialog, QMessageBox     # noqa: E402
 
 app = QApplication.instance() or QApplication([])
@@ -314,6 +315,15 @@ ap = ct.apercu_fp
 ct._rafraichir_parametres()
 noms_ed = [ed.liste.item(i).text() for i in range(ed.liste.count())]
 m = ap.matrice
+_entete = m.horizontalHeader()
+_gras = QFont(_entete.font())
+_gras.setBold(True)
+check("le nom de chaque table tient en entier dans son en-tête, même en gras",
+      all(_entete.sectionSize(c) > QFontMetrics(_gras).horizontalAdvance(
+          m.horizontalHeaderItem(c).text()) + 12 for c in range(m.columnCount())))
+check("l'en-tête garde la police du thème",
+      all(m.horizontalHeaderItem(c).font().family() == _entete.font().family()
+          for c in range(m.columnCount())))
 check(f"la matrice : une colonne par table ({m.columnCount()})",
       [m.horizontalHeaderItem(c).text() for c in range(m.columnCount())] == noms_ed)
 kpis_m = [m.verticalHeaderItem(r).text() for r in range(m.rowCount())]
