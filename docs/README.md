@@ -1,12 +1,14 @@
 # Documentation de PBIdouille
 
 Le mode d'emploi, élément par élément. Chaque numéro de la capture est celui d'un
-article, et les articles se lisent dans cet ordre.
+article, et les articles se lisent dans cet ordre. Pour commencer, l'article 0 donne
+une vue d'ensemble en images.
 
 ![PBIdouille, chaque élément numéroté](ressources/images/vue_d_ensemble.png)
 
 | N° | Article | Ce qu'on y fait |
 |---|---|---|
+| 0 | [Aperçu](articles/00-apercu.md) | Ce que fait chaque partie, en images, avant le détail |
 | 1 | [La barre du haut](articles/01-barre-du-haut.md) | Changer de rapport, restaurer une sauvegarde, tout recharger |
 | 2 | [⚙ Réglages](articles/02-reglages.md) | Génération, Excel des indicateurs, branches, cibles, formats delta |
 | 3 | **Mesures** | Les variations et ce qu'elles génèrent |
@@ -19,18 +21,6 @@ article, et les articles se lisent dans cet ordre.
 | 5 | [Sources de données](articles/05-sources-de-donnees.md) | D'où vient chaque table, et ce qui manque sur ce poste |
 | 6 | [Wireframe](articles/06-wireframe.md) | Organiser les visuels d'une page (édition de développement) |
 | 7 | [ChopChop](articles/07-chopchop.md) | Repérer ce que plus rien n'utilise |
-
-## En un coup d'œil
-
-![Diapo du guide : Un rapport, quatre onglets](ressources/guide/coup-d-oeil.png)
-
-## Avant de commencer
-
-![Diapo du guide : Avant de commencer](ressources/guide/avant-de-commencer.png)
-
-## En cas de pépin
-
-![Diapo du guide : En cas de pépin](ressources/guide/pepin.png)
 
 ## Aussi
 
