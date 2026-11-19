@@ -1,6 +1,6 @@
 # Mesures › Les jetons
 
-[Documentation](../README.md) › Mesures › **Jetons** · voir aussi [Variations](variations.md)
+[Documentation](../README.md) › Mesures › **Jetons** · voir aussi [Variations](variations.md), [Arbre des mesures](arbre.md)
 
 Une variation s'écrit une seule fois. Les **jetons** sont les parties qui changent
 d'un KPI à l'autre : la génération les remplace pour chaque KPI, cible et branche.

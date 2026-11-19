@@ -1,6 +1,6 @@
 # Mesures › Variations
 
-[Documentation](../README.md) › Mesures › **Variations** · voir aussi [Les jetons](jetons.md)
+[Documentation](../README.md) › Mesures › **Variations** · voir aussi [Les jetons](jetons.md), [Arbre des mesures](arbre.md)
 
 Une **variation** est une recette de mesure. On l'écrit une seule fois, et
 PBIdouille en génère une mesure pour chaque KPI, dans chaque branche, et pour
