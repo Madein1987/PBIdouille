@@ -2297,7 +2297,7 @@ def _generate(model_dir, config, *, dry_run=None, remove_orphans=None, log=print
             to_write.append((model_path, mtext))
 
     # session de sauvegarde partagée : copies + manifeste (d'où venait chaque
-    # fichier), donc restaurable d'un clic depuis « Sauvegardes… » comme le
+    # fichier), donc restaurable d'un clic depuis « Restaurer une sauvegarde… » comme le
     # reste — et soumise au même ménage (on ne garde que les plus récentes)
     session = br.BackupSession(br.backup_root(model_dir.parent, "_tmdl_backups"),
                                "Mesures générées", model_dir.parent)

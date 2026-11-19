@@ -49,6 +49,9 @@ class ChopChopTab(QWidget):
         # détail des suppressions y est bien plus lisible qu'en 110 px de haut
         self.panel.log.hide()
         self.panel.log = _Relais(self.journal)
+        # les sauvegardes sont celles de TOUS les outils : leur bouton est au
+        # ruban de l'app. Il reste dans la fenêtre autonome, qui n'en a pas.
+        self.panel.btn_backups.hide()
         self._pending = None   # .pbip à analyser à la prochaine visite de l'onglet
         self._pbip = None      # le dernier projet reçu, pour pouvoir le relire
 

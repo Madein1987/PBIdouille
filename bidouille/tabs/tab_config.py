@@ -441,6 +441,7 @@ class ConfigTab(QWidget):
 
         self._inner_prev = IDX_VARIATIONS
         self.inner = QTabWidget()
+        self.inner.setObjectName("sousOnglets")      # cf. theme : un style à part
         self.inner.addTab(self._build_variations_tab(), "Variations")
         # ce que la génération produira, en arbre (aperçu, rien n'est écrit)
         self.arbre_mesures = ArbreMesures()

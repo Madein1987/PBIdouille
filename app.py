@@ -8,6 +8,7 @@ Dépendances : qtpy + (PySide6 à la maison / PyQt5 au travail) ; openpyxl ou
 
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 
@@ -30,14 +31,14 @@ _DOSSIER_PARENT = chemins.PROJETS
 from qtpy.QtCore import Qt  # noqa: E402
 from qtpy.QtWidgets import (  # noqa: E402
     QApplication,
-    QComboBox,
     QFileDialog,
     QHBoxLayout,
-    QLabel,
     QMainWindow,
+    QMenu,
     QMessageBox,
     QPushButton,
     QTabWidget,
+    QToolButton,
     QVBoxLayout,
     QWidget,
 )
@@ -45,7 +46,7 @@ from qtpy.QtWidgets import (  # noqa: E402
 from core.journal import Journal  # noqa: E402
 from core.project import (Project, load_recents, push_recent,  # noqa: E402
                           reglages)
-from core.theme import Separateur, apply_app_theme  # noqa: E402
+from core.theme import TEXT_DIM, YELLOW, Separateur, apply_app_theme  # noqa: E402
 from core import edition  # noqa: E402  (production / dev)
 
 import backup_restore as br  # noqa: E402  (rangement des sauvegardes)
@@ -109,17 +110,43 @@ class BidouilleWindow(QMainWindow):
         v = QVBoxLayout(gauche)
         v.setContentsMargins(0, 0, 0, 0)
 
-        # ---- barre projet (partagée par tous les onglets) ----
+        # ---- le ruban (partagé par tous les onglets) : UNE ligne ----
+        # À gauche, ce sur quoi on travaille : le rapport et son config. À
+        # droite, ce qui vaut pour tout l'outil.
         bar = QHBoxLayout()
-        self.project_label = QLabel("Aucun projet")
-        # le chemin complet faisait 984 px : c'est la barre, donc la FENÊTRE,
-        # qui ne pouvait plus rétrécir. Il passe en infobulle (cf. _set_project).
-        self.project_label.setToolTip("Aucun projet")
-        self.cmb_recents = QComboBox()
-        self.cmb_recents.setMinimumWidth(180)
-        self.cmb_recents.activated.connect(self._pick_recent)
-        btn_change = QPushButton("Changer de rapport…")
-        btn_change.clicked.connect(self._choose_project)
+        bar.setSpacing(6)
+        # le RAPPORT : un seul bouton qui le nomme et, au clic, propose les
+        # récents et d'en ouvrir un autre. Il remplace une étiquette, une liste
+        # « Récents… » et un bouton « Changer de rapport… », trois endroits
+        # pour une seule chose. Le chemin complet est en infobulle : c'est la
+        # barre, donc la largeur minimale de la FENÊTRE, qui en dépend.
+        self.btn_projet = QToolButton()
+        self.btn_projet.setObjectName("btnProjet")
+        self.btn_projet.setPopupMode(QToolButton.InstantPopup)
+        self.btn_projet.setText("📂 Choisir un rapport  ▾")
+        self.menu_projet = QMenu(self.btn_projet)
+        self.menu_projet.setToolTipsVisible(True)
+        self.menu_projet.aboutToShow.connect(self._remplir_menu_projet)
+        self.btn_projet.setMenu(self.menu_projet)
+        # le config du rapport, juste à côté : il en fait partie (cf.
+        # _update_config_label). Un bouton discret : on le change rarement.
+        self.btn_config = QPushButton("")
+        self.btn_config.setObjectName("btnConfig")
+        self.btn_config.clicked.connect(self._choose_config)
+        # les sauvegardes de TOUS les outils (mesures, propagation, wireframe,
+        # ChopChop, Excel des indicateurs) : elles vivaient dans ChopChop, où
+        # personne n'allait les chercher après une propagation
+        # « Restaurer », pas « Sauvegardes » : une disquette se lisait comme
+        # « enregistrer ». L'horloge le distingue aussi du ↻ de Tout recharger.
+        self.btn_sauvegardes = QPushButton("🕘 Restaurer une sauvegarde…")
+        self.btn_sauvegardes.setToolTip(
+            "Revenir en arrière, avec les copies que chaque outil fait avant\n"
+            "d'écrire dans ce rapport :\n"
+            "mesures, propagation, wireframe, ChopChop, Excel des indicateurs.\n"
+            "Restaurer en remet une ; l'état actuel est sauvegardé avant, donc\n"
+            "une restauration s'annule aussi.")
+        self.btn_sauvegardes.setEnabled(False)
+        self.btn_sauvegardes.clicked.connect(self._ouvrir_sauvegardes)
         # pas de « Tout enregistrer » : il doublait les boutons des onglets
         # (« Sauvegarder » des Mesures, « Enregistrer » du Wireframe), qui
         # s'allument en ORANGE quand il reste quelque chose à écrire — un
@@ -159,33 +186,23 @@ class BidouilleWindow(QMainWindow):
         self.btn_journal = QPushButton("")
         self.btn_journal.clicked.connect(
             lambda: self._afficher_journal(self.journal.isHidden()))
-        bar.addWidget(self.project_label, 1)
-        bar.addWidget(self.cmb_recents)
-        bar.addWidget(btn_change)
+        bar.addWidget(self.btn_projet)
+        bar.addWidget(self.btn_config)
+        bar.addStretch(1)
         bar.addWidget(btn_reglages)
-        bar.addWidget(btn_guide)
+        bar.addWidget(self.btn_sauvegardes)
         bar.addWidget(btn_reload_all)
+        bar.addWidget(btn_guide)
+        bar.addSpacing(10)
         bar.addWidget(self.btn_journal)
         v.addLayout(bar)
 
-        # ---- barre config : measures_config.json utilisé (chemin explicite,
-        # choisissable — au travail il ne vit pas forcément à côté du .pbip) ----
-        # UN bouton qui montre le chemin ET le change : un libellé à gauche et
-        # un « Config… » à droite disaient la même chose à deux endroits
-        cfg_bar = QHBoxLayout()
-        self.btn_config = QPushButton("")
-        self.btn_config.setObjectName("btnConfig")
-        self.btn_config.setStyleSheet("QPushButton#btnConfig { text-align: left; "
-                                      "padding: 4px 10px; }")
-        self.btn_config.clicked.connect(self._choose_config)
-        cfg_bar.addWidget(self.btn_config)
-        cfg_bar.addStretch(1)
-        v.addLayout(cfg_bar)
-
         # ---- onglets ----
         # « Mesures » en tête : c'est par là que commence le travail (écrire
-        # les mesures), le reste s'appuie sur ce qu'il a produit
+        # les mesures), le reste s'appuie sur ce qu'il a produit. Leur style
+        # (cf. theme) les distingue des sous-onglets de Mesures.
         self.tabs = QTabWidget()
+        self.tabs.setObjectName("ongletsPrincipaux")
         self.tab_config = ConfigTab(self.journal)   # « Mesures » : config + génération
         self.tabs.addTab(self.tab_config, "Mesures")
         self.tab_report = ReportTab(self.journal)
@@ -240,7 +257,6 @@ class BidouilleWindow(QMainWindow):
         self._tabs = [self.tab_config, self.tab_report, self.tab_lineage, self.tab_chopchop]
         if edition.dev():
             self._tabs.insert(3, self.tab_wireframe)
-        self._reload_recents()
         self._load_initial_project()
         self._colonne_selon_la_vue()
 
@@ -425,13 +441,14 @@ class BidouilleWindow(QMainWindow):
         # le NOM seulement (le chemin est en infobulle) : c'est la barre, donc
         # la largeur minimale de la fenêtre, qui cède ainsi de la place au
         # journal
-        self.project_label.setText("Projet : " + project.name)
-        self.project_label.setToolTip(str(project.pbip))
+        self.btn_projet.setText("📂 " + project.name + "  ▾")
+        self.btn_projet.setToolTip(str(project.pbip) + "\n\nCliquer pour ouvrir un "
+                                   "rapport récent ou un autre.")
+        self.btn_sauvegardes.setEnabled(True)
         self.setWindowTitle(APP_NAME + " " + edition.libelle() + " · " + project.name)
         self._update_config_label()
         for t in self._tabs:
             t.set_project(project)
-        self._reload_recents()
 
     def _choose_config(self):
         """Choisit le measures_config.json du projet courant (mémorisé)."""
@@ -453,17 +470,19 @@ class BidouilleWindow(QMainWindow):
         p = self.project.config_json
         aide = ("\n\nCliquer pour choisir un autre fichier (par défaut : celui à "
                 "côté du .pbip).\nLe choix est mémorisé pour ce rapport.")
+        # le nom seul quand le config est à côté du .pbip (le cas courant) ;
+        # ailleurs, de quoi voir qu'il vient d'un autre dossier
+        nom = p.name if p.parent == self.project.folder else _chemin_court(p)
         if p.exists():
-            self.btn_config.setText("📄 " + _chemin_court(p) + "   ✎")
+            self.btn_config.setText("📄 " + nom)
             self.btn_config.setToolTip("Config des mesures :\n" + str(p) + aide)
-            self.btn_config.setStyleSheet("QPushButton#btnConfig { text-align: left; "
-                                          "padding: 4px 10px; }")
+            couleur = TEXT_DIM
         else:
             self.btn_config.setText("⚠ measures_config.json introuvable, "
                                     "cliquer pour le choisir")
             self.btn_config.setToolTip("Attendu :\n" + str(p) + aide)
-            self.btn_config.setStyleSheet("QPushButton#btnConfig { text-align: left; "
-                                          "padding: 4px 10px; color:#ffd246; }")
+            couleur = YELLOW
+        self.btn_config.setStyleSheet(f"QPushButton#btnConfig {{ color: {couleur}; }}")
 
     def _load_initial_project(self):
         last = self.settings.value("last_pbip", "")
@@ -472,7 +491,8 @@ class BidouilleWindow(QMainWindow):
             if cand and Path(cand).exists():
                 self._set_project(cand)
                 return
-        self.project_label.setText("Aucun projet, cliquer sur « Changer de rapport… ».")
+        self.btn_projet.setToolTip("Aucun rapport ouvert : cliquer pour en choisir un.")
+        self.btn_config.hide()
 
     def _choose_project(self):
         start = str(self.project.folder) if self.project else str(_DOSSIER_PARENT)
@@ -481,22 +501,53 @@ class BidouilleWindow(QMainWindow):
         if path:
             self._set_project(path)
 
-    def _reload_recents(self):
-        self.cmb_recents.blockSignals(True)
-        self.cmb_recents.clear()
+    def _remplir_menu_projet(self):
+        """Le menu du bouton de projet, refait à chaque ouverture : les récents
+        (celui qui est ouvert est coché), puis ouvrir un autre rapport."""
+        m = self.menu_projet
+        m.clear()
         recents = load_recents(self.settings)
+        courant = str(self.project.pbip) if self.project else ""
         if recents:
-            self.cmb_recents.addItem("Récents…", "")
-            for p in recents:
-                self.cmb_recents.addItem(Path(p).stem, p)
-        else:
-            self.cmb_recents.addItem("(aucun récent)", "")
-        self.cmb_recents.blockSignals(False)
+            titre = m.addAction("Rapports récents")
+            titre.setEnabled(False)
+            # deux versions d'un rapport portent souvent le même nom : leur
+            # dossier les distingue
+            noms = [Path(p).stem for p in recents]
+            for p, nom in zip(recents, noms):
+                libelle = nom + (f"   ·  {Path(p).parent.name}" if noms.count(nom) > 1 else "")
+                a = m.addAction(libelle)
+                a.setCheckable(True)
+                a.setChecked(p == courant)
+                a.setToolTip(p)
+                a.triggered.connect(lambda _=False, p=p: self._ouvrir_recent(p))
+            m.addSeparator()
+        m.addAction("Ouvrir un autre rapport…", self._choose_project)
+        if self.project:
+            m.addAction("Afficher le dossier dans l'Explorateur",
+                        lambda: os.startfile(str(self.project.folder)))
 
-    def _pick_recent(self, index):
-        path = self.cmb_recents.itemData(index)
-        if path:
-            self._set_project(path)
+    def _ouvrir_recent(self, pbip):
+        if not self.project or str(self.project.pbip) != str(pbip):
+            self._set_project(pbip)
+
+    def _ouvrir_sauvegardes(self):
+        """Les sauvegardes de tous les outils, pour le rapport ouvert."""
+        if not self.project:
+            return
+        from tabs.dialog_backups import BackupsDialog
+        dlg = BackupsDialog(self.project.folder, self, on_restored=self._apres_restauration)
+        dlg.exec_() if hasattr(dlg, "exec_") else dlg.exec()
+
+    def _apres_restauration(self, rep):
+        """Des fichiers viennent d'être remis : chaque onglet les relit, comme
+        « ↻ Tout recharger » (qui demande d'abord quoi faire de ce qui n'est
+        pas encore écrit)."""
+        n = len(rep.get("restaurés") or [])
+        avant = rep.get("sauvegarde_avant")
+        self.journal.info(f"Restauré : {n} fichier(s)"
+                          + (f" (état précédent sous {Path(avant).name})" if avant else ""))
+        self._reload_all()
 
 
 def main():

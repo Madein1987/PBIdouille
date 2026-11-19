@@ -322,7 +322,9 @@ class ChopChopPanel(QWidget):
         btn_manual.clicked.connect(self._check_manual)
         btn_export = QPushButton("Exporter…")
         btn_export.clicked.connect(self._export)
-        btn_backups = QPushButton("Sauvegardes…")
+        # dans PBIdouille, ce bouton est au ruban (cf. tab_chopchop) ; il reste
+        # ici pour la fenêtre autonome
+        self.btn_backups = btn_backups = QPushButton("Sauvegardes…")
         btn_backups.setToolTip(
             "Lister les sauvegardes du projet (tous outils confondus) et en\n"
             "restaurer une. L'état courant est sauvegardé avant : une\n"

@@ -413,6 +413,51 @@ QTabBar::tab:selected {{
     border-color: {ACCENT_DIM};
 }}
 QTabBar::tab:hover:!selected {{ color: {ACCENT}; }}
+/* les onglets de l'app : plus grands, un vrai niveau de navigation */
+QTabWidget#ongletsPrincipaux > QTabBar::tab {{
+    padding: 7px 22px;
+    font-size: 10pt;
+}}
+QTabWidget#ongletsPrincipaux > QTabBar::tab:selected {{ font-weight: 600; }}
+/* les sous-onglets (Mesures) : un soulignement, pas des cartes. Deux niveaux
+   au même style se lisaient comme une seule rangée coupée en deux */
+QTabWidget#sousOnglets::pane {{
+    border: none;
+    border-top: 1px solid {BORDER};
+    border-radius: 0;
+    top: 0;
+}}
+QTabWidget#sousOnglets > QTabBar::tab {{
+    background: transparent;
+    border: none;
+    border-bottom: 2px solid transparent;
+    border-radius: 0;
+    padding: 5px 12px;
+    margin-right: 4px;
+}}
+QTabWidget#sousOnglets > QTabBar::tab:selected {{
+    color: {ACCENT};
+    border-bottom: 2px solid {ACCENT};
+}}
+
+/* ---- le ruban ------------------------------------------------------------ */
+QToolButton#btnProjet {{
+    background: {SURFACE_ALT};
+    color: {ACCENT};
+    border: 1px solid {ACCENT_DIM};
+    border-radius: 6px;
+    padding: 5px 12px;
+    font-weight: 600;
+}}
+QToolButton#btnProjet:hover {{ border-color: {ACCENT}; }}
+QToolButton#btnProjet::menu-indicator {{ image: none; width: 0; }}
+QPushButton#btnConfig {{
+    background: transparent;
+    border: 1px solid transparent;
+    text-align: left;
+    padding: 5px 8px;
+}}
+QPushButton#btnConfig:hover {{ border-color: {BORDER}; }}
 
 /* ---- cases à cocher ------------------------------------------------------*/
 {_indicator_qss("QCheckBox::indicator, QListWidget::indicator, QTreeWidget::indicator")}
