@@ -8,10 +8,23 @@ Le mode d'emploi, onglet par onglet.
 - [Les jetons](mesures/jetons.md) : `{base}`, `<<attributs>>` de TD_Indicateurs, et où chacun se règle
 - [Arbre des mesures](mesures/arbre.md) : tout ce que la génération produira, et le DAX final de chaque mesure
 - [Paramètres de champ](mesures/parametres-champ.md) : créer les tables d'un segment, et voir ce qu'elles contiendront
+- [JSON brut](mesures/json-brut.md) : modifier directement `measures_config.json`
 
-## À venir
+## Rapport
 
-Rapport, Sources de données, ChopChop.
+- [Rapport](rapport.md) : propager le formatage d'un KPI vers les autres, et colorer les matrices
+
+## Sources de données
+
+- [Sources de données](sources-de-donnees.md) : d'où vient chaque table, et ce qui manque sur ce poste
+
+## Wireframe
+
+- [Wireframe](wireframe.md) : déplacer et organiser les visuels d'une page (édition de développement)
+
+## ChopChop
+
+- [ChopChop](chopchop.md) : repérer ce que plus rien n'utilise, et restaurer une sauvegarde
 
 ## Aussi
 
