@@ -99,13 +99,15 @@ toile = Image.new("RGB", (img.width + 2 * MARGE, img.height + 2 * MARGE), (15, 2
 toile.paste(img, (MARGE, MARGE))
 d = ImageDraw.Draw(toile)
 police = ImageFont.truetype("C:/Windows/Fonts/seguisb.ttf", 15)
-VERT, FONCE = (86, 197, 150), (11, 17, 32)
+# un orange vif : le vert du thème s'y confondait (même valeur que le
+# REPERE de build_deck.py)
+REPERE, FONCE = (255, 138, 31), (11, 17, 32)
 for texte, (x, y) in reperes:
     l = d.textlength(texte, font=police)
     larg, haut = max(26, l + 14), 26
     cx, cy = x + MARGE + 3, y + MARGE - 1
     boite = (cx - larg / 2, cy - haut / 2, cx + larg / 2, cy + haut / 2)
-    d.rounded_rectangle(boite, radius=haut / 2, fill=VERT, outline=FONCE, width=2)
+    d.rounded_rectangle(boite, radius=haut / 2, fill=REPERE, outline=FONCE, width=2)
     d.text((cx, cy), texte, font=police, fill=FONCE, anchor="mm")
 toile.save(SORTIE)
 print("écrit :", SORTIE.relative_to(OUTIL), toile.size, "·", len(reperes), "repères")

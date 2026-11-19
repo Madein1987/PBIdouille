@@ -10,10 +10,11 @@ disparaît. Ce script clone chaque entrée de formatage du KPI template pour
 tous les autres KPI, en adaptant les noms de mesures (selector ET mesure CF).
 
 Usage :
-  1. FERMER Power BI Desktop (il ne relit les fichiers qu'à l'ouverture,
-     et un enregistrement écraserait nos modifications) ;
+  1. enregistrer dans Power BI Desktop, qui peut rester ouvert ;
   2. python propagate_cf.py
-  3. rouvrir le .pbip.
+  3. fermer Desktop SANS enregistrer et rouvrir le .pbip (il ne relit les
+     fichiers qu'à l'ouverture, et un enregistrement écraserait nos
+     modifications).
 
 MIROIR, pas simple recopie : le template est la seule source de vérité, donc
 ce qu'il ne porte PLUS est RETIRÉ des KPI cibles (retirer l'image d'une carte
@@ -29,7 +30,7 @@ une entrée présente UNIQUEMENT sur une branche (ex. le style des marqueurs de
 la ligne YTD) ne descend que sur cette branche.
 
 Idempotent : relancer remplace les clones existants. Pour changer le style,
-modifie le CF du KPI template dans Desktop, enregistre, ferme, relance.
+modifier le CF du KPI template dans Desktop, enregistrer, relancer.
 
 Plusieurs familles de KPI, des exceptions : la GRILLE DES SOURCES
 (propagation.json, cf. Sources et propagate_regles) — un gabarit de base pour

@@ -44,9 +44,10 @@ mêmes 8 en YTD, et sa cible.
 2. Choisir ce qu'affiche chaque rangée : voir [Les trois usages](#les-trois-usages).
 3. Décocher ce que la table ne doit pas contenir.
 4. Vérifier le résultat dans **Contenu de la table**, en bas.
-5. Cliquer **Sauvegarder**, fermer Power BI Desktop, puis lancer **Générer les mesures**.
-6. Rouvrir le `.pbip`. Pour une table nouvelle, relier sa colonne `Indicateur` à la
-   table des KPI, si un segment de KPI doit la filtrer. Cette relation se crée une
+5. Cliquer **Sauvegarder**, enregistrer dans Power BI Desktop s'il est ouvert, puis lancer
+   **Générer les mesures**.
+6. Fermer Desktop **sans enregistrer** et rouvrir le `.pbip`. Pour une table nouvelle,
+   relier sa colonne `Indicateur` à la table des KPI, si un segment de KPI doit la filtrer. Cette relation se crée une
    seule fois, dans Power BI Desktop.
 
 **Dupliquer** crée une copie de la table choisie. C'est utile pour avoir deux

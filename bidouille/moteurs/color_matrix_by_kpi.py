@@ -22,8 +22,9 @@ Distinction des entrées (le script ne touche QUE les couleurs statiques) :
                                couleur = une Measure -> IGNORÉ
   - couleur statique (ici)   : selector avec « metadata » seul -> GÉRÉ
 
-Ordre : lancer propagate_cf.py AVANT, puis ce script. Power BI Desktop FERMÉ,
-puis « py color_matrix_by_kpi.py », rouvrir. Idempotent.
+Ordre : lancer propagate_cf.py AVANT, puis ce script. Enregistrer dans
+Desktop, « py color_matrix_by_kpi.py », puis fermer Desktop SANS enregistrer et
+rouvrir. Idempotent.
 """
 
 from __future__ import annotations

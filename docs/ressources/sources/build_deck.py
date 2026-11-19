@@ -30,6 +30,10 @@ LINE = RGBColor(0x2A, 0x3A, 0x55)
 GREEN = RGBColor(0x56, 0xC5, 0x96)
 BLUE = RGBColor(0x4F, 0xA8, 0xE8)
 ORANGE = RGBColor(0xF5, 0xA6, 0x23)
+# les numéros posés SUR une capture : un orange vif, qui ne se confond ni
+# avec le vert du thème ni avec les boutons de l'app (même valeur que
+# capture_vue.py)
+REPERE = RGBColor(0xFF, 0x8A, 0x1F)
 RED = RGBColor(0xE5, 0x5B, 0x5B)
 TEXT = RGBColor(0xE6, 0xED, 0xF3)
 MUTED = RGBColor(0x9A, 0xA7, 0xB8)
@@ -265,8 +269,9 @@ text(s, 0.9, 5.8, 11.6, 0.95,
      size=16, anchor=MSO_ANCHOR.MIDDLE)
 
 # ============================================================ 3. Avant de commencer
-s = new_slide("Le seul réflexe à prendre : Power BI Desktop ne relit les fichiers qu'à "
-              "l'ouverture et écrase tout à l'enregistrement. On ferme Desktop, on écrit, on rouvre.")
+s = new_slide("Le seul réflexe à prendre : Desktop peut rester ouvert pendant une écriture, "
+              "mais il ne relit les fichiers qu'à l'ouverture. Après une écriture, on le ferme SANS "
+              "enregistrer et on rouvre le .pbip : enregistrer effacerait ce que l'outil a écrit.")
 title(s, "Avant de commencer", "Prérequis")
 pre = [("Un rapport au format PBIP", "Fichier .pbip avec ses dossiers .Report et .SemanticModel (TMDL / PBIR)."),
        ("Python 3.8 ou plus récent", "Lancer avec  py  (pas « python », parfois un faux alias Windows)."),
@@ -279,11 +284,13 @@ for i, (h, d) in enumerate(pre):
 box(s, 7.6, 1.85, 5.1, 3.85, fill=CARD2, line=ORANGE, lw=1.5, name="Règle d'or")
 text(s, 7.95, 2.1, 4.5, 0.5, "⚠  La règle d'or", size=22, font=HEAD, color=ORANGE)
 text(s, 7.95, 2.75, 4.5, 2.9,
-     [[("Fermer Power BI Desktop", {"bold": True})],
-      [("avant toute écriture.", {})],
+     [[("Après une écriture,", {})],
+      [("fermer Desktop sans enregistrer", {"bold": True})],
+      [("puis rouvrir le .pbip.", {})],
       [("", {"size": 8})],
-      [("Desktop relit les fichiers à l'ouverture et écrase tout à l'enregistrement : "
-        "une écriture faite pendant qu'il est ouvert serait perdue.", {"size": 14, "color": MUTED})]],
+      [("Desktop peut rester ouvert pendant l'écriture, mais il ne relit les fichiers "
+        "qu'à l'ouverture : l'enregistrer ensuite effacerait ce que l'outil vient d'écrire. "
+        "Enregistrer son propre travail AVANT d'écrire.", {"size": 14, "color": MUTED})]],
      size=18)
 box(s, 0.6, 6.0, 12.1, 0.8, fill=CARD)
 text(s, 0.9, 6.0, 11.6, 0.8,
@@ -300,7 +307,7 @@ pic_h = 12.1 * ih / iw
 # repères numérotés sur la capture (coordonnées capture -> pouces)
 sx = 12.1 / iw
 for n, px in enumerate([66, 208, 660, 810, 973, 1178], start=1):
-    badge(s, 0.6 + px * sx - 0.17, 1.8 - 0.4, n, d=0.34, size=12)
+    badge(s, 0.6 + px * sx - 0.17, 1.8 - 0.4, n, color=REPERE, d=0.34, size=12)
 text(s, 0.6, 1.8 + pic_h + 0.35, 5.6, 0.5, "Lancement", size=18, font=HEAD, color=GREEN)
 box(s, 0.6, 1.8 + pic_h + 0.9, 5.6, 0.75, fill=DARK, line=LINE)
 text(s, 0.85, 1.8 + pic_h + 0.9, 5.2, 0.75, "py app.py", size=20, font=MONO, color=GREEN, anchor=MSO_ANCHOR.MIDDLE)
@@ -315,7 +322,7 @@ legend = [("📂 Le rapport", "les récents, ou en ouvrir un autre"),
           ("🚀 Lancements", "afficher ou masquer le journal")]
 for i, (h, d) in enumerate(legend):
     y = 1.8 + pic_h + 0.35 + i * 0.62
-    badge(s, 6.8, y + 0.02, i + 1, d=0.34, size=12)
+    badge(s, 6.8, y + 0.02, i + 1, color=REPERE, d=0.34, size=12)
     text(s, 7.3, y, 5.4, 0.6, [[(h + "  ", {"bold": True}), (d, {"color": MUTED, "size": 13})]], size=14)
 
 # ============================================================ 5. Section Mesures
@@ -551,18 +558,18 @@ picture(s, p, 0.6, 1.65, w=pw)
 sx = pw / iw
 marks = [(30, 50), (380, 50), (380, 315), (830, 50), (830, 505)]
 for n, (px, py) in enumerate(marks, start=1):
-    badge(s, 0.6 + px * sx - 0.05, 1.65 + py * sx - 0.12, n, d=0.36, size=12)
+    badge(s, 0.6 + px * sx - 0.05, 1.65 + py * sx - 0.12, n, color=REPERE, d=0.36, size=12)
 items = [("Les variations", "Ajouter, dupliquer, réordonner. Bibliothèque… pour en importer."),
          ("Mesure générée", "Nom ({base} 7d avg), format, dossier."),
          ("Portée", "Pour les KPI, les cibles ; types de base ; exclusions par nom."),
          ("DAX", "Écrit en clair, jetons colorés ; rouge = jeton inconnu."),
          ("Aperçu des noms", "Ce qui sera généré, avant de générer.")]
-step_list(s, 9.5, 1.7, 3.3, items, gap=0.98, size=14)
+step_list(s, 9.5, 1.7, 3.3, items, gap=0.98, size=14, color=REPERE)
 text(s, 0.6, 1.65 + ih * sx + 0.15, pw, 0.4, "Sauvegarder écrit le measures_config.json (copie .bak gardée).",
      size=12, color=MUTED)
 
 # ============================================================ 10. Générer
-s = new_slide("La génération écrit directement les fichiers TMDL du modèle, Desktop fermé. "
+s = new_slide("La génération écrit directement les fichiers TMDL du modèle. "
               "Elle est idempotente : relancer sans changement n'écrit rien.")
 title(s, "Générer les mesures", "Mesures › Lancements")
 p, (iw, ih) = crop("onglet_mesures_generation", (1248, 0, 1700, 310), "generation")
@@ -570,10 +577,10 @@ picture(s, p, 8.0, 1.75, w=4.7)
 text(s, 8.0, 1.75 + 4.7 * ih / iw + 0.15, 4.7, 0.8,
      "Le panneau de génération, en tête du journal (bouton « Lancements »).", size=12, color=MUTED)
 gen = [("Sauvegarder le config", "Le générateur lit le fichier, pas l'éditeur. Il le propose au besoin."),
-       ("Fermer Power BI Desktop", "Il écraserait le modèle à l'enregistrement."),
+       ("Enregistrer dans Desktop", "S'il est ouvert. Il peut le rester pendant l'écriture."),
        ("Aperçu (dry-run) → Générer", "Lire le journal : créées, mises à jour, ignorées, orphelines."),
        ("Décocher Aperçu → Générer", "Écriture réelle, sauvegarde automatique du modèle."),
-       ("Rouvrir le .pbip", "Les mesures et les paramètres de champ sont là.")]
+       ("Fermer Desktop sans enregistrer, rouvrir", "Les mesures et les paramètres de champ sont là.")]
 step_list(s, 0.6, 1.8, 7.0, gen, gap=0.92, size=16)
 
 # ============================================================ 11. Section Rapport
@@ -1046,10 +1053,10 @@ s = new_slide("Propager clone le formatage ; Colorer applique les couleurs par K
 title(s, "Propager et colorer", "Rapport")
 p, (iw, ih) = crop("onglet_rapport", (0, 82, 1240, 499), "rapport")
 picture(s, p, 0.6, 1.75, w=7.4)
-prop = [("Formater le gabarit dans Desktop", "Puis enregistrer le PBIP et fermer Desktop."),
+prop = [("Formater le gabarit dans Desktop", "Puis enregistrer. Desktop peut rester ouvert."),
         ("Vérifier la grille des sources", "Qui copie quoi, groupes compris."),
         ("Aperçu → Propager", "Le journal liste chaque clone ; « Verbeux » pour le détail."),
-        ("Décocher Aperçu → Propager", "Écriture réelle, sauvegardée."),
+        ("Décocher Aperçu → Propager", "Puis fermer Desktop sans enregistrer, et rouvrir."),
         ("Colorer (optionnel)", "Couleurs fond/texte par KPI, lues dans TD_Indicateurs.")]
 step_list(s, 8.45, 1.8, 4.3, prop, gap=0.92, size=14, color=BLUE)
 text(s, 0.6, 1.75 + 7.4 * ih / iw + 0.2, 7.4, 0.8,
@@ -1095,18 +1102,18 @@ text(s, 0.9, 6.25, 11.6, 0.6,
      size=14, anchor=MSO_ANCHOR.MIDDLE)
 
 # ============================================================ 17. En cas de pépin
-s = new_slide("Les quatre questions qui reviennent. La documentation détaillée suivra dans Loop.")
+s = new_slide("Les quatre questions qui reviennent. La documentation détaillée est dans le dossier docs.")
 title(s, "En cas de pépin", "Aide-mémoire")
 faq = [("Le formatage disparaît quand je change de KPI", "Le KPI n'a pas été propagé : vérifier la grille, puis Propager."),
        ("Une mesure n'est pas générée", "Lire le journal : base exclue par la portée, attribut <<…>> absent de l'Excel, ou nom en collision."),
-       ("Mes changements dans Desktop ont disparu", "Desktop était ouvert pendant l'écriture. 🕘 Restaurer une sauvegarde (en haut), puis refaire avec Desktop fermé."),
+       ("Ce que l'outil a écrit a disparu", "Desktop a été enregistré après l'écriture. Relancer l'écriture, puis fermer Desktop sans enregistrer et rouvrir."),
        ("L'outil ne voit pas ma nouvelle colonne Excel", "↻ Tout recharger (ou le bouton ↻ des Réglages).")]
 for i, (q, a) in enumerate(faq):
     y = 1.8 + i * 1.18
     box(s, 0.6, y, 12.1, 1.02, fill=CARD)
     text(s, 0.9, y, 0.5, 1.02, "?", size=26, font=HEAD, color=GREEN, anchor=MSO_ANCHOR.MIDDLE)
     text(s, 1.5, y + 0.14, 10.9, 0.85, [[(q, {"bold": True, "size": 16})], [(a, {"size": 14, "color": MUTED})]], size=15)
-text(s, 0.6, 6.65, 12, 0.4, "Documentation détaillée : à venir dans Loop.", size=13, color=MUTED)
+text(s, 0.6, 6.65, 12, 0.4, "Documentation détaillée : le dossier docs, à côté de l'app.", size=13, color=MUTED)
 
 prs.save(str(OUT))
 print("écrit :", OUT, ",", len(prs.slides), "diapos")

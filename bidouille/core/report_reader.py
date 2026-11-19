@@ -172,7 +172,7 @@ def write_positions(updates, backup_root) -> tuple:
     `updates` = {chemin_visual_json: (lx, ly, w, h)}. Sauvegarde d'abord chaque
     fichier sous backup_root/<horodatage>/ ; ne modifie QUE le bloc `position`
     (x/y/width/height ; z/tabOrder préservés). Retourne (nb écrits, dossier backup).
-    ⚠ Power BI Desktop doit être FERMÉ (il relit à l'ouverture)."""
+    ⚠ Ensuite, fermer Desktop SANS enregistrer et rouvrir (il relit à l'ouverture)."""
     session = _br.BackupSession(backup_root, "Wireframe (positions)",
                                 _br.project_of(backup_root))
     written = 0
@@ -202,7 +202,7 @@ def create_group(report_dir, page_id, member_ids, display_name, backup_root) -> 
     intacts (relatifs à leur propre parent). Backup des membres + manifeste
     (undo = supprimer le dossier du groupe créé et restaurer les backups) sous
     backup_root/<horodatage>/. Retourne (id_du_groupe, dossier_backup).
-    ⚠ Power BI Desktop doit être FERMÉ."""
+    ⚠ Ensuite, fermer Desktop SANS enregistrer et rouvrir."""
     report_dir = Path(report_dir)
     vis_dir = report_dir / "definition" / "pages" / page_id / "visuals"
     datas = {}
@@ -288,7 +288,7 @@ def ungroup(report_dir, page_id, group_id, backup_root) -> tuple:
     bouge), le visual.json du groupe est SUPPRIMÉ. Les sous-groupes membres
     gardent leur contenu intact. Backup du groupe + des membres sous
     backup_root/<horodatage>/. Retourne (nb_enfants, dossier_backup).
-    ⚠ Power BI Desktop doit être FERMÉ."""
+    ⚠ Ensuite, fermer Desktop SANS enregistrer et rouvrir."""
     vis_dir = Path(report_dir) / "definition" / "pages" / page_id / "visuals"
     gj = vis_dir / group_id / "visual.json"
     if not gj.exists():

@@ -17,8 +17,9 @@ du projet PBIP choisi.
 - supprimer une mesure « used by unused » inclut d'office ses référenceurs
   (sinon leur DAX serait cassé).
 
-IMPORTANT : Power BI Desktop doit être FERMÉ pendant les suppressions (il ne
-relit les fichiers qu'à l'ouverture et les écraserait à l'enregistrement).
+IMPORTANT : Desktop peut rester ouvert, mais doit ensuite être fermé SANS
+enregistrer puis rouvert (il ne relit les fichiers qu'à l'ouverture, et
+enregistrer remettrait ce qui vient d'être supprimé).
 Backup automatique sous _backupsPBIdouille\\_tmdl_backups\\<horodatage>\\ avant
 chaque écriture.
 
@@ -197,7 +198,7 @@ TABLES_TOOLTIP = (
     "Tables dont RIEN d'externe ne dépend (aucune relation, aucun visuel,\n"
     "aucune mesure utilisée), dont les paramètres de champ que plus aucun\n"
     "visuel n'utilise. Cocher supprime la table ENTIÈRE : son fichier .tmdl\n"
-    "et sa référence dans model.tmdl (backup fait, Desktop fermé).\n"
+    "et sa référence dans model.tmdl (backup fait ; rouvrir le .pbip sans enregistrer).\n"
     "\n"
     "Une table dont la requête Power Query est consommée par une AUTRE\n"
     "requête (fusion, ajout, jointure) n'est jamais proposée ici : la\n"

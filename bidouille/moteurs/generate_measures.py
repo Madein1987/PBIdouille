@@ -6,8 +6,9 @@ Découverte des mesures de base, variations, branches (variations de
 variations), cibles, tables paramètre de champ, rang unique KPI-puis-calcul,
 orphelines. Tout vient de measures_config.json.
 
-⚠ Power BI Desktop doit être FERMÉ (il ne relit les fichiers qu'à l'ouverture
-et un enregistrement écraserait nos modifications). Backup automatique sous
+⚠ Desktop peut rester ouvert, mais doit ensuite être fermé SANS enregistrer
+puis rouvert (il ne relit les fichiers qu'à l'ouverture, et un enregistrement
+écraserait nos modifications). Backup automatique sous
 _backupsPBIdouille\\_tmdl_backups\\<horodatage>\\ avant chaque écriture.
 Rouvrir le .pbip ensuite.
 

@@ -81,11 +81,12 @@ Colonnes : `Type`, `Nom`, `Table`, `Statut`, `Référencé par`,
 
 > **Édition de développement seulement.**
 
-1. Fermer Power BI Desktop.
+1. Si Power BI Desktop est ouvert, y enregistrer son travail.
 2. Cocher les objets. La case d'un groupe coche tout le groupe, ou seulement la table
    filtrée. **Cocher manuelles seulement** écarte les mesures générées.
 3. Cliquer **Supprimer la sélection** et lire la confirmation.
-4. Rouvrir le `.pbip`.
+4. Fermer Desktop **sans enregistrer**, puis rouvrir le `.pbip`. Enregistrer remettrait
+   ce qui vient d'être supprimé.
 
 | Objet | Ce qui est retiré |
 |---|---|

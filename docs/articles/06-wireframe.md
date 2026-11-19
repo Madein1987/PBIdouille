@@ -11,7 +11,8 @@ redimensionner, grouper et répartir les visuels sans ouvrir Power BI Desktop.
 
 ![L'onglet Wireframe, sur une page avec des groupes imbriqués](../ressources/images/wireframe_onglet.png)
 
-**Power BI Desktop doit être fermé** pendant l'écriture. Rouvrir le `.pbip` ensuite.
+Power BI Desktop peut rester ouvert. Après l'écriture, le fermer **sans enregistrer** et
+rouvrir le `.pbip` : enregistrer dans Desktop remettrait les visuels à leur ancienne place.
 
 ## Lire une page
 

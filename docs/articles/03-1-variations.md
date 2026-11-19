@@ -68,12 +68,12 @@ et l'aperçu suit la saisie.
 
 1. **Sauvegarder** écrit le `measures_config.json` (le générateur lit ce fichier,
    pas le formulaire).
-2. **Fermer Power BI Desktop.** Il ne relit les fichiers qu'à l'ouverture et
-   écraserait tout en enregistrant.
+2. Si Power BI Desktop est ouvert, y **enregistrer** son travail. Il peut rester ouvert.
 3. Dans le panneau **Génération des mesures**, garder **Aperçu (dry-run)** coché et
    cliquer **Générer les mesures** : le journal liste ce qui serait créé ou modifié.
 4. Décocher **Aperçu (dry-run)** et relancer. Le modèle est sauvegardé avant l'écriture.
-5. Rouvrir le `.pbip`.
+5. Fermer Desktop **sans enregistrer**, puis rouvrir le `.pbip`. Desktop ne relit les
+   fichiers qu'à l'ouverture, et enregistrer à ce moment effacerait les mesures générées.
 
 ![Diapo du guide : Générer les mesures](../ressources/guide/generer.png)
 

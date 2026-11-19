@@ -437,8 +437,8 @@ def restore_session(session_dir, project_root=None, *, dry_run: bool = False,
     Un fichier dont la cible est inconnue (vieille sauvegarde, index muet) est
     ignoré et listé dans `ignorés` — jamais écrit au hasard.
 
-    ⚠ Power BI Desktop doit être FERMÉ : il ne relit les fichiers qu'à
-    l'ouverture et les réécrirait à l'enregistrement."""
+    ⚠ Ensuite, fermer Desktop SANS enregistrer et rouvrir : il ne relit les
+    fichiers qu'à l'ouverture et les réécrirait à l'enregistrement."""
     log = log or (lambda *_: None)
     session_dir = Path(session_dir)
     info = session_info(session_dir, project_root)

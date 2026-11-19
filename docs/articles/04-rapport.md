@@ -21,13 +21,15 @@ autres KPI.
 
 ## Propager le formatage
 
-1. Dans Power BI Desktop, formater le KPI gabarit, enregistrer, puis **fermer Desktop**.
+1. Dans Power BI Desktop, formater le KPI gabarit et **enregistrer**. Desktop peut rester
+   ouvert.
 2. Dans **Rapport**, cliquer **Grille des sources…** et choisir le **gabarit de base**.
 3. Cliquer **Enregistrer** dans la grille, puis fermer la fenêtre.
 4. Cocher les **branches** à traiter.
 5. Laisser **Aperçu (dry-run)** coché, cliquer **Propager** et lire le journal.
 6. Décocher **Aperçu (dry-run)**, cliquer **Propager** et confirmer.
-7. Rouvrir le `.pbip`.
+7. Fermer Desktop **sans enregistrer**, puis rouvrir le `.pbip`. Enregistrer à ce moment
+   effacerait la propagation.
 
 **Verbeux** ajoute le détail de la recherche au journal. Sans grille enregistrée, la
 propagation refuse de démarrer : PBIdouille ne choisit jamais le gabarit à la place de
@@ -123,10 +125,10 @@ TD_Indicateurs.
    chaque KPI, puis cliquer **Enregistrer dans l'Excel**.
 2. Dans Desktop, sur la matrice voulue, appliquer à la main sur **un** KPI un fond **et**
    un texte, avec l'option `Specific column`. Ce gabarit désigne la matrice à traiter.
-3. Enregistrer et fermer Desktop.
+3. Enregistrer dans Desktop, qui peut rester ouvert.
 4. Laisser **Aperçu (dry-run)** coché, cliquer **Colorer** et lire le journal.
 5. Décocher **Aperçu (dry-run)**, cliquer **Colorer** et confirmer.
-6. Rouvrir le `.pbip`.
+6. Fermer Desktop **sans enregistrer**, puis rouvrir le `.pbip`.
 
 ![L'éditeur des couleurs par KPI](../ressources/images/rapport_couleurs.png)
 

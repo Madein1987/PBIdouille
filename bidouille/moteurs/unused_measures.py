@@ -36,7 +36,7 @@ En module (unused_measures_ui.py) :
     portent une `category` : calc / import / structural ; `spared_tables` dit
     pourquoi une table sans usage visible est malgré tout conservée) ;
   - delete_objects()   : suppression de mesures, colonnes ET tables entières
-    dans les TMDL (Desktop FERMÉ ; backup avant écriture). Une colonne importée
+    dans les TMDL (backup avant écriture ; rouvrir Desktop sans enregistrer). Une colonne importée
     est aussi retirée de sa requête M (étape Table.RemoveColumns) ; une table
     morte (result['dead_tables']) est supprimée fichier + réf model.tmdl ;
   - delete_from_tmdl() : compat (mesures seules) — délègue à delete_objects.
@@ -869,7 +869,7 @@ def delete_objects(result: dict, measure_names=(), column_keys=(),
                    table_names=(), *,
                    backup_root: Path | None = None, log=None) -> dict:
     """Supprime des mesures, des colonnes ET des tables entières des fichiers
-    TMDL (Desktop FERMÉ!), en un passage par fichier avec un backup horodaté
+    TMDL, en un passage par fichier avec un backup horodaté
     commun.
 
     - tables (table_names) : suppression du fichier `<table>.tmdl` ENTIER +
@@ -1015,7 +1015,7 @@ def delete_objects(result: dict, measure_names=(), column_keys=(),
 
 
 def delete_from_tmdl(measures: dict, names, backup_root: Path | None = None) -> list[str]:
-    """Compat : supprime les blocs TMDL des mesures données (Desktop FERMÉ!).
+    """Compat : supprime les blocs TMDL des mesures données.
     Délègue à delete_objects (mesures seules). Retourne les fichiers modifiés."""
     rep = delete_objects({"measures": measures, "columns": {}},
                          measure_names=list(names), backup_root=backup_root)

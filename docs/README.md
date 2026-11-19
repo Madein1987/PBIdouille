@@ -45,9 +45,13 @@ formatage d'un KPI vers les autres. **Sources de données** dit d'où vient chaq
 
 ![Diapo du guide : Avant de commencer](ressources/guide/avant-de-commencer.png)
 
-Le rapport doit être au format **PBIP**. Power BI Desktop doit être **fermé** pendant chaque
-écriture : il ne relit les fichiers qu'à l'ouverture, et écraserait les changements en
-enregistrant.
+Le rapport doit être au format **PBIP**. Power BI Desktop peut rester ouvert pendant une
+écriture, mais il ne relit les fichiers qu'à l'ouverture, et **enregistrer dans Desktop
+après une écriture efface ce que PBIdouille vient d'écrire**. D'où trois gestes :
+
+1. Avant d'écrire, enregistrer son travail dans Desktop.
+2. Écrire avec PBIdouille.
+3. Fermer Desktop **sans enregistrer**, puis rouvrir le `.pbip` : les changements y sont.
 
 ### Ouvrir un rapport
 

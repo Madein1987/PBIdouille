@@ -7,9 +7,10 @@ recopié d'un KPI gabarit vers tous les autres, et le ménage de ce que plus
 rien n'utilise.
 
 Elle travaille directement sur les fichiers du projet (TMDL pour le modèle,
-PBIR pour le rapport). Rien d'autre à installer qu'un Python et Qt ; Power BI
-Desktop doit être **fermé** pendant une écriture, puisqu'il ne relit les
-fichiers qu'à l'ouverture.
+PBIR pour le rapport). Rien d'autre à installer qu'un Python et Qt. Power BI
+Desktop peut rester ouvert pendant une écriture, mais il ne relit les fichiers
+qu'à l'ouverture : on le ferme ensuite **sans enregistrer** et on rouvre le
+`.pbip` (voir [les règles d'or](#11-règles-dor)).
 
 - **[Documentation, élément par élément](docs/README.md)** : chaque partie de l'app, numérotée dans l'ordre
 - [En images](#en-images)
@@ -188,8 +189,8 @@ Dans l'app : **« Générer les mesures »**, en tête du journal de l'onglet
 Mesures. En ligne de commande : `py bidouille\moteurs\generate_measures.py`.
 Le générateur écrit directement les fichiers TMDL.
 
-⚠ Desktop FERMÉ pour l'écriture réelle ; backup automatique sous
-`_backupsPBIdouille\_tmdl_backups\` ; rouvrir le `.pbip` ensuite. `settings.dryRun` (ou la case
+⚠ Après l'écriture réelle, fermer Desktop **sans enregistrer** et rouvrir le
+`.pbip` ; backup automatique sous `_backupsPBIdouille\_tmdl_backups\`. `settings.dryRun` (ou la case
 « Aperçu ») pour tout lister sans rien écrire. Idempotent : relancer sans
 changement = 0 écriture. Les lineageTags
 existants sont préservés ; une table paramètre créée est ajoutée aux
@@ -1138,7 +1139,7 @@ ENTITY          = "_mesures"
 ```
 
 **Procédure** : configurer le CF sur le template → enregistrer le PBIP →
-**fermer Desktop** → `py propagate_cf.py` → rouvrir. Idempotent : le template
+`py propagate_cf.py` → fermer Desktop **sans enregistrer** → rouvrir. Idempotent : le template
 est maître, les clones sont remplacés à chaque exécution. Le remplacement de
 noms est borné au début des noms de mesures (pas de collision entre
 « Average Steps » et « Average Sleep Duration »).
@@ -1628,8 +1629,9 @@ couleur pour toutes les variations), pour distinguer les KPI d'un coup d'œil.
   propagate_cf ignore les couleurs statiques de `columnFormatting` — la clé
   exclusive de ce script — et rien d'autre.
 
-Procédure : configurer le gabarit + la colonne `couleur` → **fermer Desktop**
-→ `py color_matrix_by_kpi.py` → rouvrir. Idempotent.
+Procédure : configurer le gabarit + la colonne `couleur` → enregistrer dans
+Desktop → `py color_matrix_by_kpi.py` → fermer Desktop **sans enregistrer** →
+rouvrir. Idempotent.
 
 ## 8. unused_measures.py (ménage)
 
@@ -1670,7 +1672,7 @@ catégories calc/import/structural). Une colonne est utilisée si référencée 
 **Sortie** : `unused_measures.csv` (audit complet mesures + colonnes, colonne
 `Type`, avec la raison d'utilisation de chacune), par l'export de ChopChop ou
 `py bidouille\moteurs\unused_measures.py`. La suppression se fait dans
-ChopChop (édition dev), Desktop fermé, avec sauvegarde.
+ChopChop (édition dev), avec sauvegarde.
 
 ⚠ Pour les mesures marquées « générée » : les supprimer ne sert à rien, la
 prochaine génération les recrée. Retirer plutôt la variation ou la branche de
@@ -1708,7 +1710,7 @@ sur une table ; **les cases cochées d'autres tables restent vivantes** (le
 compteur du bouton indique toujours le total réel, filtre compris).
 
 **Supprimer la sélection** — un seul bouton, mesures **et** colonnes ensemble
-(⚠ **Desktop fermé**, backup de chaque fichier touché sous
+(⚠ ensuite fermer Desktop **sans enregistrer**, backup de chaque fichier touché sous
 `_backupsPBIdouille\_tmdl_backups\<horodatage>\`, ré-analyse après coup).
 
 Trois façons de supprimer une colonne selon sa **catégorie** (suffixe dans
@@ -1832,8 +1834,8 @@ annuler une restauration ne saurait pas re-supprimer ce qu'elle a recréé.
 confondus, la plus récente en haut ; chaque ligne se déplie pour voir quel
 fichier retourne où. Restaurer réécrit les fichiers **après avoir sauvegardé
 l'état courant** dans une session « Restauration » : on peut donc faire
-l'aller-retour autant de fois qu'on veut. ⚠ Desktop fermé, puis rouvrir le
-`.pbip`.
+l'aller-retour autant de fois qu'on veut. ⚠ Ensuite, fermer Desktop **sans
+enregistrer** et rouvrir le `.pbip`.
 
 Les noms de copies restent ceux de chaque outil (`<id>_visual.json`…) : les
 anciens dossiers restent lisibles et le Ctrl+Z du wireframe, qui les
@@ -1863,7 +1865,7 @@ seule ; **Exporter…** écrit le CSV.
 **Ajouter un KPI** : créer la mesure de base dans `_mesures` (dossier
 `_indicateurs`) et sa ligne dans TD_Indicateurs.xlsx → actualiser TD_KPI →
 **Générer les mesures** (variations et paramètres suivent tout seuls) →
-**Propager** dans l'onglet Rapport (Desktop fermé).
+**Propager** dans l'onglet Rapport, puis rouvrir le `.pbip` sans enregistrer.
 
 **Ajouter une variation** : **Ajouter** dans Mesures → Variations (cocher
 « dans les paramètres de champ » si elle doit être sélectionnable),
@@ -1883,8 +1885,11 @@ générées, retirer la variation du config plutôt que la mesure.
 
 ## 11. Règles d'or
 
-1. **Desktop fermé pendant une écriture.** Il ne relit les fichiers qu'à
-   l'ouverture et écrase tout à l'enregistrement.
+1. **Après une écriture, fermer Desktop sans enregistrer.** Desktop peut
+   rester ouvert pendant que PBIdouille écrit, mais il ne relit les fichiers
+   qu'à l'ouverture, et enregistrer réécrit le projet depuis ce qu'il a en
+   mémoire, ce qui efface l'écriture. Donc : enregistrer son travail dans
+   Desktop avant d'écrire, puis fermer sans enregistrer et rouvrir le `.pbip`.
 2. **Aperçu d'abord.** Chaque action qui écrit a sa case « Aperçu » ; le
    journal dit ce qui serait fait.
 3. **`py`, pas `python`** (sur certaines machines, `python` est le faux alias
@@ -2384,8 +2389,8 @@ porte le compte et **s'allume en orange** tant qu'il reste quelque chose à
 un voyant posé à côté.
 **Enregistrer les positions** écrit les `visual.json` concernés — uniquement le
 bloc `position` (converti en coordonnées locales au groupe ; z/tabOrder
-préservés), **Desktop FERMÉ**, backup sous `_backupsPBIdouille\_wireframe_backups\<horodatage>\`,
-puis rouvrir le `.pbip`. Changer de page ou **Recharger** avec des positions non
+préservés), backup sous `_backupsPBIdouille\_wireframe_backups\<horodatage>\`,
+puis fermer Desktop sans enregistrer et rouvrir le `.pbip`. Changer de page ou **Recharger** avec des positions non
 écrites demande d'abord quoi en faire : enregistrer, abandonner ou rester sur la
 page.
 
@@ -2401,7 +2406,7 @@ page courante »** copie le sous-arbre complet dans le rapport : nouveaux ids
 renumérotés au-dessus du max de la page**, géométrie conservée à l'identique
 (la racine garde sa **position d'origine** du gabarit — pensé pour les
 en-têtes/pieds de page standard, rangées de slicers, grilles). Écriture
-immédiate (Desktop FERMÉ) + **manifeste d'undo** sous
+immédiate (rouvrir le `.pbip` sans enregistrer) + **manifeste d'undo** sous
 `_backupsPBIdouille\_wireframe_backups\<horodatage>\import_manifest.txt` (undo = supprimer les
 dossiers listés). ⚠ Le modèle importé référence les tables/champs du modèle
 sémantique du GABARIT — compatibilité à vérifier (même modèle ou champs
@@ -2524,11 +2529,12 @@ CF Δ 30d vit dans le dossier de Δ 30d), **dataCategory en dropdown**
 **Génération** — en tête du journal, visible dans l'onglet Mesures : le bouton
 **« Générer les mesures »** exécute
 `generate_measures.py` sur le modèle du projet : mesures × variations ×
-branches, tables paramètre de champ, **Desktop fermé**. Récap du config en une ligne (le détail en infobulle) ;
+branches, tables paramètre de champ. Récap du config en une ligne (le détail en infobulle) ;
 « Aperçu (dry-run) » coché par
 défaut (liste tout, n'écrit rien) ; case « Supprimer les orphelines » ;
-l'écriture réelle demande confirmation (Desktop FERMÉ), sauvegarde sous
-`_backupsPBIdouille\_tmdl_backups\`, puis rouvrir le `.pbip`.
+l'écriture réelle demande confirmation, sauvegarde sous
+`_backupsPBIdouille\_tmdl_backups\`, puis fermer Desktop sans enregistrer et
+rouvrir le `.pbip`.
 
 Le générateur lit le **fichier**, pas l'éditeur. Le bouton étant désormais à
 côté de l'éditeur (plus d'onglet à traverser, qui enregistrait la vue au

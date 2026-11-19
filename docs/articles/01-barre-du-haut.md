@@ -50,10 +50,10 @@ une sauvegarde…** liste toutes ces copies, la plus récente en haut.
 
 Pour revenir en arrière :
 
-1. Fermer Power BI Desktop.
-2. Choisir une sauvegarde. La déplier montre chaque fichier et sa destination.
-3. Cliquer **Restaurer cette sauvegarde** et confirmer.
-4. Rouvrir le `.pbip`.
+1. Choisir une sauvegarde. La déplier montre chaque fichier et sa destination.
+2. Cliquer **Restaurer cette sauvegarde** et confirmer.
+3. Si Power BI Desktop est ouvert, le fermer **sans enregistrer**, puis rouvrir le
+   `.pbip`. Enregistrer dans Desktop réécrirait les fichiers qui viennent d'être restaurés.
 
 L'état actuel est sauvegardé juste avant, donc une restauration peut elle-même être
 annulée. Un fichier créé par l'opération d'origine est effacé, et un fichier qu'elle avait
