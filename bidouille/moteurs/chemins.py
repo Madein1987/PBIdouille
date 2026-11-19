@@ -25,4 +25,4 @@ OUTIL = Path(__file__).resolve().parents[2]
 PROJETS = Path(os.environ.get("PBIDOUILLE_PROJETS", "").strip()
                or OUTIL.parent / "PowerBI")
 # le projet ouvert à défaut d'en avoir mémorisé un, et celui des tests
-PROJET_DEMO = "Fitbit for random devs"
+PROJET_DEMO = "Fitbit"

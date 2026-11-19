@@ -35,7 +35,7 @@ from _fixture import exiger_projet, PROJET_DEMO   # noqa: E402
 exiger_projet(PBI)
 
 
-PROJ = "Fitbit for random devs"
+PROJ = "Fitbit"
 TPL = "Total Steps"
 
 _ok = True

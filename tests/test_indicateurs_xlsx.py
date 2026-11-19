@@ -34,7 +34,7 @@ exiger_projet(PBI, PROJET_DEMO, "TD_Indicateurs.xlsx",
               "measures_config.json")
 
 
-PROJ = "Fitbit for random devs"
+PROJ = "Fitbit"
 _ok = True
 
 
