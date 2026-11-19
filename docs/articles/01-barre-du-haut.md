@@ -88,4 +88,4 @@ mémorisé séparément pour l'éditeur de variations et pour le reste de l'app.
 
 ---
 
-← [0 Aperçu](00-apercu.md) · [Sommaire](../README.md) · [2 ⚙ Réglages](02-reglages.md) →
+[Sommaire](../README.md) · [2 ⚙ Réglages](02-reglages.md) →

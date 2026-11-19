@@ -1,14 +1,16 @@
 # Documentation de PBIdouille
 
-Le mode d'emploi, élément par élément. Chaque numéro de la capture est celui d'un
-article, et les articles se lisent dans cet ordre. Pour commencer, l'article 0 donne
-une vue d'ensemble en images.
+PBIdouille écrit ce qui se répète dans un rapport Power BI au format PBIP, directement dans
+ses fichiers : les mesures dérivées de chaque KPI, les tables paramètre de champ, le
+formatage recopié d'un KPI vers les autres, et le ménage de ce que plus rien n'utilise.
+
+Cette page en fait le tour en images, puis renvoie au détail. Chaque numéro de la capture
+est celui d'un article, et les articles se lisent dans cet ordre.
 
 ![PBIdouille, chaque élément numéroté](ressources/images/vue_d_ensemble.png)
 
 | N° | Article | Ce qu'on y fait |
 |---|---|---|
-| 0 | [Aperçu](articles/00-apercu.md) | Ce que fait chaque partie, en images, avant le détail |
 | 1 | [La barre du haut](articles/01-barre-du-haut.md) | Changer de rapport, restaurer une sauvegarde, tout recharger |
 | 2 | [⚙ Réglages](articles/02-reglages.md) | Génération, Excel des indicateurs, branches, cibles, formats delta |
 | 3 | **Mesures** | Les variations et ce qu'elles génèrent |
@@ -22,8 +24,128 @@ une vue d'ensemble en images.
 | 6 | [Wireframe](articles/06-wireframe.md) | Organiser les visuels d'une page (édition de développement) |
 | 7 | [ChopChop](articles/07-chopchop.md) | Repérer ce que plus rien n'utilise |
 
+---
+
+## Le tour en images
+
+Les diapos du [guide de démarrage](PBIdouille%20-%20Guide%20de%20demarrage%20rapide.pptx).
+L'app les montre aussi : bouton **Guide** de la barre du haut, et liens **▣ Schéma** là où
+chaque notion sert.
+
+### Un rapport, quatre onglets
+
+![Diapo du guide : Un rapport, quatre onglets](ressources/guide/coup-d-oeil.png)
+
+Tout se passe dans quatre onglets, qui travaillent sur le même rapport. **Mesures** crée
+les variations de chaque KPI et les tables paramètre de champ. **Rapport** recopie le
+formatage d'un KPI vers les autres. **Sources de données** dit d'où vient chaque table.
+**ChopChop** repère ce que plus rien n'utilise.
+
+### Avant de commencer
+
+![Diapo du guide : Avant de commencer](ressources/guide/avant-de-commencer.png)
+
+Le rapport doit être au format **PBIP**. Power BI Desktop doit être **fermé** pendant chaque
+écriture : il ne relit les fichiers qu'à l'ouverture, et écraserait les changements en
+enregistrant.
+
+### Ouvrir un rapport
+
+![Diapo du guide : Lancer l'app et ouvrir un rapport](ressources/guide/lancer.png)
+
+La barre du haut est la même partout : elle choisit le rapport et son config, et donne
+accès aux réglages, aux sauvegardes et au journal.
+
+→ [1 La barre du haut](articles/01-barre-du-haut.md) · [2 ⚙ Réglages](articles/02-reglages.md)
+
+### Mesures : les variations
+
+![Diapo du guide : Comment les variations se ramifient](ressources/guide/variations.png)
+
+Une **variation** s'écrit une fois, comme `7d avg` ou `PY`, et PBIdouille en génère une
+mesure pour chaque KPI. Une **branche**, comme YTD, applique ensuite les autres variations à
+l'intérieur d'elle-même. L'arbre des mesures montre tout ce qui sera produit, avant
+d'écrire.
+
+→ [3.1 Variations](articles/03-1-variations.md) · [3.3 Arbre des mesures](articles/03-3-arbre-des-mesures.md)
+
+### Mesures : les jetons
+
+![Diapo du guide : Les jetons à connaître](ressources/guide/jetons.png)
+
+Les **jetons** sont les parties du DAX qui changent d'un KPI à l'autre : `{baseRef}` devient
+`[Weight]`, `<<unite>>` devient la valeur de la colonne `unite` de TD_Indicateurs.
+
+→ [3.2 Les jetons](articles/03-2-jetons.md)
+
+### Mesures : les paramètres de champ
+
+![Diapo du guide : Ce que reçoivent les paramètres de champ](ressources/guide/parametres-de-champ.png)
+
+Les tables paramètre de champ permettent de choisir, dans un segment, quelle mesure un
+visuel affiche. PBIdouille les remplit avec les KPI, leurs cibles et leurs variations.
+
+→ [3.4 Paramètres de champ](articles/03-4-parametres-de-champ.md)
+
+### Mesures : générer
+
+![Diapo du guide : Générer les mesures](ressources/guide/generer.png)
+
+La génération écrit les mesures et les tables paramètre dans le modèle. L'aperçu, coché par
+défaut, montre tout sans rien écrire.
+
+→ [3.1 Variations, sauvegarder puis générer](articles/03-1-variations.md#7-sauvegarder-puis-générer)
+
+### Rapport : propager le formatage
+
+![Diapo du guide : Comment le formatage se propage](ressources/guide/propagation.png)
+
+Le formatage se fait une fois sur un KPI **gabarit** dans Power BI Desktop. La propagation le
+recopie sur les mesures équivalentes des autres KPI, visuel par visuel. L'onglet colore
+aussi les matrices.
+
+![Diapo du guide : Propager et colorer](ressources/guide/propager-colorer.png)
+
+→ [4 Rapport](articles/04-rapport.md)
+
+### Sources de données
+
+Le guide n'a pas de diapo pour cet onglet. Il dit d'où vient chaque table du rapport :
+Excel, CSV, base ODBC ou serveur SQL, et signale un fichier local introuvable sur ce poste.
+
+→ [5 Sources de données](articles/05-sources-de-donnees.md)
+
+### ChopChop : le ménage
+
+![Diapo du guide : ChopChop : ce que plus rien n'utilise](ressources/guide/chopchop.png)
+
+ChopChop liste les mesures, colonnes et tables que plus rien n'utilise, et exporte la liste.
+
+→ [7 ChopChop](articles/07-chopchop.md)
+
+### Les filets de sécurité
+
+![Diapo du guide : Les filets de sécurité](ressources/guide/filets.png)
+
+Chaque écriture est précédée d'une sauvegarde, et le journal raconte tout ce que l'outil
+fait.
+
+→ [Restaurer une sauvegarde](articles/01-barre-du-haut.md#restaurer-une-sauvegarde)
+
+### En cas de pépin
+
+![Diapo du guide : En cas de pépin](ressources/guide/pepin.png)
+
+Les quatre problèmes les plus fréquents, et quoi faire. Le journal, dans la colonne de
+droite (bouton **🚀 Lancements**), dit presque toujours pourquoi une mesure n'a pas été
+générée.
+
+---
+
 ## Aussi
 
 - [Le guide de démarrage](PBIdouille%20-%20Guide%20de%20demarrage%20rapide.pptx), en PowerPoint
 - [La référence technique](../README.md)
 - `ressources/` : les images, les diapos exportées et les scripts qui les fabriquent
+
+→ Commencer la lecture : [1 La barre du haut](articles/01-barre-du-haut.md)
