@@ -125,8 +125,8 @@ TD_Indicateurs.
 - Une matrice sans gabarit de couleur est ignorée.
 - Un gabarit qui n'a qu'un fond ne colore que le fond, et le journal le signale.
 
-L'Excel et ses colonnes se règlent dans **⚙ Réglages → Excel des indicateurs**, et le
-lien **Se règle dans ⚙ Réglages** y mène directement.
+L'Excel et ses colonnes se règlent dans
+[⚙ Réglages → Excel des indicateurs](reglages.md#excel-des-indicateurs), et le lien **Se règle dans ⚙ Réglages** y mène directement.
 
 ## Propager puis colorer
 

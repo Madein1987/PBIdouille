@@ -38,12 +38,12 @@ validation, et elle sera ignorée ou signalée à la génération. L'onglet
 
 | Clé | Contenu | Où le modifier autrement |
 |---|---|---|
-| `settings` | Tables, dossiers, colonne de dates, rangement | **⚙ Réglages → Génération** |
+| `settings` | Tables, dossiers, colonne de dates, rangement | [⚙ Réglages → Génération](../reglages.md#génération) |
 | `variations` | Les recettes de mesures | [Variations](variations.md) |
-| `branches` | Les branches, comme YTD | **⚙ Réglages → Branches** |
+| `branches` | Les branches, comme YTD | [⚙ Réglages → Branches](../reglages.md#branches) |
 | `fieldParameter` | Les tables paramètre de champ | [Paramètres de champ](parametres-champ.md) |
-| `kpiMeasureFolders` | Les dossiers de cibles | **⚙ Réglages → Mesures cibles** |
-| `indicateursXlsx` | Le fichier TD_Indicateurs et ses colonnes | **⚙ Réglages → Excel des indicateurs** |
+| `kpiMeasureFolders` | Les dossiers de cibles | [⚙ Réglages → Mesures cibles](../reglages.md#mesures-cibles) |
+| `indicateursXlsx` | Le fichier TD_Indicateurs et ses colonnes | [⚙ Réglages → Excel des indicateurs](../reglages.md#excel-des-indicateurs) |
 | `hardcodedAttributes` | Les attributs `<<…>>` | [Fenêtre des jetons](jetons.md#créer-et-modifier-un-attribut) |
 
 La référence complète de chaque clé se trouve dans le

@@ -26,6 +26,10 @@ Le mode d'emploi, onglet par onglet.
 
 - [ChopChop](chopchop.md) : repérer ce que plus rien n'utilise, et restaurer une sauvegarde
 
+## ⚙ Réglages
+
+- [⚙ Réglages](reglages.md) : génération, Excel des indicateurs, branches, cibles et formats delta
+
 ## Aussi
 
 - [Le guide de démarrage](PBIdouille%20-%20Guide%20de%20demarrage%20rapide.pptx) (PowerPoint)
