@@ -3,7 +3,7 @@
 comment le formatage se propage…
 
 Les images (bidouille\\aide\\*.png) sont les diapos du guide PowerPoint,
-exportées par docs\\sources\\exporter_aide.ps1 : une seule source, le guide et
+exportées par docs\\ressources\\sources\\exporter_aide.ps1 : une seule source, le guide et
 l'app montrent le même dessin. La fenêtre n'est PAS modale — on la garde
 ouverte à côté pendant qu'on travaille — et il n'y en a qu'une : la rouvrir
 depuis un autre bouton la ramène devant, sur la bonne page.
@@ -29,7 +29,7 @@ from core.theme import TEXT_DIM
 
 AIDE = Path(__file__).resolve().parent.parent / "aide"
 
-# (clé, titre dans la liste, image) — même table que docs\sources\exporter_aide.ps1
+# (clé, titre dans la liste, image) — même table que docs\ressources\sources\exporter_aide.ps1
 PAGES = [
     ("variations", "Les variations se ramifient", "variations.png"),
     ("parametres", "Les paramètres de champ", "parametres_champ.png"),
@@ -57,7 +57,7 @@ class _Image(QLabel):
             self._pix = None
             self.setPixmap(QPixmap())
             self.setText("Image absente : " + chemin.name + "\n"
-                         "(docs\\sources\\exporter_aide.ps1 la régénère depuis le guide)")
+                         "(docs\\ressources\\sources\\exporter_aide.ps1 la régénère depuis le guide)")
             return
         self._pix = pix
         self._ajuster()

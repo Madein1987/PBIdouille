@@ -5,7 +5,7 @@
 
 Vérifie :
   1. chaque page a son image, lisible, et la table des pages est celle de
-     l'exporteur (docs\\sources\\exporter_aide.ps1) — sinon l'un régénérerait
+     l'exporteur (docs\\ressources\\sources\\exporter_aide.ps1) — sinon l'un régénérerait
      des images que l'autre ne montre pas ;
   2. les images ne sont pas ignorées par git (le paquet ne prend que les
      fichiers suivis : ignorées, elles manqueraient au travail) ;
@@ -54,13 +54,24 @@ for cle, titre, f in dg.PAGES:
     pix = QPixmap(str(dg.AIDE / f))
     check(f"{f} lisible ({pix.width()}x{pix.height()})", not pix.isNull()
           and pix.width() >= 1200)
-ps1 = (FIT / "docs" / "sources" / "exporter_aide.ps1")
+ps1 = (FIT / "docs" / "ressources" / "sources" / "exporter_aide.ps1")
 if ps1.exists():
-    exportes = re.findall(r'"([a-z_]+\.png)"\s*=', ps1.read_text(encoding="utf-8-sig"))
+    texte_ps1 = ps1.read_text(encoding="utf-8-sig")
+    # deux tables : l'aide de l'app, puis les diapos des articles de docs\
+    # (les chemins entre guillemets : ceux du code, pas ceux de l'en-tête)
+    aide = texte_ps1[texte_ps1.index('"bidouille\\aide"'):texte_ps1.index('"docs\\ressources\\guide"')]
+    guide = texte_ps1[texte_ps1.index('"docs\\ressources\\guide"'):]
+    exportes = re.findall(r'"([a-z_]+\.png)"\s*=', aide)
     check("l'exporteur écrit exactement les images des pages",
           sorted(exportes) == sorted(f for _, _, f in dg.PAGES))
+    du_guide = set(re.findall(r'"([a-z_-]+\.png)"\s*=', guide))
+    citees = {m for md in (FIT / "docs").rglob("*.md")
+              for m in re.findall(r"ressources/guide/([a-z_-]+\.png)",
+                                  md.read_text(encoding="utf-8"))}
+    check(f"chaque diapo citée par la documentation est exportée ({len(citees)})",
+          citees and citees <= du_guide)
 else:
-    print("  (exporteur absent : docs\\sources n'est pas dans ce paquet)")
+    print("  (exporteur absent : docs\\ressources\\sources n'est pas dans ce paquet)")
 
 print("2. les images ne sont pas ignorées par git")
 r = subprocess.run(["git", "check-ignore"] + [str(dg.AIDE / f) for _, _, f in dg.PAGES],

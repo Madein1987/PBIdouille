@@ -11,7 +11,7 @@ PBIR pour le rapport). Rien d'autre à installer qu'un Python et Qt ; Power BI
 Desktop doit être **fermé** pendant une écriture, puisqu'il ne relit les
 fichiers qu'à l'ouverture.
 
-- **[Documentation, onglet par onglet](docs/README.md)** : [Variations](docs/mesures/variations.md) · [Jetons](docs/mesures/jetons.md)
+- **[Documentation, élément par élément](docs/README.md)** : chaque partie de l'app, numérotée dans l'ordre
 - [En images](#en-images)
 - [Démarrage rapide](#démarrage-rapide)
 - [1. Vue d'ensemble](#1-vue-densemble) · [2. Les composants](#2-les-composants)
@@ -43,7 +43,7 @@ déclarée *branche* (YTD) devient à son tour une base.
 
 Une variation s'écrit une fois, avec des jetons que la génération remplace pour
 chaque KPI : `{baseRef}`, `{kpiRef}`, `{date}`…, et `<<n'importe quelle colonne>>`
-de TD_Indicateurs. [Tout sur les jetons](docs/mesures/jetons.md).
+de TD_Indicateurs. [Tout sur les jetons](docs/articles/03-2-jetons.md).
 
 ![Les jetons à connaître](bidouille/aide/jetons.png)
 
@@ -172,7 +172,7 @@ doublon. Tout ce qui est réécrit est d'abord sauvegardé.
 | `bidouille\tabs\` | les onglets et leurs fenêtres |
 | `bidouille\aide\` | les images du guide intégré |
 | `tests\` | les suites de tests (chacune finit par « TOUT OK ») ; `test_python38.py` garde l'app lisible en Python 3.8 |
-| `docs\` | [la documentation](docs/README.md), le guide PowerPoint ; `docs\sources\build_deck.py` le reconstruit, `exporter_aide.ps1` en tire les images de `bidouille\aide\` (PowerPoint requis) |
+| `docs\` | [la documentation](docs/README.md), le guide PowerPoint ; `docs\ressources\sources\build_deck.py` le reconstruit, `exporter_aide.ps1` en tire les images de `bidouille\aide\` (PowerPoint requis) |
 
 Côté projet, à côté du `.pbip` : `measures_config.json` (variations,
 branches, paramètres de champ, réglages), `TD_Indicateurs.xlsx` (l'Excel des
@@ -908,7 +908,7 @@ Total Steps part du total  = DIVIDE([Total Steps], CALCULATE([Total Steps],
                                    ALLSELECTED('steps'), ALLSELECTED('dim_Date')))
 ```
 
-Voir [Les jetons](docs/mesures/jetons.md#des-filtres-propres-à-chaque-kpi).
+Voir [Les jetons](docs/articles/03-2-jetons.md#des-filtres-propres-à-chaque-kpi).
 
 L'ancien réglage « Portée par KPI » a quitté l'interface, puisqu'un attribut fait
 le même travail. Un config qui porte encore un bloc `kpiTables` et des jetons
@@ -1027,7 +1027,7 @@ codés en dur »** (colonne au menu déroulant, label à côté).
 Une cellule peut contenir du **DAX, jetons compris** (`SUMX(VALUES({date}),
 {baseRef})`) : l'attribut est remplacé avant les `{jetons}`. Il sert aussi dans le
 nom et la description de la mesure, mais pas dans `displayFolder`. Voir
-[Les jetons](docs/mesures/jetons.md).
+[Les jetons](docs/articles/03-2-jetons.md).
 
 ---
 
@@ -1942,7 +1942,7 @@ py PBIdouille\app.py
 ```
 
 Dépendances : `qtpy` + PySide6 (maison) ou PyQt5 (travail). L'app rouvre le
-dernier projet utilisé (mémorisé), sinon « Fitbit for random devs.pbip » dans
+dernier projet utilisé (mémorisé), sinon « Fitbit.pbip » dans
 le dossier des projets.
 
 ### Mesures → Arbre des mesures
@@ -1993,10 +1993,10 @@ directement sur la bonne page, là où la notion sert : à côté de
 sources… » (Rapport) et dans Mesures → Paramètres de champ.
 
 Les images (`bidouilleide\*.png`) **sont** les diapos du guide, exportées
-par `docs\sources\exporter_aide.ps1` (PowerPoint requis) — une seule source,
+par `docs\ressources\sources\exporter_aide.ps1` (PowerPoint requis) — une seule source,
 le guide et l'app montrent le même dessin. Les diapos y sont retrouvées par
 leur titre. Le guide lui-même se reconstruit avec `docs\sourcesuild_deck.py`
-(captures : `docs\sources\capture.py`).
+(captures : `docs\ressources\sources\capture.py`).
 
 ### Disposition : l'outil d'un côté, les projets de l'autre
 

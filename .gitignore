@@ -42,7 +42,7 @@ svg_measures_config.json
 measures_config.json
 
 # --- sorties générées ---
-docs/sources/crop/
+docs/ressources/sources/crop/
 pbi_lineage.csv
 unused_measures.csv
 
