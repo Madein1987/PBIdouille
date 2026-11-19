@@ -437,7 +437,7 @@ class ChopChopPanel(QWidget):
                   "FIN de requête, donc les étapes précédentes (type, "
                   "renommage, colonne dérivée) continuent de fonctionner).",
         "structural": "Colonne d'une table calculée (paramètre de champ, sortie "
-                      "DAX) : non supprimable ici, édite l'expression DAX de la "
+                      "DAX) : non supprimable ici, modifier l'expression DAX de la "
                       "table dans Power BI.",
     }
 
@@ -978,7 +978,7 @@ class ChopChopPanel(QWidget):
         for table in rep["m_skipped"]:
             self.log.appendPlainText(
                 f"⚠ {table} : requête M non reconnue, colonne retirée du modèle, "
-                "édite Power Query à la main pour stopper l'import.")
+                "modifier Power Query à la main pour stopper l'import.")
         self.log.appendPlainText(
             f"Fichiers modifiés : {', '.join(rep['files'])} (backup fait)")
         self.refresh()

@@ -993,7 +993,7 @@ def delete_objects(result: dict, measure_names=(), column_keys=(),
             else:
                 report["m_skipped"].append(table)
                 log(f"⚠ {table} : requête M non reconnue, colonnes retirées du "
-                    "modèle mais l'import continue (édite Power Query à la main).")
+                    "modèle mais l'import continue (modifier Power Query à la main).")
 
         p.write_text(text, encoding="utf-8")
         report["files"].append(p.name)

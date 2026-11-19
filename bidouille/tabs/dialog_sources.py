@@ -534,7 +534,7 @@ class SourcesDialog(QDialog):
         for (v, s), ks in sans.items():
             lignes.append(
                 f"Attention : « {v} », {len(ks)} KPI copient « {s} », qui n'a "
-                "pas cette mesure : rien ne leur sera copié. Donne-leur un KPI "
+                "pas cette mesure : rien ne leur sera copié. Leur donner un KPI "
                 "qui l'a (ligne « Tous les KPI », par exemple).")
         if retraits:
             lignes.append(

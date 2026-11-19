@@ -451,7 +451,7 @@ class BidouilleWindow(QMainWindow):
 
     def _update_config_label(self):
         p = self.project.config_json
-        aide = ("\n\nClique pour choisir un autre fichier (par défaut : celui à "
+        aide = ("\n\nCliquer pour choisir un autre fichier (par défaut : celui à "
                 "côté du .pbip).\nLe choix est mémorisé pour ce rapport.")
         if p.exists():
             self.btn_config.setText("📄 " + _chemin_court(p) + "   ✎")
@@ -460,7 +460,7 @@ class BidouilleWindow(QMainWindow):
                                           "padding: 4px 10px; }")
         else:
             self.btn_config.setText("⚠ measures_config.json introuvable, "
-                                    "clique pour le choisir")
+                                    "cliquer pour le choisir")
             self.btn_config.setToolTip("Attendu :\n" + str(p) + aide)
             self.btn_config.setStyleSheet("QPushButton#btnConfig { text-align: left; "
                                           "padding: 4px 10px; color:#ffd246; }")
@@ -472,7 +472,7 @@ class BidouilleWindow(QMainWindow):
             if cand and Path(cand).exists():
                 self._set_project(cand)
                 return
-        self.project_label.setText("Aucun projet, clique « Changer de rapport… ».")
+        self.project_label.setText("Aucun projet, cliquer sur « Changer de rapport… ».")
 
     def _choose_project(self):
         start = str(self.project.folder) if self.project else str(_DOSSIER_PARENT)

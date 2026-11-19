@@ -917,7 +917,7 @@ class ConfigTab(QWidget):
         communs = self._form_group("Réglages communs à toutes les tables", [
             ("Colonne KPI :", self.g_fp_kpiColumn,
              "Nom de la colonne (cachée) qui porte le KPI dans chaque table\n"
-             "paramètre : le nom de sa mesure de base. C'est la CLÉ : relie-la à\n"
+             "paramètre : le nom de sa mesure de base. C'est la CLÉ : la relier à\n"
              "TD_KPI pour filtrer par KPI :\n"
              "   TD_KPI[mesure] → P_Indicateurs_…[Indicateur]\n\n"
              "Défaut : Indicateur."),
