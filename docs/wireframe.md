@@ -87,7 +87,7 @@ Changer de rapport ou fermer l'app ne pose pas cette question : enregistrer avan
 enregistrement.
 
 Chaque écriture est sauvegardée dans `_backupsPBIdouille\_wireframe_backups`. Elle reste
-aussi restaurable depuis [ChopChop → Sauvegardes…](chopchop.md#les-sauvegardes).
+aussi restaurable depuis [🕘 Restaurer une sauvegarde…](barre-du-haut.md#restaurer-une-sauvegarde).
 
 ## Importer un gabarit
 

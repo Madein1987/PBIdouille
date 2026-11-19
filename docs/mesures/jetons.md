@@ -134,7 +134,7 @@ déclare.
 
 Cette liste est celle de **⚙ Réglages → Excel des indicateurs → Attributs codés en
 dur** : un changement ici s'y retrouve, et inversement. Le classeur est sauvegardé
-avant chaque écriture (**Sauvegardes…**, onglet ChopChop), et **Excel doit être
+avant chaque écriture (**🕘 Restaurer une sauvegarde…**, dans la barre du haut), et **Excel doit être
 fermé** pour écrire dedans ; sinon la fenêtre le dit et rien ne change. Le config est
 enregistré avec, sauf s'il avait déjà des modifications en attente.
 

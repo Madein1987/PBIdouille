@@ -2,6 +2,10 @@
 
 Le mode d'emploi, onglet par onglet.
 
+## Partout
+
+- [La barre du haut](barre-du-haut.md) : changer de rapport, restaurer une sauvegarde, tout recharger
+
 ## Mesures
 
 - [Variations](mesures/variations.md) : créer une mesure, et ce que chaque réglage change dans Power BI

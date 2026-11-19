@@ -258,8 +258,8 @@ for i, (t, d, col, ic) in enumerate(cards):
 box(s, 0.6, 5.8, 12.1, 0.95, fill=CARD2)
 text(s, 0.9, 5.8, 11.6, 0.95,
      [[("Partout : ", {"bold": True, "color": GREEN}),
-       ("⚙ Réglages (le config du rapport) · ↻ Tout recharger (relire le disque) · "
-        "le journal à droite, le plus récent en haut.", {})]],
+       ("⚙ Réglages (le config du rapport) · 🕘 Restaurer une sauvegarde · "
+        "↻ Tout recharger (relire le disque) · le journal à droite.", {})]],
      size=16, anchor=MSO_ANCHOR.MIDDLE)
 
 # ============================================================ 3. Avant de commencer
@@ -292,25 +292,25 @@ text(s, 0.9, 6.0, 11.6, 0.8,
 # ============================================================ 4. Lancer
 s = new_slide("La barre du haut est partagée par tous les onglets. L'app rouvre le dernier rapport utilisé.")
 title(s, "Lancer l'app et ouvrir un rapport", "Démarrage")
-p, (iw, ih) = crop("onglet_rapport", (0, 0, 1245, 125), "barre")
+p, (iw, ih) = crop("barre_ruban", (0, 0, 1245, 84), "barre")
 picture(s, p, 0.6, 1.8, w=12.1)
 pic_h = 12.1 * ih / iw
 # repères numérotés sur la capture (coordonnées capture -> pouces)
 sx = 12.1 / iw
-for n, (px, py) in enumerate([(810, 21), (935, 21), (1050, 21), (1180, 21)], start=1):
+for n, px in enumerate([98, 271, 660, 810, 973, 1178], start=1):
     badge(s, 0.6 + px * sx - 0.17, 1.8 - 0.4, n, d=0.34, size=12)
-badge(s, 0.6 + 1165 * sx - 0.34, 1.8 + 56 * sx - 0.17, 5, d=0.34, size=12)
 text(s, 0.6, 1.8 + pic_h + 0.35, 5.6, 0.5, "Lancement", size=18, font=HEAD, color=GREEN)
 box(s, 0.6, 1.8 + pic_h + 0.9, 5.6, 0.75, fill=DARK, line=LINE)
 text(s, 0.85, 1.8 + pic_h + 0.9, 5.2, 0.75, "py app.py", size=20, font=MONO, color=GREEN, anchor=MSO_ANCHOR.MIDDLE)
 text(s, 0.6, 1.8 + pic_h + 1.85, 5.6, 1.3,
      "Depuis le dossier de l'app. Elle rouvre le dernier rapport ; le measures_config.json "
      "est cherché à côté du .pbip.", size=14, color=MUTED)
-legend = [("Changer de rapport…", "ouvrir un autre .pbip (ou Récents)"),
-          ("⚙ Réglages", "le config du rapport : Excel, dossiers, paramètres de champ"),
+legend = [("📂 Le rapport", "les récents, ou en ouvrir un autre"),
+          ("📄 Le config", "choisir un autre measures_config.json"),
+          ("⚙ Réglages", "Excel, dossiers, branches, cibles"),
+          ("🕘 Restaurer", "revenir à une copie d'avant écriture"),
           ("↻ Tout recharger", "relire le disque après Desktop ou Excel"),
-          ("Lancements", "afficher ou masquer le journal"),
-          ("Config…", "choisir un autre measures_config.json")]
+          ("🚀 Lancements", "afficher ou masquer le journal")]
 for i, (h, d) in enumerate(legend):
     y = 1.8 + pic_h + 0.35 + i * 0.62
     badge(s, 6.8, y + 0.02, i + 1, d=0.34, size=12)
@@ -1076,7 +1076,7 @@ s = new_slide("Rien n'est écrit sans trace : aperçu d'abord, sauvegarde horoda
 title(s, "Les filets de sécurité", "Bonnes pratiques")
 safe = [("Aperçu (dry-run)", "Coché par défaut partout : on voit tout, rien n'est écrit.", GREEN, "👁"),
         ("Sauvegardes", "Chaque écriture copie les fichiers touchés sous _backupsPBIdouille\\, horodatés.", BLUE, "▣"),
-        ("Restauration", "Sauvegardes… (onglet ChopChop) : revenir à une copie, avec d'où elle vient.", ORANGE, "↺"),
+        ("Restauration", "🕘 Restaurer une sauvegarde, en haut : revenir à une copie, avec d'où elle vient.", ORANGE, "↺"),
         ("Le journal", "Chaque run : heure, verdict, durée, avertissements ⚠ en jaune.", GREEN, "☰")]
 for i, (h, d, col, ic) in enumerate(safe):
     x = 0.6 + (i % 2) * 6.15
@@ -1097,7 +1097,7 @@ s = new_slide("Les quatre questions qui reviennent. La documentation détaillée
 title(s, "En cas de pépin", "Aide-mémoire")
 faq = [("Le formatage disparaît quand je change de KPI", "Le KPI n'a pas été propagé : vérifier la grille, puis Propager."),
        ("Une mesure n'est pas générée", "Lire le journal : base exclue par la portée, attribut <<…>> absent de l'Excel, ou nom en collision."),
-       ("Mes changements dans Desktop ont disparu", "Desktop était ouvert pendant l'écriture. Restaurer via Sauvegardes… (onglet ChopChop), refaire avec Desktop fermé."),
+       ("Mes changements dans Desktop ont disparu", "Desktop était ouvert pendant l'écriture. 🕘 Restaurer une sauvegarde (en haut), puis refaire avec Desktop fermé."),
        ("L'outil ne voit pas ma nouvelle colonne Excel", "↻ Tout recharger (ou le bouton ↻ des Réglages).")]
 for i, (q, a) in enumerate(faq):
     y = 1.8 + i * 1.18

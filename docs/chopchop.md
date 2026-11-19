@@ -1,9 +1,9 @@
 # ChopChop
 
-[Documentation](README.md) › **ChopChop** · voir aussi [Variations](mesures/variations.md), [Sources de données](sources-de-donnees.md)
+[Documentation](README.md) › **ChopChop** · voir aussi [Variations](mesures/variations.md), [Restaurer une sauvegarde](barre-du-haut.md#restaurer-une-sauvegarde)
 
 L'onglet **ChopChop** repère ce que plus rien n'utilise dans un rapport : mesures,
-colonnes et tables entières. Il garde aussi la liste des sauvegardes de tous les outils.
+colonnes et tables entières.
 
 L'analyse se lance à l'ouverture de l'onglet, et **Réanalyser** la relance.
 
@@ -18,7 +18,6 @@ La ligne du haut résume le résultat :
 | Fonction | Version partagée | Édition de développement |
 |---|---|---|
 | Analyse, filtre, export | Oui | Oui |
-| Sauvegardes et restauration | Oui | Oui |
 | Suppression | Non | Oui |
 
 ## Lire le résultat
@@ -76,27 +75,6 @@ utilisées comprises.
 Colonnes : `Type`, `Nom`, `Table`, `Statut`, `Référencé par`,
 `Détail des référenceurs` et `Générée`.
 
-## Les sauvegardes
-
-Chaque outil qui écrit dans le projet sauvegarde d'abord les fichiers touchés. Le bouton
-**Sauvegardes…** les liste toutes, la plus récente en haut.
-
-![La fenêtre des sauvegardes](images/chopchop_sauvegardes.png)
-
-Pour revenir en arrière :
-
-1. Fermer Power BI Desktop.
-2. Choisir une sauvegarde. La déplier montre chaque fichier et sa destination.
-3. Cliquer **Restaurer cette sauvegarde** et confirmer.
-4. Rouvrir le `.pbip`.
-
-L'état actuel est sauvegardé juste avant, donc une restauration peut elle-même être
-annulée. Un fichier créé par l'opération d'origine est effacé, et un fichier qu'elle avait
-supprimé est recréé.
-
-Chaque outil garde ses **10** sauvegardes les plus récentes, dans le dossier
-`_backupsPBIdouille` à côté du `.pbip`.
-
 ## Supprimer
 
 > **Édition de développement seulement.**
@@ -115,5 +93,7 @@ Chaque outil garde ses **10** sauvegardes les plus récentes, dans le dossier
 | Table entière | Son fichier, et sa référence dans le modèle |
 
 Les mesures qui dépendent d'un objet supprimé et sont elles-mêmes inutilisées partent avec
-lui, et la confirmation en donne le nombre. Si une requête Power Query n'est pas reconnue,
+lui, et la confirmation en donne le nombre. Une suppression se défait avec
+[🕘 Restaurer une sauvegarde…](barre-du-haut.md#restaurer-une-sauvegarde), dans la barre
+du haut. Si une requête Power Query n'est pas reconnue,
 la colonne quitte le modèle et un avertissement demande de modifier la requête à la main.

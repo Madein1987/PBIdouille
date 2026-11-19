@@ -95,7 +95,7 @@ py app.py
 ```
 
 L'app rouvre le dernier rapport utilisé. Le `measures_config.json` est
-cherché à côté du `.pbip` ; le bouton 📄 sous la barre du projet en choisit
+cherché à côté du `.pbip` ; le bouton 📄, à côté du nom du rapport, en choisit
 un autre.
 
 **Partager** : sur GitHub, branche `stable`, **Code → Download ZIP**. Le
@@ -1828,7 +1828,7 @@ Trois cas, et il faut les trois pour qu'un aller-retour soit exact :
 Sans `absent`, restaurer un groupement laisserait le groupe créé en place, et
 annuler une restauration ne saurait pas re-supprimer ce qu'elle a recréé.
 
-**« Sauvegardes… »** (bouton dans ChopChop) ouvre la liste, tous outils
+**« 🕘 Restaurer une sauvegarde… »** (barre du haut) ouvre la liste, tous outils
 confondus, la plus récente en haut ; chaque ligne se déplie pour voir quel
 fichier retourne où. Restaurer réécrit les fichiers **après avoir sauvegardé
 l'état courant** dans une session « Restauration » : on peut donc faire
@@ -1906,7 +1906,7 @@ puis :
 - [ ] Python 3.8+ disponible (`py --version`) ;
 - [ ] `qtpy` et un binding Qt : PyQt5 (déjà au travail) ou PySide6
       (`py -m pip install qtpy pyside6` à la maison) ; `openpyxl` ;
-- [ ] `py app.py`, puis **Changer de rapport…** vers le `.pbip` ;
+- [ ] `py app.py`, puis le bouton du rapport → **Ouvrir un autre rapport…** ;
 - [ ] le `measures_config.json` du rapport (bouton 📄 s'il n'est pas à côté
       du `.pbip`) ; vérifier dans ⚙ Réglages la colonne de dates, la table et
       le dossier des mesures de base ;
@@ -2024,7 +2024,7 @@ manifestes stockent des chemins relatifs au projet : déplacer un projet avec
 son dossier de sauvegardes les garde restaurables.
 
 **measures_config.json** : par défaut, celui à côté du `.pbip` ; sinon le
-bouton **📄** sous la barre du projet — il montre le chemin du config utilisé —
+bouton **📄**, à côté du nom du rapport, montre le config utilisé et
 permet d'en choisir un autre d'un clic (mémorisé PAR
 projet — utile au travail si le config ne vit pas avec le rapport). La table
 paramètre des KPI est résolue dans l'ordre : celles du config
@@ -2128,8 +2128,13 @@ suspendu** — ce qui s'insère sans casser le « plus récent en haut ».
 
 La colonne fait **440 px** par défaut (340 avant) ; une largeur retenue plus
 étroite a été élargie une fois, puis celle qu'on règle à la poignée est
-respectée. La barre projet n'affiche plus que le **nom** du projet (le chemin
-est en infobulle) : elle imposait à elle seule ~1 600 px de fenêtre.
+respectée. La barre du haut tient sur **une ligne** : à gauche un bouton qui
+nomme le rapport (le chemin est en infobulle, le menu propose les récents et
+« Ouvrir un autre rapport… ») et le config ; à droite ⚙ Réglages,
+🕘 Restaurer une sauvegarde…, ↻ Tout recharger, Guide et 🚀 Lancements. Le
+chemin complet imposait à lui seul ~1 600 px de fenêtre. Les sous-onglets de
+Mesures sont soulignés plutôt qu'en cartes : deux rangées au même style se
+lisaient comme une seule.
 
 **Dans l'onglet Mesures, le journal porte la génération** : le panneau
 **« Génération des mesures »** (aperçu, orphelines, bouton **Générer les

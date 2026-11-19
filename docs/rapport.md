@@ -43,7 +43,7 @@ Une couleur de série posée à la main sur un autre KPI est donc remplacée par
 source. Pour garder un réglage propre à un KPI, mettre sa case **À la main**.
 
 Chaque visuel modifié est sauvegardé avant l'écriture. La restauration se fait depuis
-[ChopChop → Sauvegardes…](chopchop.md#les-sauvegardes).
+[🕘 Restaurer une sauvegarde…](barre-du-haut.md#restaurer-une-sauvegarde).
 
 ## La grille des sources
 
