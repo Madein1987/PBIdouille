@@ -2380,8 +2380,9 @@ un voyant posé à côté.
 **Enregistrer les positions** écrit les `visual.json` concernés — uniquement le
 bloc `position` (converti en coordonnées locales au groupe ; z/tabOrder
 préservés), **Desktop FERMÉ**, backup sous `_backupsPBIdouille\_wireframe_backups\<horodatage>\`,
-puis rouvrir le `.pbip`. **Annuler** relit le disque et jette les changements
-non sauvés.
+puis rouvrir le `.pbip`. Changer de page ou **Recharger** avec des positions non
+écrites demande d'abord quoi en faire : enregistrer, abandonner ou rester sur la
+page.
 
 **Panneau « Gabarits »** (colonne droite, repliable) : choisir un **PBIP
 gabarit** (mémorisé par projet) — chaque **groupe racine** de ses pages est un

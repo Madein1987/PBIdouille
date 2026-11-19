@@ -72,9 +72,16 @@ Les déplacements s'accumulent à l'écran. **Enregistrer** affiche leur nombre 
 tant qu'il reste quelque chose à écrire. Seule la position des visuels change dans leurs
 fichiers.
 
-> **Enregistrer avant de changer de page.** Le changement de page abandonne les
-> déplacements non enregistrés, sans demander de confirmation. **Recharger** aussi : il
-> repart des fichiers du rapport.
+Changer de page ou cliquer **Recharger** avec des déplacements non enregistrés ouvre un
+avertissement :
+
+| Choix | Effet |
+|---|---|
+| **Enregistrer** | Écrit les positions, puis continue |
+| **Abandonner les changements** | Oublie les déplacements, puis continue |
+| **Rester ici** | Reste sur la page, sans rien perdre |
+
+Changer de rapport ou fermer l'app ne pose pas cette question : enregistrer avant.
 
 **Annuler**, ou **Ctrl+Z**, défait le dernier geste ou la dernière action, y compris un
 enregistrement.

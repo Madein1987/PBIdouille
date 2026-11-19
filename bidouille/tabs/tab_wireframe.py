@@ -306,6 +306,7 @@ class WireframeTab(QWidget):
         self._dirty: set = set()       # ids déplacés (non sauvegardés)
         self._undo: list = []          # pile Ctrl+Z : gestes (géométrie) + actions (fichiers)
         self._scope = None             # niveau actif : None = page, sinon id de groupe
+        self._page_id = None           # la page dessinée (la liste peut être en avance)
         self._applying = False         # garde : setPos programmatique en cours
         self._tpl_project = None       # Project du PBIP gabarit (ou None)
         self._tpl_models: list = []    # modèles du gabarit (list_models)
@@ -321,13 +322,13 @@ class WireframeTab(QWidget):
         bar = QHBoxLayout()
         bar.addWidget(QLabel("Page :"))
         self.cmb_pages = QComboBox()
-        self.cmb_pages.currentIndexChanged.connect(self._build_page)
+        self.cmb_pages.currentIndexChanged.connect(self._on_page_choisie)
         bar.addWidget(self.cmb_pages, 1)
         self.lbl_dims = QLabel("")
         self.lbl_dims.setStyleSheet(f"color:{TEXT_DIM};")
         bar.addWidget(self.lbl_dims)
         btn_reload = QPushButton("Recharger")
-        btn_reload.clicked.connect(self._reload)
+        btn_reload.clicked.connect(self._recharger)
         bar.addWidget(btn_reload)
         lv.addLayout(bar)
 
@@ -501,6 +502,58 @@ class WireframeTab(QWidget):
         self.cmb_pages.blockSignals(False)
         self._build_page()
 
+    # ---- ce qui n'est pas écrit, avant de quitter la page ----------------------
+
+    def _on_page_choisie(self, *_):
+        """Une autre page est choisie. Dessiner repart des fichiers : les
+        déplacements non enregistrés seraient perdus sans un mot."""
+        if self._dirty and not self._regler_non_ecrits("Changer de page"):
+            self._revenir_page_affichee()
+            return
+        self._build_page()
+
+    def _recharger(self, *_):
+        """Le bouton « Recharger » : même question, il relit les fichiers."""
+        if self._dirty and not self._regler_non_ecrits("Recharger"):
+            return
+        self._reload()
+
+    def _regler_non_ecrits(self, geste) -> bool:
+        """Rend True si `geste` peut continuer. Un enregistrement qui échoue
+        laisse les éléments à écrire : on reste alors sur la page."""
+        choix = self._demander_non_ecrits(geste)
+        if choix == "enregistrer":
+            self._save_positions()
+            return not self._dirty
+        return choix == "abandonner"
+
+    def _demander_non_ecrits(self, geste) -> str:
+        """« enregistrer », « abandonner » ou « rester »."""
+        box = QMessageBox(self)
+        box.setWindowTitle("Déplacements non enregistrés")
+        box.setText(f"{len(self._dirty)} élément(s) déplacé(s) ou redimensionné(s) "
+                    "ne sont pas encore écrits.\n\n"
+                    f"{geste} sans enregistrer les ferait perdre.")
+        b_save = box.addButton("Enregistrer", QMessageBox.AcceptRole)
+        b_jeter = box.addButton("Abandonner les changements", QMessageBox.DestructiveRole)
+        box.addButton("Rester ici", QMessageBox.RejectRole)
+        box.setDefaultButton(b_save)
+        box.exec_() if hasattr(box, "exec_") else box.exec()
+        clic = box.clickedButton()
+        if clic is b_save:
+            return "enregistrer"
+        return "abandonner" if clic is b_jeter else "rester"
+
+    def _revenir_page_affichee(self):
+        """Remet la liste sur la page dessinée, sans la redessiner."""
+        self.cmb_pages.blockSignals(True)
+        for i in range(self.cmb_pages.count()):
+            data = self.cmb_pages.itemData(i)
+            if data and data["id"] == self._page_id:
+                self.cmb_pages.setCurrentIndex(i)
+                break
+        self.cmb_pages.blockSignals(False)
+
     # ---- construction de la scène + arbre ---------------------------------------
 
     def _build_page(self, *_):
@@ -530,6 +583,7 @@ class WireframeTab(QWidget):
         self._update_dirty_ui()
 
         page = self.cmb_pages.currentData()
+        self._page_id = page["id"] if page else None
         if not page:
             self.lbl_dims.setText("")
             self.scene.setSceneRect(QRectF())
