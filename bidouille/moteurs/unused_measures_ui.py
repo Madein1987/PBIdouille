@@ -524,6 +524,10 @@ class ChopChopPanel(QWidget):
         try:
             self.result = um.analyze()
         except SystemExit as e:
+            self.result = None
+            self.tree.clear()
+            self.btn_delete.setEnabled(False)
+            self.log.appendPlainText(str(e))
             QMessageBox.critical(self, "Erreur", str(e))
             return
 
@@ -839,6 +843,8 @@ class ChopChopPanel(QWidget):
         if not path:
             return
         header, rows = self._export_rows()
+        header = list(header) + ["Rapport analysé"]
+        rows = [list(row) + [str(um.REPORT_DIR)] for row in rows]
         try:
             if path.lower().endswith(".xlsx"):
                 self._write_xlsx(path, header, rows)
@@ -867,7 +873,7 @@ class ChopChopPanel(QWidget):
     # ---- suppression -----------------------------------------------------------
 
     def _delete_checked(self):
-        if _production():
+        if _production() or not self.result:
             return
         measures    = self.result["measures"]
         referencers = self.result["referencers"]
@@ -949,14 +955,25 @@ class ChopChopPanel(QWidget):
             return
 
         try:
+            # Le rapport peut avoir changé depuis la sélection.
+            courant = um.analyze()
+            if (not set(selected).issubset(courant["unused"])
+                    or not set(col_selected).issubset(set(courant["unused_columns"]) | set(courant["column_chained"]))
+                    or not set(tbl_selected).issubset(courant["dead_table_info"])):
+                self.refresh()
+                QMessageBox.information(self, "Rapport modifié", "Les usages ont changé. Revoir la sélection.")
+                return
             rep = um.delete_objects(
-                self.result, measure_names=sorted(selected),
+                courant, measure_names=sorted(selected),
                 column_keys=sorted(col_selected),
                 table_names=sorted(tbl_selected),
                 log=self.log.appendPlainText,
             )
-        except OSError as e:
-            QMessageBox.critical(self, "Erreur d'écriture", str(e))
+        except (OSError, SystemExit) as e:
+            self.result = None
+            self.tree.clear()
+            self.btn_delete.setEnabled(False)
+            QMessageBox.critical(self, "Suppression interrompue", str(e))
             return
 
         if rep["tables_deleted"]:
