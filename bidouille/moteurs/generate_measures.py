@@ -889,13 +889,28 @@ def fp_table_specs(fp) -> list:
     return out
 
 
+def colonne_de_parametre(bloc):
+    """Power BI identifie la colonne de champs par la métadonnée JSON de type 2."""
+    prop = re.search(
+        r"^\t\textendedProperty[ \t]+(?:ParameterMetadata|'ParameterMetadata')[ \t]*="
+        r"(?P<valeur>[^\n]*(?:\n\t{3,}[^\n]*)*)", bloc, re.M | re.I)
+    if not prop:
+        return False
+    valeur = prop.group("valeur").strip()
+    if valeur.startswith("```") and valeur.endswith("```"):
+        valeur = valeur[3:-3].strip()
+    try:
+        metadata = json.loads(valeur)
+    except ValueError:
+        return False
+    return isinstance(metadata, dict) and metadata.get("kind") == 2
+
+
 def source_parametre(texte, nom):
     """Localise la source d'un paramètre de champ avant toute écriture du lot."""
     membres = split_members(texte)
     partitions = [bloc for genre, bloc in membres if genre == "partition"]
-    metadata = any(genre == "column" and re.search(
-        r"^\t\textendedProperty\s+ParameterMetadata\s*=", bloc, re.M | re.I)
-        for genre, bloc in membres)
+    metadata = any(genre == "column" and colonne_de_parametre(bloc) for genre, bloc in membres)
     if (len(partitions) != 1 or not metadata or not re.search(
             r"^\tpartition[^\n]+?=\s*calculated[ \t]*$", partitions[0], re.M | re.I)):
         raise SystemExit(f"« {nom} » existe déjà et n'est pas une table paramètre "
