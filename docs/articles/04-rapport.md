@@ -144,6 +144,8 @@ L'Excel et ses colonnes se règlent dans
 
 **Colorer** conserve les sélecteurs des autres tables et des colonnes indépendantes. Les fichiers `visual.json` modifiés sont sauvegardés et peuvent être restaurés depuis le ruban.
 
+L’éditeur retrouve le KPI par sa clé au moment de sauvegarder, y compris après un tri du classeur. Une clé modifiée, absente ou devenue ambiguë interrompt l’écriture des changements concernés.
+
 ## Propager puis colorer
 
 **Propager puis colorer** lance les deux, dans cet ordre, avec les cases **Aperçu** de
