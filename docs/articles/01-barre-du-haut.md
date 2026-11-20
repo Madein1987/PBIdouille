@@ -55,6 +55,8 @@ Pour revenir en arrière :
 3. Si Power BI Desktop est ouvert, le fermer **sans enregistrer**, puis rouvrir le
    `.pbip`. Enregistrer dans Desktop réécrirait les fichiers qui viennent d'être restaurés.
 
+Annuler une génération qui a créé une table paramètre retire son fichier TMDL et sa référence du modèle.
+
 L'état actuel est sauvegardé juste avant, donc une restauration peut elle-même être
 annulée. Un fichier créé par l'opération d'origine est effacé, et un fichier qu'elle avait
 supprimé est recréé.
