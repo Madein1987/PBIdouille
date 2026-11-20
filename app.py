@@ -56,6 +56,7 @@ from tabs.tab_wireframe import WireframeTab  # noqa: E402
 from tabs.tab_config import ConfigTab  # noqa: E402
 from tabs.tab_chopchop import ChopChopTab  # noqa: E402
 from tabs.tab_lineage import LineageTab  # noqa: E402
+from tabs.tab_radiographie import RadiographieTab  # noqa: E402
 
 APP_NAME = "PBIdouille"          # PBI + bidouille ; réglages QSettings gardés sous « BIdouille »
 APP_EMOJI = "🔧"
@@ -210,6 +211,10 @@ class BidouilleWindow(QMainWindow):
         # d'où vient chaque table : lecture seule, donc aussi en production
         self.tab_lineage = LineageTab(self.journal)
         self.tabs.addTab(self.tab_lineage, "Sources de données")
+        # ce que contient un rapport qu'on n'a pas fait : KPI, variations,
+        # visuels. Lecture seule, donc aussi en production
+        self.tab_radio = RadiographieTab(self.journal)
+        self.tabs.addTab(self.tab_radio, "Radiographie 🩻")
         self.tab_wireframe = WireframeTab(self.journal)
         # PRODUCTION : pas d'onglet Wireframe du tout — pas encore utilisable
         # pour un usager (cf. core/edition.py). L'objet existe quand même : il
@@ -254,9 +259,10 @@ class BidouilleWindow(QMainWindow):
         # le lien de la fiche Excel ouvre la fenêtre SUR la page de l'Excel
         self.tab_report.ouvrir_reglages.connect(lambda: self._ouvrir_reglages("excel"))
 
-        self._tabs = [self.tab_config, self.tab_report, self.tab_lineage, self.tab_chopchop]
+        self._tabs = [self.tab_config, self.tab_report, self.tab_lineage, self.tab_radio,
+                      self.tab_chopchop]
         if edition.dev():
-            self._tabs.insert(3, self.tab_wireframe)
+            self._tabs.insert(4, self.tab_wireframe)
         self._load_initial_project()
         self._colonne_selon_la_vue()
 
@@ -420,6 +426,7 @@ class BidouilleWindow(QMainWindow):
             return
         self.tab_report.refresh_model()
         self.tab_chopchop.set_project(self.project)   # reanalyse differee
+        self.tab_radio.reload()                       # idem
 
     def _set_project(self, pbip):
         project = Project(pbip)
