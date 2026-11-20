@@ -42,6 +42,15 @@ class Generation(unittest.TestCase):
                     self.assertEqual(self.fichiers(), avant)
                     self.assertFalse((self.projet / "_backupsPBIdouille").exists())
 
+    def test_nom_logique_independant_du_fichier(self):
+        self.config["fieldParameter"] = {"tables": ["PRODUITS"]}
+        (self.tables / "table_42.tmdl").write_text(
+            "table Produits\n\n\tpartition Produits = m\n\t\tsource =\n\t\t\t1\n")
+        avant = self.fichiers()
+        with self.assertRaisesRegex(SystemExit, "PRODUITS"):
+            self.generer()
+        self.assertEqual(avant, self.fichiers())
+
     def test_vrai_parametre(self):
         self.config["fieldParameter"] = {"tables": ["Choix"]}
         self.generer()

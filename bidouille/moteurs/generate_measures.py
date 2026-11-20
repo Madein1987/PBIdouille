@@ -36,7 +36,7 @@ from pathlib import Path
 
 # réutilise le découpage TMDL éprouvé de unused_measures (mêmes fichiers cibles)
 sys.path.insert(0, str(Path(__file__).resolve().parent))   # moteurs\ voisins
-from unused_measures import MEMBER_RE, MEASURE_NAME_RE, _first_group
+from unused_measures import MEMBER_RE, MEASURE_NAME_RE, TABLE_NAME_RE, _first_group
 import backup_restore as br                                # sauvegardes + manifeste
 import xlsx_lecture as _xl                                 # relâche le classeur
 import chemins                                             # où sont les projets
@@ -2232,9 +2232,28 @@ def _generate(model_dir, config, *, dry_run=None, remove_orphans=None, log=print
                 if n is not None:
                     arbre[n].setdefault("tables", []).append(spec["name"])
 
+        # Le nom logique de la table peut différer du nom de son fichier TMDL.
+        chemins_fp = {}
+        demandes = {nom.casefold() for nom, _, _ in targets}
+        for fichier in tables_dir.glob("*.tmdl"):
+            with fichier.open(encoding="utf-8-sig") as stream:
+                nom = None
+                for ligne in stream:
+                    nom = _first_group(TABLE_NAME_RE.match(ligne))
+                    if nom:
+                        break
+            if nom and nom.casefold() in demandes:
+                if nom.casefold() in chemins_fp:
+                    raise SystemExit(f"Plusieurs tables portent le nom « {nom} ».")
+                chemins_fp[nom.casefold()] = fichier
+
         etats_fp: dict = {}
         for tname, expr, n_rows in targets:
-            tpath = tables_dir / (tname + ".tmdl")
+            if Path(tname).name != tname or tname in (".", ".."):
+                raise SystemExit(f"Nom de table paramètre invalide : « {tname} ».")
+            tpath = chemins_fp.get(tname.casefold(), tables_dir / (tname + ".tmdl"))
+            if tpath.exists() and tname.casefold() not in chemins_fp:
+                raise SystemExit(f"Le fichier {tpath.name} appartient à une autre table.")
             indented = "\n".join("\t\t\t\t" + l for l in expr.split("\n"))
             if tpath.exists():
                 ttext = tpath.read_text(encoding="utf-8")
