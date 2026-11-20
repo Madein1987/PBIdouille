@@ -65,7 +65,7 @@ class RestaurationCopie(unittest.TestCase):
             session.close()
             externe.write_bytes(b"apres")
             apercu = br.restore_session(session.dir, projet, dry_run=True)
-            self.assertEqual(apercu["restaurés"], [str(externe)])
+            self.assertEqual(apercu["restaurés"], [str(externe.resolve())])
             self.assertEqual(externe.read_bytes(), b"apres")
             resultat = br.restore_session(session.dir, projet)
             self.assertEqual(resultat["restaurés"], apercu["restaurés"])
