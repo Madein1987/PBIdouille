@@ -1,6 +1,6 @@
 # PBIdouille 🔧
 
-**Tester une contribution.** `py tests/lancer_tests.py` distingue les scripts réussis, ignorés et échoués. Les suites Fitbit utilisent le projet de démonstration externe.
+**Tester une contribution.** `py tests/lancer_tests.py` distingue les scripts réussis, ignorés et échoués. Les suites Fitbit utilisent le projet de démonstration externe. GitHub Actions exécute les tests hors écran sous Ubuntu et Windows, avec PyQt5 et PySide6, pour les PR vers `experimental` et `stable`. Chaque job affiche le nombre de scripts exécutés et ignorés.
 
 Pour un essai autonome, installer `openpyxl` puis lancer `py tests/projet_minimal.py AtelierTest`. Ouvrir `AtelierTest/Atelier.pbip` dans Power BI Desktop et actualiser la matrice. Les deux ventes fictives donnent un total de 12. Le dossier contient aussi le classeur et le `measures_config.json` utilisables dans PBIdouille.
 
