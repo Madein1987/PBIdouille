@@ -271,10 +271,8 @@ class CouleursDialog(QDialog):
         for key, s in self.state.items():
             if not s["row"]:
                 continue
-            ws.cell(row=s["row"], column=fill_c,
-                    value=(s["fill"] if s["fill"] else None))
-            ws.cell(row=s["row"], column=text_c,
-                    value=(s["text"] if s["text"] else None))
+            ws.cell(row=s["row"], column=fill_c).value = s["fill"] or None
+            ws.cell(row=s["row"], column=text_c).value = s["text"] or None
             n += 1
 
         try:
