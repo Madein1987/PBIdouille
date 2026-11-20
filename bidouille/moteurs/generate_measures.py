@@ -2303,7 +2303,10 @@ def _generate(model_dir, config, *, dry_run=None, remove_orphans=None, log=print
     session = br.BackupSession(br.backup_root(model_dir.parent, "_tmdl_backups"),
                                "Mesures générées", model_dir.parent)
     for path, _ in to_write:
-        session.save(path)
+        if path.exists():
+            session.save(path)
+        else:
+            session.mark_absent(path)
     for path, content in to_write:
         path.write_text(content, encoding="utf-8")
     backup_dir = session.close(f"{len(created)} créée(s), {len(updated)} mise(s) "
