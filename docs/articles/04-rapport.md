@@ -1,6 +1,6 @@
 # 4 · Rapport
 
-[Documentation](../README.md) › **Rapport** · voir aussi [Paramètres de champ](03-4-parametres-de-champ.md), [ChopChop](07-chopchop.md)
+[Documentation](../README.md) › **Rapport** · voir aussi [Paramètres de champ](03-4-parametres-de-champ.md), [ChopChop](08-chopchop.md)
 
 L'onglet **Rapport** recopie le formatage d'un KPI vers les autres, et colore les
 matrices par KPI. Il agit sur les visuels du rapport, pas sur le modèle.

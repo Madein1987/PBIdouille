@@ -4,7 +4,7 @@ fenêtre de l'app, et sur chaque élément le numéro de son article.
     py docs\\ressources\\sources\\capture_vue.py
 
 Sur une COPIE du projet de démonstration, avec un magasin de réglages jetable,
-en édition de développement pour que l'onglet Wireframe (6) y soit. Les
+en édition de développement pour que l'onglet Wireframe (7) y soit. Les
 numéros sont posés d'après la position réelle des widgets : un bouton qui
 bouge emmène son numéro."""
 import os
@@ -87,8 +87,9 @@ reperes = [
     ("3.5", coin(sous, sous.tabRect(sous_onglet["JSON brut"]))),
     ("4", coin(barre, barre.tabRect(onglet["Rapport"]))),
     ("5", coin(barre, barre.tabRect(onglet["Sources"]))),
-    ("6", coin(barre, barre.tabRect(onglet["Wireframe"]))),
-    ("7", coin(barre, barre.tabRect(onglet["ChopChop"]))),
+    ("6", coin(barre, barre.tabRect(onglet["Radiographie"]))),
+    ("7", coin(barre, barre.tabRect(onglet["Wireframe"]))),
+    ("8", coin(barre, barre.tabRect(onglet["ChopChop"]))),
 ]
 w.close()
 

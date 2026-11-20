@@ -576,10 +576,12 @@ def analyser(pbip) -> dict:
             elif c["genre"] == "parametre":
                 noter(c["table"], c["nom"], "segment" if v["segment"] else "visuel", ou, cle,
                       v["selection"] if v["segment"] else "paramètre de champ")
+        # un filtre de visuel SANS valeur ne filtre rien : Power BI pose dans
+        # le volet chaque champ du visuel, et ces doublons noieraient les vrais
         for f in v["filtres"]:
-            if f["genre"] != "Measure":
-                noter(f["table"], f["nom"], "filtre de visuel", ou, cle,
-                      f["texte"] if f["actif"] else "sans valeur choisie", filtre_connu(f))
+            if f["genre"] != "Measure" and f["actif"]:
+                noter(f["table"], f["nom"], "filtre de visuel", ou, cle, f["texte"],
+                      filtre_connu(f))
     for p in pages:
         for f in p["filtres"]:
             if f["genre"] != "Measure":

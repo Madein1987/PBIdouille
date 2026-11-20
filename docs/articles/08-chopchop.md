@@ -1,4 +1,4 @@
-# 7 · ChopChop
+# 8 · ChopChop
 
 [Documentation](../README.md) › **ChopChop** · voir aussi [Variations](03-1-variations.md), [Restaurer une sauvegarde](01-barre-du-haut.md#restaurer-une-sauvegarde)
 
@@ -103,4 +103,4 @@ la colonne quitte le modèle et un avertissement demande de modifier la requête
 
 ---
 
-← [6 Wireframe](06-wireframe.md) · [Sommaire](../README.md)
+← [7 Wireframe](07-wireframe.md) · [Sommaire](../README.md)

@@ -134,6 +134,7 @@ TD_Indicateurs.xlsx               mesures de base (_mesures\_indicateurs)
    Rapport › Propager ───────┤ (formatage conditionnel, KPI par KPI)
    Rapport › Colorer ────────┤ (couleurs de matrice par KPI)
    Sources de données ───────┤ (d'où vient chaque table)
+   Radiographie ─────────────┤ (KPI, visuels, filtres, colonnes)
    ChopChop ─────────────────┘ (ce que plus rien n'utilise)
 ```
 
@@ -144,6 +145,7 @@ Les onglets :
 | **Mesures** | Éditeur des variations, arbre des mesures, tables paramètre de champ, et la génération (en tête du journal) |
 | **Rapport** | Propage le formatage d'un KPI gabarit vers les autres (grille des sources) ; colore les matrices |
 | **Sources de données** | Le lineage du rapport ouvert : chaque table et sa source |
+| **Radiographie 🩻** | La carte d'un rapport qu'on n'a pas fait : KPI et variations, ce que chaque visuel affiche et ce qui le filtre, où sert chaque colonne |
 | **ChopChop 🪓** | Mesures, colonnes et tables que plus rien n'utilise ; export ; restauration des sauvegardes |
 | **Wireframe** | Plan des pages et des visuels (édition dev seulement) |
 
@@ -166,6 +168,7 @@ doublon. Tout ce qui est réécrit est d'abord sauvegardé.
 | `bidouille\moteurs\unused_measures.py` | analyse de ce qui ne sert plus (mesures, colonnes, tables) |
 | `bidouille\moteurs\unused_measures_ui.py` | le panneau ChopChop |
 | `bidouille\moteurs\lineage.py` | les sources de données du rapport ouvert |
+| `bidouille\moteursadiographie.py` | la radiographie d'un rapport : familles de KPI, visuels, filtres, colonnes |
 | `bidouille\moteurs\backup_restore.py` | sauvegardes horodatées et restauration (manifeste : d'où vient chaque copie) |
 | `bidouille\moteurs\xlsx_lecture.py` | lecture de l'Excel qui relâche toujours le fichier |
 | `bidouille\moteurs\chemins.py` | où vivent l'outil et les projets |
@@ -1858,6 +1861,40 @@ connecteurs imbriqués (`Excel.Workbook(File.Contents(x))` donne une seule
 ligne, avec le chemin). Un fichier local introuvable est signalé ⚠. Lecture
 seule ; **Exporter…** écrit le CSV.
 
+## 9b. Radiographie (radiographie.py)
+
+L'onglet **« Radiographie 🩻 »** fait la carte d'un rapport qu'on n'a pas
+fait, et ne s'appuie sur rien de PBIdouille (ni config, ni TD_Indicateurs,
+ni annotation) : tout se déduit du DAX des mesures, de leurs noms et des
+`visual.json`. Lecture seule. Documentation :
+[6 Radiographie](docs/articles/06-radiographie.md).
+
+- **Champs d'un visuel** : lus par leur liaison (`field` de chaque
+  projection), pas par leur `queryRef`. Power BI garde le `queryRef` d'un
+  champ renommé : le lire ferait passer un champ vivant pour cassé. Les
+  formes lues : `Column`, `Measure`, `Aggregation`, `HierarchyLevel`,
+  `GroupRef`, et toute autre forme qui porte une table et une propriété.
+- **Paramètres de champ** : une table dont une colonne porte
+  `ParameterMetadata` ; ses mesures sont ses `NAMEOF`, sa colonne principale
+  celle dont `sourceColumn` vaut `[Value1]`. Un visuel qui la nomme affiche
+  ces mesures ; un segment sur elle les choisit.
+- **Ce qui filtre un visuel** : son `filterConfig`, ceux de sa page
+  (`page.json`) et du rapport (`report.json`), et les segments de sa page qui
+  ont une sélection (`objects.general[].properties.filter`), sauf ceux dont
+  l'interaction vers lui vaut `NoFilter` (`visualInteractions`). Un filtre
+  sans valeur ne filtre rien et n'est pas compté.
+- **Mène à** : les mesures de base au bout des références d'une mesure
+  (celles qui n'en référencent aucune), et les colonnes qu'elles lisent
+  (`'Table'[Colonne]` ou `Table[Colonne]`, la casse ramenée à celle du
+  modèle). Commentaires et chaînes du DAX sont ignorés.
+- **Familles** : une mesure qui référence une mesure dont le nom est contenu
+  dans le sien en est une variation, la base retenue étant la plus longue ;
+  la racine est le KPI. Les mesures restées seules qui commencent par les
+  mêmes mots forment une famille « par le nom », marquée à part ; un premier
+  mot générique (`Total`, `Average`…) n'y suffit pas.
+- **Briques** : les mesures qu'au moins deux mesures d'autres familles
+  utilisent.
+
 ---
 
 ## 10. Recettes
@@ -2189,7 +2226,7 @@ reste, il n'est pas offert) :
 
 | | production | dev |
 |---|---|---|
-| Mesures, Rapport, Réglages, Bibliothèque | ✔ | ✔ |
+| Mesures, Rapport, Réglages, Bibliothèque, Sources de données, Radiographie | ✔ | ✔ |
 | Wireframe | **absent** : pas encore utilisable pour un usager | l'onglet complet |
 | ChopChop | analyse, export, restauration des sauvegardes | + suppression |
 
@@ -2565,6 +2602,29 @@ D'où vient chaque table du rapport ouvert — le lineage de `scan_lineage.py`
   publié.
 - Clic droit : copier le détail, ou afficher le fichier dans l'Explorateur.
   **Exporter CSV…** écrit le même format que `scan_lineage.py`.
+
+### Onglet « Radiographie 🩻 »
+
+La carte d'un rapport qu'on n'a pas fait (section 9b), en trois vues, avec à
+droite la fiche de l'élément choisi et des liens de l'une à l'autre. Lecture
+seule, donc aussi en production.
+
+- **Par page** (défaut) : page → visuel → champs. Pour chaque mesure, **Mène
+  à** donne ses mesures de base (colonnes lues en infobulle) ; chaque visuel
+  a sa ligne **Filtré par** (filtres avec leur valeur, filtres de page et de
+  rapport, segments de la page avec leur sélection). Les champs du volet sans
+  valeur tiennent sur une ligne grisée. Un champ introuvable dans le modèle
+  est marqué **⚠**. Un visuel sans titre est nommé par son type et son
+  premier champ.
+- **Par KPI** : les familles, de la plus affichée à la moins affichée ; les
+  familles « par le nom » en italique, leur variation en jaune ; puis les
+  groupes **Briques**, **Jamais affichées** et **Variations repérées**.
+- **Par colonne** : chaque colonne utilisée, table par table, et ses usages
+  (segment, filtres de rapport, de page, de visuel, visuel, mesure qui la
+  lit), dans l'ordre où on les cherche quand un chiffre est faux.
+- Le filtre garde, dans les trois vues, les lignes qui contiennent le texte
+  et leurs parents. **↻ Relire** relit le projet ; l'analyse est différée
+  jusqu'à la première visite de l'onglet.
 
 ### Onglet « ChopChop 🪓 »
 

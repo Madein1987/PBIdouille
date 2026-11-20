@@ -35,6 +35,7 @@ ORANGE = RGBColor(0xF5, 0xA6, 0x23)
 # capture_vue.py)
 REPERE = RGBColor(0xFF, 0x8A, 0x1F)
 RED = RGBColor(0xE5, 0x5B, 0x5B)
+LILAS = RGBColor(0xA7, 0x8B, 0xFA)       # la Radiographie, diapo 2
 TEXT = RGBColor(0xE6, 0xED, 0xF3)
 MUTED = RGBColor(0x9A, 0xA7, 0xB8)
 DARK = RGBColor(0x0B, 0x11, 0x20)
@@ -242,25 +243,26 @@ text(s, 0.6, 4.95, 6.3, 1.4,
      "d'un rapport Power BI (PBIP), sans les écrire à la main.", size=18, color=MUTED)
 
 # ============================================================ 2. En un coup d'œil
-s = new_slide("Les quatre onglets travaillent tous sur le même rapport, choisi dans la barre du "
-              "haut. Le journal à droite raconte tout ce que l'outil fait. Un cinquième, "
+s = new_slide("Les cinq onglets travaillent tous sur le même rapport, choisi dans la barre du "
+              "haut. Le journal à droite raconte tout ce que l'outil fait. Un sixième, "
               "Wireframe, n'existe que dans l'édition de développement.")
-title(s, "Un rapport, quatre onglets", "En un coup d'œil")
+title(s, "Un rapport, cinq onglets", "En un coup d'œil")
 cards = [
     ("Mesures", "Décline chaque KPI en variations (7d avg, PY, YTD…) et écrit les paramètres de champ.", GREEN, "Σ"),
     ("Rapport", "Copie le formatage d'un KPI gabarit vers les autres. Colore les matrices.", BLUE, "◧"),
     ("Sources de données", "Dit d'où vient chaque table, et ce qui manque sur ce poste.", ORANGE, "⇣"),
+    ("Radiographie", "Fait la carte d'un rapport qu'on n'a pas fait : KPI, visuels, filtres.", LILAS, "◎"),
     ("ChopChop", "Repère ce que plus rien n'utilise, et exporte la liste.", RED, "×"),
 ]
-cw, gap = 2.875, 0.2
+cw, gap = (12.1 - 0.2 * (len(cards) - 1)) / len(cards), 0.2
 for i, (t, d, col, ic) in enumerate(cards):
     x = 0.6 + i * (cw + gap)
     box(s, x, 1.85, cw, 3.65, fill=CARD, name="Carte " + t)
     c = box(s, x + 0.3, 2.15, 0.75, 0.75, fill=col, shape=MSO_SHAPE.OVAL)
     text(s, x + 0.3, 2.15, 0.75, 0.75, ic, size=24, color=DARK, font=HEAD, bold=True,
          align=PP_ALIGN.CENTER, anchor=MSO_ANCHOR.MIDDLE)
-    text(s, x + 0.3, 3.15, cw - 0.4, 0.5, t, size=18, font=HEAD, color=col)
-    text(s, x + 0.3, 3.75, cw - 0.5, 1.6, d, size=14, color=TEXT)
+    text(s, x + 0.3, 3.15, cw - 0.4, 0.5, t, size=16, font=HEAD, color=col)
+    text(s, x + 0.3, 3.8, cw - 0.5, 1.6, d, size=13, color=TEXT)
 box(s, 0.6, 5.8, 12.1, 0.95, fill=CARD2)
 text(s, 0.9, 5.8, 11.6, 0.95,
      [[("Partout : ", {"bold": True, "color": GREEN}),

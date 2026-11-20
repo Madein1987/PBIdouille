@@ -299,21 +299,29 @@ class RadiographieTab(QWidget):
 
     def _noeud_filtres(self, titre, filtres, segments=()) -> QTreeWidgetItem | None:
         """« Filtré par » : filtres (visuel, page, rapport) et segments de la
-        page qui ont une sélection. Les filtres sans valeur sont grisés."""
-        actifs = [f for f in filtres if f["actif"]] + list(segments)
+        page qui ont une sélection. Les champs du volet SANS valeur ne filtrent
+        rien (Power BI y pose chaque champ du visuel) : ils tiennent sur une
+        seule ligne grisée, la liste en infobulle."""
+        actifs = [f for f in filtres if f["actif"]]
+        vides = [f for f in filtres if not f["actif"]]
         if not filtres and not segments:
             return None
-        g = self._item([f"{titre} ({len(actifs)})", "", "", ""], ("filtres", None))
+        g = self._item([f"{titre} ({len(actifs) + len(segments)})", "", "", ""],
+                       ("filtres", None))
         self._teinter(g, BLUE, (C_NOM,))
-        for f in filtres:
-            it = self._item([self.texte_filtre(f), "", f"filtre de {f['niveau']}", f["table"]],
-                            ("filtre", None))
-            if not f["actif"]:
-                self._teinter(it, TEXT_MUTED)
-            g.addChild(it)
+        for f in actifs:
+            g.addChild(self._item([self.texte_filtre(f), "", f"filtre de {f['niveau']}",
+                                   f["table"]], ("filtre", None)))
         for s in segments:
             it = self._item([f"{s['libelle']} {s['selection']}", "", "segment de la page", ""],
                             ("visuel", (s["page_id"], s["id"])))
+            g.addChild(it)
+        if vides:
+            it = self._item([f"{len(vides)} champ(s) dans le volet, sans valeur", "",
+                             "ne filtrent rien", ""], ("filtre", None))
+            it.setToolTip(C_NOM, "\n".join(self.texte_filtre(f).split(" (")[0]
+                                           for f in vides[:MAX_LISTE]))
+            self._teinter(it, TEXT_MUTED)
             g.addChild(it)
         return g
 
@@ -647,16 +655,16 @@ class RadiographieTab(QWidget):
 
     # genre d'usage -> libellé au pluriel, dans l'ordre où on les cherche
     # quand un chiffre est faux
-    GENRES_USAGE = (("segment", "segment"), ("filtre de rapport", "filtre de rapport"),
-                    ("filtre de page", "filtre de page"), ("filtre de visuel", "filtre de visuel"),
-                    ("visuel", "visuel"), ("mesure", "mesure"))
+    GENRES_USAGE = (("segment", "segments"), ("filtre de rapport", "filtres de rapport"),
+                    ("filtre de page", "filtres de page"), ("filtre de visuel", "filtres de visuel"),
+                    ("visuel", "visuels"), ("mesure", "mesures"))
 
     def _resume_usages(self, usages) -> str:
         parts = []
-        for genre, mot in self.GENRES_USAGE:
+        for genre, pluriel in self.GENRES_USAGE:
             n = sum(1 for u in usages if u["genre"] == genre)
             if n:
-                parts.append(f"{n} {mot}" + ("s" if n > 1 and not mot.endswith("s") else ""))
+                parts.append(f"{n} {pluriel if n > 1 else genre}")
         return " · ".join(parts)
 
     def _construire_colonnes(self):

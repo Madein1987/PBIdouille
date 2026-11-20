@@ -21,8 +21,9 @@ est celui d'un article, et les articles se lisent dans cet ordre.
 | 3.5 | [JSON brut](articles/03-5-json-brut.md) | Modifier directement `measures_config.json` |
 | 4 | [Rapport](articles/04-rapport.md) | Propager le formatage d'un KPI vers les autres, colorer les matrices |
 | 5 | [Sources de données](articles/05-sources-de-donnees.md) | D'où vient chaque table, et ce qui manque sur ce poste |
-| 6 | [Wireframe](articles/06-wireframe.md) | Organiser les visuels d'une page (édition de développement) |
-| 7 | [ChopChop](articles/07-chopchop.md) | Repérer ce que plus rien n'utilise |
+| 6 | [Radiographie 🩻](articles/06-radiographie.md) | Comprendre un rapport qu'on n'a pas fait : KPI, visuels, filtres, colonnes |
+| 7 | [Wireframe](articles/07-wireframe.md) | Organiser les visuels d'une page (édition de développement) |
+| 8 | [ChopChop](articles/08-chopchop.md) | Repérer ce que plus rien n'utilise |
 
 ---
 
@@ -32,14 +33,15 @@ Les diapos du [guide de démarrage](PBIdouille%20-%20Guide%20de%20demarrage%20ra
 L'app les montre aussi : bouton **Guide** de la barre du haut, et liens **▣ Schéma** là où
 chaque notion sert.
 
-### Un rapport, quatre onglets
+### Un rapport, cinq onglets
 
-![Diapo du guide : Un rapport, quatre onglets](ressources/guide/coup-d-oeil.png)
+![Diapo du guide : Un rapport, cinq onglets](ressources/guide/coup-d-oeil.png)
 
-Tout se passe dans quatre onglets, qui travaillent sur le même rapport. **Mesures** crée
+Tout se passe dans cinq onglets, qui travaillent sur le même rapport. **Mesures** crée
 les variations de chaque KPI et les tables paramètre de champ. **Rapport** recopie le
 formatage d'un KPI vers les autres. **Sources de données** dit d'où vient chaque table.
-**ChopChop** repère ce que plus rien n'utilise.
+**Radiographie** fait la carte d'un rapport qu'on n'a pas fait. **ChopChop** repère ce
+que plus rien n'utilise.
 
 ### Avant de commencer
 
@@ -119,13 +121,24 @@ Excel, CSV, base ODBC ou serveur SQL, et signale un fichier local introuvable su
 
 → [5 Sources de données](articles/05-sources-de-donnees.md)
 
+### Radiographie : comprendre un rapport qu'on n'a pas fait
+
+![L'onglet Radiographie, vue Par page](ressources/images/radiographie_pages.png)
+
+Pour un rapport fait par quelqu'un d'autre, cet onglet montre quels KPI sont affichés et
+où, à quelles mesures de base et à quelles colonnes mène chaque mesure, et ce qui filtre
+chaque visuel : filtres, segments, interactions. Il ne s'appuie sur rien de PBIdouille et
+fonctionne sur n'importe quel rapport PBIP.
+
+→ [6 Radiographie](articles/06-radiographie.md)
+
 ### ChopChop : le ménage
 
 ![Diapo du guide : ChopChop : ce que plus rien n'utilise](ressources/guide/chopchop.png)
 
 ChopChop liste les mesures, colonnes et tables que plus rien n'utilise, et exporte la liste.
 
-→ [7 ChopChop](articles/07-chopchop.md)
+→ [8 ChopChop](articles/08-chopchop.md)
 
 ### Les filets de sécurité
 

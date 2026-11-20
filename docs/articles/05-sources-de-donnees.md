@@ -1,6 +1,6 @@
 # 5 · Sources de données
 
-[Documentation](../README.md) › **Sources de données** · voir aussi [ChopChop](07-chopchop.md)
+[Documentation](../README.md) › **Sources de données** · voir aussi [ChopChop](08-chopchop.md)
 
 L'onglet **Sources de données** indique d'où vient chaque table du rapport ouvert : un
 Excel, un CSV, une base ODBC, un serveur SQL. Il sert à savoir de quoi dépend un rapport,
@@ -60,4 +60,4 @@ l'indique et donne le nom du modèle : ses sources se consultent dans le modèle
 
 ---
 
-← [4 Rapport](04-rapport.md) · [Sommaire](../README.md) · [6 Wireframe](06-wireframe.md) →
+← [4 Rapport](04-rapport.md) · [Sommaire](../README.md) · [6 Radiographie](06-radiographie.md) →

@@ -1,6 +1,6 @@
-# 6 · Wireframe
+# 7 · Wireframe
 
-[Documentation](../README.md) › **Wireframe** · voir aussi [Rapport](04-rapport.md), [ChopChop](07-chopchop.md)
+[Documentation](../README.md) › **Wireframe** · voir aussi [Rapport](04-rapport.md), [ChopChop](08-chopchop.md)
 
 > **Édition de développement seulement.** Cet onglet n'apparaît pas dans la version
 > partagée de PBIdouille. Il s'active avec un fichier `.dev` à côté de `app.py`, ou avec
@@ -104,4 +104,4 @@ du gabarit : vérifier que le rapport cible possède ces mêmes tables et mesure
 
 ---
 
-← [5 Sources de données](05-sources-de-donnees.md) · [Sommaire](../README.md) · [7 ChopChop](07-chopchop.md) →
+← [6 Radiographie](06-radiographie.md) · [Sommaire](../README.md) · [8 ChopChop](08-chopchop.md) →
