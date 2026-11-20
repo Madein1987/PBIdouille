@@ -763,6 +763,7 @@ def analyze() -> dict:
         }
 
     return {
+        "report_path": str(REPORT_DIR),
         "measures": measures,
         "via": via,
         "unused": unused,
@@ -1065,7 +1066,7 @@ def main() -> None:
     # ---- CSV : audit complet (mesures + colonnes) -----------------------------
     with CSV_PATH.open("w", newline="", encoding="utf-8-sig") as f:
         w = csv.writer(f, delimiter=";")
-        w.writerow(["Type", "Nom", "Table", "Statut", "Détail", "Générée par script TE"])
+        w.writerow(["Type", "Nom", "Table", "Statut", "Détail", "Générée par script TE", "Rapport analysé"])
         for n in sorted(names):
             if n in unused_set:
                 refs = referencers[n]
@@ -1074,7 +1075,7 @@ def main() -> None:
             else:
                 statut, detail = "utilisée", via.get(n, "")
             w.writerow(["mesure", n, measures[n]["table"], statut, detail,
-                        "oui" if measures[n]["generated"] else "non"])
+                        "oui" if measures[n]["generated"] else "non", result["report_path"]])
         for d in sorted(columns, key=str.lower):
             info = columns[d]
             if d in unused_cols:
@@ -1084,7 +1085,7 @@ def main() -> None:
                 detail = "référencée seulement par : " + ", ".join(col_refs.get(d, []))
             else:
                 statut, detail = "utilisée", column_via.get(d, "")
-            w.writerow(["colonne", info["name"], info["table"], statut, detail, ""])
+            w.writerow(["colonne", info["name"], info["table"], statut, detail, "", result["report_path"]])
     print(f"Audit écrit : {CSV_PATH.name}")
 
     # ---- console -------------------------------------------------------------
