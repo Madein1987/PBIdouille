@@ -5,7 +5,7 @@
 L'onglet **ChopChop** repère ce que plus rien n'utilise dans un rapport : mesures,
 colonnes et tables entières.
 
-L'analyse se lance à l'ouverture de l'onglet, et **Réanalyser** la relance.
+Le verdict couvre le rapport sélectionné et son modèle. D’autres rapports peuvent utiliser le même modèle. Un fichier JSON illisible interrompt l’analyse et la suppression. Corriger le fichier indiqué, puis choisir **Réanalyser**. Le CSV et le classeur exporté indiquent le rapport analysé.
 
 ![L'onglet ChopChop](../ressources/images/chopchop_onglet.png)
 

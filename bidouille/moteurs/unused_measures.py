@@ -351,6 +351,19 @@ def parse_model():
     }
 
 
+def documents_rapport():
+    """Chaque JSON du rapport doit être lisible pour conclure sur ses usages."""
+    if not REPORT_DIR.is_dir():
+        raise SystemExit(f"Analyse incomplète : rapport introuvable ({REPORT_DIR}).")
+    for jf in sorted(REPORT_DIR.rglob("*.json")):
+        nom = jf.relative_to(REPORT_DIR).as_posix()
+        try:
+            data = json.loads(jf.read_text(encoding="utf-8-sig"))
+        except (ValueError, OSError) as exc:
+            raise SystemExit(f"Analyse incomplète : {nom} illisible ({exc}).") from exc
+        yield nom, data
+
+
 def report_used(measure_names: set[str]) -> dict[str, list[str]]:
     """mesure -> fichiers du .Report qui la référencent (visuels, filtres,
     tris, CF, signets, layout mobile...)."""
@@ -376,12 +389,8 @@ def report_used(measure_names: set[str]) -> dict[str, list[str]]:
             for x in node:
                 walk(x, fname)
 
-    for jf in REPORT_DIR.rglob("*.json"):
-        try:
-            data = json.loads(jf.read_text(encoding="utf-8"))
-        except (json.JSONDecodeError, UnicodeDecodeError):
-            continue
-        walk(data, jf.relative_to(REPORT_DIR).as_posix())
+    for nom, data in documents_rapport():
+        walk(data, nom)
 
     return {n: sorted(files) for n, files in refs.items()}
 
@@ -447,14 +456,10 @@ def report_used_columns(column_keys, entities_out: set | None = None) -> dict:
             for x in node:
                 walk(x, fname, aliases)
 
-    for jf in REPORT_DIR.rglob("*.json"):
-        try:
-            data = json.loads(jf.read_text(encoding="utf-8"))
-        except (json.JSONDecodeError, UnicodeDecodeError):
-            continue
+    for nom, data in documents_rapport():
         aliases: dict = {}
         collect_aliases(data, aliases)
-        walk(data, jf.relative_to(REPORT_DIR).as_posix(), aliases)
+        walk(data, nom, aliases)
 
     return {k: sorted(files) for k, files in refs.items()}
 
