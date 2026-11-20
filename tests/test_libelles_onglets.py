@@ -6,6 +6,9 @@ import unittest
 
 if sys.platform != "win32":
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+elif os.environ.get("QT_QPA_PLATFORM") == "offscreen":
+    # Le greffon hors écran de Qt 5 lit les polices du dossier indiqué.
+    os.environ.setdefault("QT_QPA_FONTDIR", str(Path(os.environ["WINDIR"]) / "Fonts"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "bidouille"))
 from qtpy.QtCore import Qt
 from qtpy.QtWidgets import QApplication, QTabWidget, QWidget
