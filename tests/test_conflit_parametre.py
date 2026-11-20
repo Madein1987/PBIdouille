@@ -30,8 +30,14 @@ class Generation(unittest.TestCase):
     def test_conflits_sans_ecriture(self):
         table = self.tables / "Produits.tmdl"
         self.config["fieldParameter"] = {"tables": ["Nouveau", "Produits"]}
+        def colonne(valeur):
+            return "\tcolumn Fields\n\t\textendedProperty ParameterMetadata = " + valeur + "\n"
+
         for partition, metadata in (("m", ""), ("calculated", ""),
-                                    ("m", "\tcolumn Fields\n\t\textendedProperty ParameterMetadata = {}\n")):
+                                    ("m", colonne('{"kind": 2}')),
+                                    ("calculated", colonne("{}")),
+                                    ("calculated", colonne('{"kind": 1}')),
+                                    ("calculated", colonne("{illisible"))):
             table.write_text("table Produits\n" + metadata + "\tpartition Produits = " + partition
                              + "\n\t\tsource =\n\t\t\t1\n", encoding="utf-8")
             avant = self.fichiers()
@@ -50,6 +56,13 @@ class Generation(unittest.TestCase):
         with self.assertRaisesRegex(SystemExit, "PRODUITS"):
             self.generer()
         self.assertEqual(avant, self.fichiers())
+
+    def test_metadonnees_des_parametres_existants(self):
+        for valeur in ('{"kind": 2}', '\n\t\t\t{"kind": 2}', '```\n\t\t\t{"kind": 2}\n\t\t\t```'):
+            texte = ("table Choix\n\tcolumn Champ\n\t\textendedProperty 'ParameterMetadata' = "
+                     + valeur + "\n\tpartition Choix = calculated\n\t\tsource =\n\t\t\t{}\n")
+            with self.subTest(valeur=valeur):
+                self.assertIsNotNone(gm.source_parametre(texte, "Choix"))
 
     def test_vrai_parametre(self):
         self.config["fieldParameter"] = {"tables": ["Choix"]}
