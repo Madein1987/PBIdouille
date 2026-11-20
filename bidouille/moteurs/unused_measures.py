@@ -51,6 +51,7 @@ from __future__ import annotations  # annotations paresseuses : Python 3.8+
 
 import csv
 import json
+import os
 import re
 import sys
 from datetime import datetime
@@ -351,7 +352,15 @@ def documents_rapport():
     """Chaque JSON du rapport doit être lisible pour conclure sur ses usages."""
     if not REPORT_DIR.is_dir():
         raise SystemExit(f"Analyse incomplète : rapport introuvable ({REPORT_DIR}).")
-    for jf in sorted(REPORT_DIR.rglob("*.json")):
+    def dossier_illisible(exc):
+        raise SystemExit(f"Analyse incomplète : parcours du rapport interrompu ({exc}).") from exc
+
+    fichiers = []
+    for dossier, _, noms in os.walk(REPORT_DIR, onerror=dossier_illisible):
+        fichiers.extend(Path(dossier) / nom for nom in noms if nom.lower().endswith(".json"))
+    if not fichiers:
+        raise SystemExit(f"Analyse incomplète : aucun fichier JSON dans {REPORT_DIR}.")
+    for jf in sorted(fichiers):
         nom = jf.relative_to(REPORT_DIR).as_posix()
         try:
             data = json.loads(jf.read_text(encoding="utf-8-sig"))

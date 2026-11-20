@@ -12,6 +12,14 @@ from unittest.mock import patch
 
 
 class Lecture(unittest.TestCase):
+    def test_rapport_vide_ou_dossier_illisible(self):
+        with tempfile.TemporaryDirectory() as tmp, patch.object(um, "REPORT_DIR", Path(tmp)):
+            with self.assertRaisesRegex(SystemExit, "aucun fichier JSON"):
+                um.report_used({"Total"})
+            with patch("os.scandir", side_effect=PermissionError("accès refusé")):
+                with self.assertRaisesRegex(SystemExit, "accès refusé"):
+                    um.report_used_columns({("T", "X")})
+
     def test_usage_ou_erreur(self):
         with tempfile.TemporaryDirectory() as tmp, patch.object(um, "REPORT_DIR", Path(tmp)):
             visuel = Path(tmp) / "visual.json"

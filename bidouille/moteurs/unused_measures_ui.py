@@ -354,6 +354,15 @@ class ChopChopPanel(QWidget):
 
     # ---- projet ---------------------------------------------------------------
 
+    def _invalider_analyse(self, message):
+        self.result = None
+        self._unused_groups = []
+        self._unused_col_groups = []
+        self._dead_table_groups = []
+        self.tree.clear()
+        self.info.setText(message)
+        self._update_delete_label()
+
     def set_pbip(self, pbip_path) -> None:
         """Pointe le panneau vers un projet et (ré)analyse. Gère un projet
         invalide en douceur (message, pas d'exception)."""
@@ -362,11 +371,7 @@ class ChopChopPanel(QWidget):
             self.log.appendPlainText(f"Projet : {pbip_path}")
             self.refresh()
         else:
-            self.result = None
-            self.tree.clear()
-            self._unused_groups = []
-            self.info.setText("Aucun projet valide, dossiers .Report/.SemanticModel introuvables.")
-            self._update_delete_label()
+            self._invalider_analyse("Aucun projet valide, dossiers .Report/.SemanticModel introuvables.")
 
     # ---- construction de l'arbre ---------------------------------------------
 
@@ -524,9 +529,7 @@ class ChopChopPanel(QWidget):
         try:
             self.result = um.analyze()
         except SystemExit as e:
-            self.result = None
-            self.tree.clear()
-            self.btn_delete.setEnabled(False)
+            self._invalider_analyse(str(e))
             self.log.appendPlainText(str(e))
             QMessageBox.critical(self, "Erreur", str(e))
             return
@@ -970,9 +973,7 @@ class ChopChopPanel(QWidget):
                 log=self.log.appendPlainText,
             )
         except (OSError, SystemExit) as e:
-            self.result = None
-            self.tree.clear()
-            self.btn_delete.setEnabled(False)
+            self._invalider_analyse(str(e))
             QMessageBox.critical(self, "Suppression interrompue", str(e))
             return
 
