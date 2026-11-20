@@ -889,6 +889,25 @@ def fp_table_specs(fp) -> list:
     return out
 
 
+def source_parametre(texte, nom):
+    """Localise la source d'un paramètre de champ avant toute écriture du lot."""
+    membres = split_members(texte)
+    partitions = [bloc for genre, bloc in membres if genre == "partition"]
+    metadata = any(genre == "column" and re.search(
+        r"^\t\textendedProperty\s+ParameterMetadata\s*=", bloc, re.M | re.I)
+        for genre, bloc in membres)
+    if (len(partitions) != 1 or not metadata or not re.search(
+            r"^\tpartition[^\n]+?=\s*calculated[ \t]*$", partitions[0], re.M | re.I)):
+        raise SystemExit(f"« {nom} » existe déjà et n'est pas une table paramètre "
+                         "de champ à partition calculée unique. Choisir un autre nom.")
+    debut = re.search(r"^\tpartition\b", texte, re.M).start()
+    suivant = MEMBER_RE.search(texte, debut + 1)
+    source = SOURCE_BLOCK_RE.search(texte, debut, suivant.start() if suivant else len(texte))
+    if not source:
+        raise SystemExit(f"« {nom} » : source du paramètre illisible. Génération annulée.")
+    return source
+
+
 def fp_table_names(fp) -> list:
     """Noms des tables paramètre du config, dans l'ordre."""
     return [s["name"] for s in fp_table_specs(fp)]
@@ -2219,13 +2238,8 @@ def _generate(model_dir, config, *, dry_run=None, remove_orphans=None, log=print
             indented = "\n".join("\t\t\t\t" + l for l in expr.split("\n"))
             if tpath.exists():
                 ttext = tpath.read_text(encoding="utf-8")
-                m = SOURCE_BLOCK_RE.search(ttext)
-                if not m:
-                    fp_statuses.append(f"⚠ {tname} : bloc `source =` introuvable, non modifiée")
-                    etats_fp[tname] = "source introuvable"
-                    continue
+                m = source_parametre(ttext, tname)
                 new_ttext = ttext[: m.start(2)] + indented + "\n" + ttext[m.end(2):]
-                new_ttext = re.sub(r"\n{3,}", "\n\n", new_ttext)
                 if new_ttext != ttext:
                     fp_writes.append((tpath, new_ttext))
                     fp_statuses.append(f"{tname} : expression mise à jour ({n_rows} rangées)")
