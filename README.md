@@ -4,6 +4,8 @@
 
 Pour un essai autonome, installer `openpyxl` puis lancer `py tests/projet_minimal.py AtelierTest`. Ouvrir `AtelierTest/Atelier.pbip` dans Power BI Desktop et actualiser la matrice. Les deux ventes fictives donnent un total de 12. Le dossier contient aussi le classeur et le `measures_config.json` utilisables dans PBIdouille.
 
+**Premier projet.** Copier le [config de démarrage](exemples/measures_config.json) à côté du `.pbip` sous le nom `measures_config.json`. Dans **Réglages**, remplacer `Ventes` et `Base` par la table et le dossier d’affichage contenant vos mesures. Cette recette double chacune des bases admissibles. Lancer d’abord **Aperçu**. Le paramètre de champ peut ensuite être activé dans l’onglet dédié.
+
 Une app de bureau pour les rapports Power BI au format **PBIP**. Elle écrit
 automatiquement ce qui se répète dans un rapport : les mesures dérivées de chaque KPI
 (7d avg, PY, YTD…), les tables paramètre de champ, le formatage conditionnel
@@ -172,7 +174,8 @@ doublon. Tout ce qui est réécrit est d'abord sauvegardé.
 | `bidouille\moteurs\unused_measures.py` | analyse de ce qui ne sert plus (mesures, colonnes, tables) |
 | `bidouille\moteurs\unused_measures_ui.py` | le panneau ChopChop |
 | `bidouille\moteurs\lineage.py` | les sources de données du rapport ouvert |
-| `bidouille\moteursadiographie.py` | la radiographie d'un rapport : familles de KPI, visuels, filtres, colonnes |
+| `bidouille\moteurs
+adiographie.py` | la radiographie d'un rapport : familles de KPI, visuels, filtres, colonnes |
 | `bidouille\moteurs\backup_restore.py` | sauvegardes horodatées et restauration (manifeste : d'où vient chaque copie) |
 | `bidouille\moteurs\xlsx_lecture.py` | lecture de l'Excel qui relâche toujours le fichier |
 | `bidouille\moteurs\chemins.py` | où vivent l'outil et les projets |
