@@ -29,12 +29,12 @@ class Modeles(unittest.TestCase):
             pbir = rapport / "definition.pbir"
             pbir.write_text(json.dumps({"datasetReference": {"byPath": {"path": "../" + modele.name}}}))
             projet = Project(pbip)
-            self.assertEqual(projet.report_dir, rapport)
-            self.assertEqual(projet.model_dir, modele)
-            self.assertEqual(lineage.scan_projet(pbip)["modele_dir"], modele)
-            self.assertEqual(pc.contexte_modele(rapport, targets=["Vraie"])["semantic_dir"], modele)
+            self.assertEqual(projet.report_dir, rapport.resolve())
+            self.assertEqual(projet.model_dir, modele.resolve())
+            self.assertEqual(lineage.scan_projet(pbip)["modele_dir"], modele.resolve())
+            self.assertEqual(pc.contexte_modele(rapport, targets=["Vraie"])["semantic_dir"], modele.resolve())
             um.set_project(pbip)
-            self.assertEqual(um.MODEL_DIR, modele)
+            self.assertEqual(um.MODEL_DIR, modele.resolve())
             self.assertIn("Vraie", radiographie.analyser(pbip)["mesures"])
             for ref in ({"byPath": {"path": "../Absent.SemanticModel"}}, {"byConnection": {}}, {}):
                 pbir.write_text(json.dumps({"datasetReference": ref}))
@@ -44,7 +44,7 @@ class Modeles(unittest.TestCase):
                 with self.assertRaises(FileNotFoundError):
                     radiographie.analyser(pbip)
             pbir.unlink()
-            self.assertEqual(projet.model_dir, rapport.with_suffix(".SemanticModel"))
+            self.assertEqual(projet.model_dir, rapport.with_suffix(".SemanticModel").resolve())
 
 
 if __name__ == "__main__":
