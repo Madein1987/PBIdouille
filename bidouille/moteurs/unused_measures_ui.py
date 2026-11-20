@@ -847,7 +847,7 @@ class ChopChopPanel(QWidget):
             return
         header, rows = self._export_rows()
         header = list(header) + ["Rapport analysé"]
-        rows = [list(row) + [str(um.REPORT_DIR)] for row in rows]
+        rows = [list(row) + [self.result["report_path"]] for row in rows]
         try:
             if path.lower().endswith(".xlsx"):
                 self._write_xlsx(path, header, rows)
