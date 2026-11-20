@@ -35,6 +35,11 @@ jobs:
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: '3.11'
+      - name: Installer la bibliothèque graphique de Qt sous Linux
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends libegl1
       - name: Installer les dépendances de test
         run: >-
           python -m pip install --only-binary=:all: QtPy==2.4.3 openpyxl==3.1.5 "${{ matrix.qt.package }}"
